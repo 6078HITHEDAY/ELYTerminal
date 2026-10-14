@@ -1,9 +1,5 @@
-use ely_gpui_component::{
-    Assets,
-    primitives::FocusScope,
-    theme::{ActiveTheme, Mode, Theme},
-};
-use elyterminal::settings::SettingsStore;
+use ely_gpui_component::{Assets, primitives::FocusScope, theme::ActiveTheme};
+use elyterminal::{settings::SettingsStore, themes};
 use gpui::{
     App, AppContext, Bounds, Context, FocusHandle, IntoElement, Render, Styled, TitlebarOptions,
     Window, WindowBounds, WindowOptions, px, size,
@@ -42,7 +38,7 @@ fn main() {
             log::error!("{error:#}");
             std::process::exit(1);
         }
-        Theme::set_mode_now(Mode::Dark, cx);
+        themes::apply(cx);
         let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -54,6 +50,9 @@ fn main() {
         };
         cx.open_window(options, |window, cx| {
             cx.new(|cx| {
+                window
+                    .observe_window_appearance(|_, cx| themes::apply(cx))
+                    .detach();
                 let focus = cx.focus_handle();
                 window.focus(&focus, cx);
                 Workspace { focus }

@@ -4,6 +4,8 @@ use std::ops::RangeInclusive;
 
 use serde::{Deserialize, Serialize};
 
+use crate::themes;
+
 pub use store::{SettingsStore, load, save};
 
 /// Where a new session starts.
@@ -107,7 +109,7 @@ pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
 
 impl Settings {
-    /// Every value inside its range, every name filled; the error names the field.
+    /// Every value inside its range, every theme built in; the error names the field.
     pub fn validate(&self) -> anyhow::Result<()> {
         within("font_size", self.font_size, &FONT_SIZE)?;
         within("line_height", self.line_height, &LINE_HEIGHT)?;
@@ -115,11 +117,17 @@ impl Settings {
         within("padding_x", self.padding_x, &PADDING)?;
         within("padding_y", self.padding_y, &PADDING)?;
         within("scrollback", self.scrollback, &SCROLLBACK)?;
-        anyhow::ensure!(!self.theme.is_empty(), "theme is empty");
-        anyhow::ensure!(
-            self.dark_theme.as_ref().is_none_or(|name| !name.is_empty()),
-            "dark_theme is empty"
-        );
+        for (field, id) in [
+            ("theme", Some(&self.theme)),
+            ("dark_theme", self.dark_theme.as_ref()),
+        ] {
+            if let Some(id) = id {
+                anyhow::ensure!(
+                    themes::find(id).is_some(),
+                    "{field} is {id:?}, no built-in theme"
+                );
+            }
+        }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
         Ok(())
     }
@@ -177,14 +185,22 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_name_fails() {
+    fn an_unknown_theme_fails() {
         let settings = Settings {
             dark_theme: Some(String::new()),
             ..Settings::default()
         };
         assert_eq!(
             settings.validate().expect_err("empty").to_string(),
-            "dark_theme is empty"
+            "dark_theme is \"\", no built-in theme"
+        );
+        let settings = Settings {
+            theme: "mocha".into(),
+            ..Settings::default()
+        };
+        assert_eq!(
+            settings.validate().expect_err("unknown").to_string(),
+            "theme is \"mocha\", no built-in theme"
         );
     }
 }
