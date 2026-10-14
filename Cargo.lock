@@ -1749,11 +1749,14 @@ name = "elyterminal"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dirs 7.0.0",
  "ely-gpui-component",
  "env_logger",
  "gpui-pre",
  "gpui-pre-platform",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

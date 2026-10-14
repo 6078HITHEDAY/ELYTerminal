@@ -3,6 +3,7 @@ use ely_gpui_component::{
     primitives::FocusScope,
     theme::{ActiveTheme, Mode, Theme},
 };
+use elyterminal::settings::SettingsStore;
 use gpui::{
     App, AppContext, Bounds, Context, FocusHandle, IntoElement, Render, Styled, TitlebarOptions,
     Window, WindowBounds, WindowOptions, px, size,
@@ -37,6 +38,10 @@ fn main() {
         .init();
     application().with_assets(Assets).run(|cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
+        if let Err(error) = SettingsStore::init(cx) {
+            log::error!("{error:#}");
+            std::process::exit(1);
+        }
         Theme::set_mode_now(Mode::Dark, cx);
         let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
         let options = WindowOptions {

@@ -16,7 +16,8 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 
 ## Layout
 
-- `src/main.rs`: start, window.
+- `src/main.rs`: start, window. `src/lib.rs`: the modules, public so tests reach them.
+- `src/settings`: the model, its ranges, and `SettingsStore`, the global that loads, checks and saves `settings.json`.
 
 ## Rules
 
@@ -33,3 +34,4 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 - 2026-10-14: the working directory comes from OSC 7, read by a tap on the pty reader, sent by injected shell integration. vte drops OSC 7.
 - 2026-10-14: Git through the `git` command line, not libgit2.
 - 2026-10-14: license MIT, as Ely.
+- 2026-10-14: settings refuse unknown fields; a bad settings file stops the start and is never overwritten.
