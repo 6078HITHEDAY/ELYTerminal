@@ -19,6 +19,7 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 - `src/main.rs`: start, window. `src/lib.rs`: the modules, public so tests reach them.
 - `src/settings`: the model, its ranges, and `SettingsStore`, the global that loads, checks and saves `settings.json`.
 - `src/themes`: built-in terminal themes, the chrome palette each maps to, and `apply`, which dresses the app for the system's appearance.
+- `src/term`: the terminal engine. `pty` starts a program through alacritty's event loop; `tap` wraps the pty so its reader scans OSC 7 before the parser.
 - `assets/themes`: Ghostty theme files copied verbatim from iTerm2-Color-Schemes (MIT, its `LICENSE` beside them).
 
 ## Rules

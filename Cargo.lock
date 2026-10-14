@@ -1748,13 +1748,17 @@ dependencies = [
 name = "elyterminal"
 version = "0.1.0"
 dependencies = [
+ "alacritty_terminal",
  "anyhow",
  "dirs 7.0.0",
  "ely-gpui-component",
  "env_logger",
+ "futures",
+ "gethostname",
  "gpui-pre",
  "gpui-pre-platform",
  "log",
+ "polling",
  "serde",
  "serde_json",
  "serde_path_to_error",
