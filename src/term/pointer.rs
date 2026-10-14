@@ -195,31 +195,50 @@ impl TerminalView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if event.button == MouseButton::Left && std::mem::take(&mut self.pointer.selecting) {
-            let selected = self.selected();
-            let count = selected.as_ref().map_or(0, |text| text.chars().count());
-            log::debug!(
-                "terminal {}: the selection ends on {count} characters",
-                self.pty.pid
-            );
-            if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
-                self.copy_text(text, true, cx);
-            }
+        if event.button == MouseButton::Left {
+            self.end_selection(cx);
         }
-        let Some(released) = button(event.button) else {
+        if let Some(released) = button(event.button) {
+            let (cell, ..) = self.cell_at(event.position);
+            self.release(released, cell, &event.modifiers);
+        }
+    }
+
+    /// Ends the mouse's gesture as releases would: a hidden terminal hears none.
+    pub fn let_go(&mut self, cx: &mut Context<Self>) {
+        self.end_selection(cx);
+        for held in self.pointer.pressed.clone() {
+            log::debug!("terminal {}: hidden with {held:?} down", self.pty.pid);
+            let cell = self
+                .pointer
+                .last
+                .expect("a press the program heard set a cell");
+            self.release(held, cell, &Modifiers::default());
+        }
+    }
+
+    /// Ends a selection drag; copy on select takes its text.
+    fn end_selection(&mut self, cx: &mut Context<Self>) {
+        if !std::mem::take(&mut self.pointer.selecting) {
             return;
-        };
+        }
+        let selected = self.selected();
+        let count = selected.as_ref().map_or(0, |text| text.chars().count());
+        log::debug!(
+            "terminal {}: the selection ends on {count} characters",
+            self.pty.pid
+        );
+        if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
+            self.copy_text(text, true, cx);
+        }
+    }
+
+    /// Reports `released` coming up when its press went to the program.
+    fn release(&mut self, released: Button, cell: (usize, usize), modifiers: &Modifiers) {
         if self.pointer.pressed.contains(&released) {
             self.pointer.pressed.retain(|held| *held != released);
-            let (cell, ..) = self.cell_at(event.position);
             let tracking = self.mouse.tracking;
-            self.report(
-                Some(released),
-                Gesture::Release,
-                cell,
-                &event.modifiers,
-                tracking,
-            );
+            self.report(Some(released), Gesture::Release, cell, modifiers, tracking);
         }
     }
 

@@ -159,9 +159,15 @@ impl Workspace {
 
     /// Shows session `index`, clears its bell, and gives its terminal the keys.
     pub fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(session) = self.sessions.get_mut(index) else {
+        if index >= self.sessions.len() {
             return;
-        };
+        }
+        if index != self.active
+            && let Some(hidden) = self.sessions.get(self.active)
+        {
+            hidden.terminal.update(cx, |view, cx| view.let_go(cx));
+        }
+        let session = &mut self.sessions[index];
         session.bell = false;
         window.focus(&session.terminal.focus_handle(cx), cx);
         self.active = index;
