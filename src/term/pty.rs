@@ -377,3 +377,28 @@ mod tests {
         assert_eq!((size.num_cols, size.num_lines), (2, 1));
     }
 }
+
+#[cfg(test)]
+mod scrollback {
+    use alacritty_terminal::{event::VoidListener, grid::Dimensions, vte::ansi::Processor};
+
+    use super::*;
+
+    #[test]
+    fn the_setting_caps_history_and_a_change_trims_it() {
+        let settings = Settings {
+            scrollback: 5,
+            ..Settings::default()
+        };
+        let mut term = Term::new(config(&settings), &TermSize::new(10, 3), VoidListener);
+        let mut parser: Processor = Processor::new();
+        let lines: String = (1..=20).map(|line| format!("{line}\r\n")).collect();
+        parser.advance(&mut term, lines.as_bytes());
+        assert_eq!(term.grid().history_size(), 5);
+        term.set_options(config(&Settings {
+            scrollback: 2,
+            ..settings
+        }));
+        assert_eq!(term.grid().history_size(), 2);
+    }
+}

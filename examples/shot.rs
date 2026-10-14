@@ -44,12 +44,14 @@ fn main() {
                         .await;
                 }
                 cx.background_executor().timer(Duration::from_secs(1)).await;
-                let number = window
-                    .update(cx, |_, window, _| capture::number(window))
-                    .expect("the window lives")
-                    .expect("a window number");
+                let (number, title) = window
+                    .update(cx, |_, window, _| {
+                        (capture::number(window), window.window_title())
+                    })
+                    .expect("the window lives");
+                let number = number.expect("a window number");
                 capture::snapshot(number, std::path::Path::new(&out)).expect("a picture");
-                log::info!("shot: wrote {out}");
+                log::info!("shot: wrote {out}, titled {title:?}");
                 cx.update(|cx| cx.quit());
             })
             .detach();
@@ -336,6 +338,18 @@ mod typing {
     pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
         if let Some((call, text)) = spec.split_once(':') {
             return compose(call, text, number);
+        }
+        if let "activate" | "deactivate" = spec {
+            unsafe {
+                let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+                if spec == "activate" {
+                    let _: () = msg_send![app, activateIgnoringOtherApps: YES];
+                } else {
+                    let _: () = msg_send![app, deactivate];
+                }
+            }
+            log::info!("shot: {spec}");
+            return Ok(());
         }
         let mut parts: Vec<&str> = spec.split('-').collect();
         let name = parts.pop().context("an empty key")?;

@@ -1,8 +1,12 @@
 use std::{collections::HashSet, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 
 use alacritty_terminal::{
-    event::Event, grid::Dimensions, term::ClipboardType, vte::ansi::CursorShape,
+    event::Event,
+    grid::Dimensions,
+    term::{ClipboardType, TermMode},
+    vte::ansi::CursorShape,
 };
+use ely_gpui_component::theme::ActiveTheme;
 use futures::StreamExt;
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontStyle,
@@ -11,9 +15,10 @@ use gpui::{
 };
 
 use super::{
+    find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Copy, Paste},
+    input::{self, Copy, Find, Paste},
     mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
@@ -55,13 +60,16 @@ pub struct TerminalView {
     pub(super) mouse: MouseMode,
     /// Keys whose press this terminal saw, so their releases may go out.
     pub(super) held: HashSet<String>,
+    pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
     cell: (u16, u16),
+    /// Focused in an active window, as the program last heard.
+    focused: bool,
     blinking: bool,
     shown: bool,
     _events: Task<()>,
     _blink: Task<()>,
-    _activation: Subscription,
+    _focus: [Subscription; 3],
     _settings: Subscription,
 }
 
@@ -80,21 +88,30 @@ impl TerminalView {
             let term = pty.term.lock();
             (term.columns(), term.screen_lines())
         };
+        let focus = cx.focus_handle().tab_stop(true);
+        let refocus =
+            |view: &mut Self, window: &mut Window, cx: &mut Context<Self>| view.refocus(window, cx);
         Self {
             pty,
-            focus: cx.focus_handle().tab_stop(true),
+            _focus: [
+                cx.observe_window_activation(window, refocus),
+                cx.on_focus(&focus, window, refocus),
+                cx.on_blur(&focus, window, refocus),
+            ],
+            focus,
             marked: None,
             caret: Bounds::default(),
             pointer: Pointer::default(),
             mouse: MouseMode::default(),
             held: HashSet::new(),
+            finder: None,
             size,
             cell: (8, 16),
+            focused: false,
             blinking: false,
             shown: true,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
-            _activation: cx.observe_window_activation(window, |_, _, cx| cx.notify()),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
                     .term
@@ -153,13 +170,43 @@ impl TerminalView {
         true
     }
 
+    /// Tells a program that asked, by mode 1004, when the terminal gains or loses focus.
+    fn refocus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let focused = self.focus.is_focused(window) && window.is_window_active();
+        if focused != self.focused {
+            self.focused = focused;
+            let asked = self.pty.term.lock().mode().contains(TermMode::FOCUS_IN_OUT);
+            log::debug!(
+                "terminal {}: focus {}{}",
+                self.pty.pid,
+                if focused { "in" } else { "out" },
+                if asked { ", reported" } else { "" }
+            );
+            if asked {
+                self.pty.write(if focused {
+                    &b"\x1b[I"[..]
+                } else {
+                    &b"\x1b[O"[..]
+                });
+            }
+        }
+        cx.notify();
+    }
+
     fn handle(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
+        let drawn = events
+            .iter()
+            .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
         for event in events {
             match event {
                 PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
             }
+        }
+        // ponytail: a full search per output batch while find is open; search new lines alone if scrollbacks lag.
+        if drawn && self.finder.is_some() {
+            self.search(false, cx);
         }
         cx.notify();
     }
@@ -170,7 +217,10 @@ impl TerminalView {
             Event::MouseCursorDirty | Event::CursorBlinkingChange => {}
             Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
             Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
-            Event::Bell => cx.emit(TerminalEvent::Bell),
+            Event::Bell => {
+                log::debug!("terminal {}: a bell, kept silent", self.pty.pid);
+                cx.emit(TerminalEvent::Bell);
+            }
             Event::ClipboardStore(kind, text) => {
                 log::info!("terminal {}: OSC 52 writes the {kind:?}", self.pty.pid);
                 self.copy_text(text, kind == ClipboardType::Selection, cx);
@@ -250,7 +300,10 @@ impl Render for TerminalView {
         let theme = themes::active(&settings, window.appearance());
         let term = self.pty.term.lock();
         let ink = Ink::new(theme, term.colors());
-        let shown = frame(&term, &ink);
+        let lit = self.finder.as_ref().map_or_else(Vec::new, |finder| {
+            finder.lit(&term, cx.theme().colors.warning)
+        });
+        let shown = frame(&term, &ink, &lit);
         let blinks = term.cursor_style().blinking;
         drop(term);
         let focused = self.focus.is_focused(window) && window.is_window_active();
@@ -277,6 +330,7 @@ impl Render for TerminalView {
             .on_key_up(cx.listener(Self::key_up))
             .on_action(cx.listener(|view, _: &Copy, _, cx| view.copy(cx)))
             .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
+            .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::wheel))
@@ -291,7 +345,7 @@ impl Render for TerminalView {
                 root.on_mouse_up(button, cx.listener(Self::mouse_up))
                     .on_mouse_up_out(button, cx.listener(Self::mouse_up))
             });
-        match look(&settings, &ink, window) {
+        let root = match look(&settings, &ink, window) {
             Ok(look) => {
                 self.cell = (
                     f32::from(look.cell.width).round() as u16,
@@ -310,6 +364,10 @@ impl Render for TerminalView {
                 log::error!("terminal {}: {error:#}", self.pty.pid);
                 root.text_color(ink.fg).child(format!("{error:#}"))
             }
-        }
+        };
+        div().relative().size_full().child(root).children(
+            self.find_box(cx)
+                .map(|found| div().absolute().top_2().right_4().child(found)),
+        )
     }
 }

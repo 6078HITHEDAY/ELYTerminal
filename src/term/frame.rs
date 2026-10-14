@@ -2,7 +2,7 @@ use alacritty_terminal::{
     event::EventListener,
     grid::Dimensions,
     index::Point,
-    term::{Term, cell::Cell, cell::Flags, color::Colors},
+    term::{Term, cell::Cell, cell::Flags, color::Colors, search::Match},
     vte::ansi::CursorShape,
 };
 use gpui::Hsla;
@@ -83,8 +83,8 @@ impl Frame {
     }
 }
 
-/// The screen as it shows now, scrolled back or not.
-pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
+/// The screen as it shows now, scrolled back or not; `lit` matches wear their washes.
+pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink, lit: &[(Match, Hsla)]) -> Frame {
     let content = term.renderable_content();
     let offset = content.display_offset as i32;
     let mut rows = vec![Row::default(); term.screen_lines()];
@@ -94,17 +94,23 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
         let (point, cell) = (indexed.point, indexed.cell);
         let row = (point.line.0 + offset) as usize;
         let mut look = style(cell, ink, content.colors);
-        let selected = content.selection.as_ref().is_some_and(|range| {
+        let covers = |contains: &dyn Fn(Point) -> bool| {
             let (line, column) = (point.line, point.column);
-            range.contains(point)
-                || (cell.flags.contains(Flags::WIDE_CHAR)
-                    && range.contains(Point::new(line, column + 1)))
+            contains(point)
+                || (cell.flags.contains(Flags::WIDE_CHAR) && contains(Point::new(line, column + 1)))
                 || (cell.flags.contains(Flags::WIDE_CHAR_SPACER)
-                    && range.contains(Point::new(line, column - 1)))
-        });
-        if selected {
+                    && contains(Point::new(line, column - 1)))
+        };
+        if content
+            .selection
+            .as_ref()
+            .is_some_and(|range| covers(&|at| range.contains(at)))
+        {
             look.bg = Some(ink.selection);
             look.fg = ink.selection_text.unwrap_or(look.fg);
+        } else if let Some((_, wash)) = lit.iter().find(|(hit, _)| covers(&|at| hit.contains(&at)))
+        {
+            look.bg = Some(*wash);
         }
         let spacer = cell
             .flags
@@ -213,7 +219,7 @@ mod tests {
         let mut parser: Processor = Processor::new();
         parser.advance(&mut term, bytes);
         let ink = Ink::new(themes::find("dracula").expect("dracula"), term.colors());
-        (frame(&term, &ink), ink)
+        (frame(&term, &ink, &[]), ink)
     }
 
     #[test]
@@ -319,7 +325,7 @@ mod tests {
         selection.update(Point::new(Line(0), Column(3)), Side::Left);
         term.selection = Some(selection);
         let ink = Ink::new(themes::find("dracula").expect("dracula"), term.colors());
-        let frame = frame(&term, &ink);
+        let frame = frame(&term, &ink, &[]);
         let grounds: Vec<_> = frame.rows[0]
             .runs
             .iter()
@@ -329,6 +335,49 @@ mod tests {
             &grounds[..3],
             [(1, None), (5, Some(ink.selection)), (8, None)],
             "b and both halves of the wide cell, whose spacer is picked"
+        );
+    }
+
+    #[test]
+    fn found_matches_wear_their_washes_under_the_selection() {
+        use alacritty_terminal::index::{Column, Line, Side};
+        use alacritty_terminal::selection::{Selection, SelectionType};
+        let mut term = Term::new(Config::default(), &TermSize::new(12, 3), VoidListener);
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, "ab\u{4e2d}d ab".as_bytes());
+        let at = |column| Point::new(Line(0), Column(column));
+        let ink = Ink::new(themes::find("dracula").expect("dracula"), term.colors());
+        let (found, current) = (ink.ansi[3].opacity(0.25), ink.ansi[3].opacity(0.55));
+        let lit = [(at(1)..=at(2), found), (at(6)..=at(7), current)];
+        let grounds = |frame: &Frame| -> Vec<_> {
+            frame.rows[0]
+                .runs
+                .iter()
+                .map(|(bytes, style)| (*bytes, style.bg))
+                .collect()
+        };
+        let shown = frame(&term, &ink, &lit);
+        assert_eq!(
+            &grounds(&shown)[..5],
+            [
+                (1, None),
+                (5, Some(found)),
+                (2, None),
+                (2, Some(current)),
+                (4, None)
+            ],
+            "b and both halves of the wide cell"
+        );
+        term.selection = Some(Selection::new(SelectionType::Simple, at(6), Side::Left));
+        term.selection
+            .as_mut()
+            .expect("a selection")
+            .update(at(6), Side::Right);
+        let shown = frame(&term, &ink, &lit);
+        assert_eq!(
+            grounds(&shown)[3],
+            (1, Some(ink.selection)),
+            "the selection wins"
         );
     }
 

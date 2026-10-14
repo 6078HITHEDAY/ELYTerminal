@@ -1,4 +1,5 @@
 mod boxes;
+mod find;
 pub mod frame;
 pub mod ink;
 pub mod input;
