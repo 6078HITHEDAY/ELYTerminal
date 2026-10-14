@@ -19,7 +19,8 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 - `src/main.rs`: start, window. `src/lib.rs`: the modules, public so tests reach them.
 - `src/settings`: the model, its ranges, and `SettingsStore`, the global that loads, checks and saves `settings.json`.
 - `src/themes`: built-in terminal themes, the chrome palette each maps to, and `apply`, which dresses the app for the system's appearance.
-- `src/term`: the terminal engine. `pty` starts a program through alacritty's event loop; `tap` wraps the pty so its reader scans OSC 7 before the parser. `unix` starts the program itself, so a failed `chdir` fails the start; Windows uses alacritty's ConPTY.
+- `src/term`: the terminal engine. `pty` starts a program through alacritty's event loop; `tap` wraps the pty so its reader scans OSC 7 before the parser. `unix` starts the program itself, so a failed `chdir` fails the start; Windows uses alacritty's ConPTY. `shell` writes the integration scripts at start and builds each shell's launch.
+- `assets/shell-integration`: ELYTerminal's own scripts (not Ghostty's, which are GPL): zsh through `ZDOTDIR`, bash through `--rcfile`, fish through `XDG_DATA_DIRS`, PowerShell through `-NoExit -Command`. Each prompt sends OSC 7 and, except in fish, whose `fish_title` stays, a title.
 - `assets/themes`: Ghostty theme files copied verbatim from iTerm2-Color-Schemes (MIT, its `LICENSE` beside them).
 
 ## Rules
@@ -38,4 +39,5 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 - 2026-10-14: Git through the `git` command line, not libgit2.
 - 2026-10-14: license MIT, as Ely.
 - 2026-10-14: on Unix the pty is ELYTerminal's own: alacritty 0.26 ignores `chdir`'s result, so a session could start in the wrong folder. Its traits feed alacritty's event loop, keyed 0 and 1 as alacritty's private constants are; alacritty is pinned to =0.26.0 for that.
+- 2026-10-14: bash integration loads through `--rcfile`, not Ghostty's `--posix` and `ENV`: macOS's bash 3.2 ignores `ENV` there. bash then runs as a non-login shell; on macOS the script reads the login files itself, so `logout` and `~/.bash_logout` do not apply.
 - 2026-10-14: settings refuse unknown fields; a bad settings file stops the start and is never overwritten.

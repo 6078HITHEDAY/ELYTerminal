@@ -125,6 +125,11 @@ pub(crate) fn spawn(
     })
 }
 
+/// The user's login shell: SHELL, else the password entry's.
+pub(crate) fn login_shell_path() -> io::Result<String> {
+    Ok(User::find()?.shell)
+}
+
 /// macOS runs the shell through `login` so it is a login shell on a tty, as Terminal does.
 #[cfg(target_os = "macos")]
 fn login_shell(user: &User) -> Command {

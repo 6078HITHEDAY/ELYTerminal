@@ -1,5 +1,5 @@
 use ely_gpui_component::{Assets, primitives::FocusScope, theme::ActiveTheme};
-use elyterminal::{settings::SettingsStore, themes};
+use elyterminal::{settings::SettingsStore, term::shell::ShellIntegration, themes};
 use gpui::{
     App, AppContext, Bounds, Context, FocusHandle, IntoElement, Render, Styled, TitlebarOptions,
     Window, WindowBounds, WindowOptions, px, size,
@@ -34,7 +34,7 @@ fn main() {
         .init();
     application().with_assets(Assets).run(|cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
-        if let Err(error) = SettingsStore::init(cx) {
+        if let Err(error) = SettingsStore::init(cx).and_then(|()| ShellIntegration::init(cx)) {
             log::error!("{error:#}");
             std::process::exit(1);
         }

@@ -7,7 +7,7 @@ struct Capture;
 
 impl log::Log for Capture {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= log::Level::Debug
+        metadata.level() <= log::Level::Debug && metadata.target().starts_with("elyterminal")
     }
 
     fn log(&self, record: &log::Record) {
