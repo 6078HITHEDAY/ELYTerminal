@@ -269,14 +269,11 @@ mod tests {
         assert_eq!(ran.text, format!("8 {}", u16::MAX / 8));
     }
 
-    #[test]
-    fn closing_a_session_hangs_up_its_program() {
+    /// Starts `script`, waits for it to print READY, closes it, and waits for the reap's log.
+    fn close_after_ready(script: &str, reaped: &str) {
         crate::testlog::init();
         let launch = Launch {
-            program: Some((
-                "/bin/sh".into(),
-                vec!["-c".into(), "printf READY; exec cat".into()],
-            )),
+            program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
             cwd: std::env::temp_dir(),
             env: Vec::new(),
         };
@@ -295,7 +292,7 @@ mod tests {
         });
         let pid = pty.pid;
         drop(pty);
-        let hung_up = format!("pty {pid}: hung up, signal: 1 (SIGHUP)");
+        let hung_up = format!("pty {pid}: hung up, {reaped}");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while !crate::testlog::logged(&hung_up) {
             assert!(std::time::Instant::now() < deadline, "no `{hung_up}`");
@@ -304,6 +301,16 @@ mod tests {
         assert!(crate::testlog::logged(&format!("pty {pid}: closing")));
         let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
         assert!(!alive, "the program was reaped");
+    }
+
+    #[test]
+    fn closing_a_session_hangs_up_its_program() {
+        close_after_ready("printf READY; exec cat", "signal: 1 (SIGHUP)");
+    }
+
+    #[test]
+    fn a_program_that_ignores_sighup_ends_when_the_pty_closes() {
+        close_after_ready("trap '' HUP; printf READY; exec cat", "exit status: 0");
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::{
     ffi::{CStr, CString},
     fs::File,
     io::{self, ErrorKind, Read},
-    mem::MaybeUninit,
+    mem::{ManuallyDrop, MaybeUninit},
     os::{
         fd::AsRawFd,
         unix::{ffi::OsStrExt, net::UnixStream, process::CommandExt},
@@ -35,7 +35,7 @@ const CHILD: usize = 1;
 /// A program on a pseudo-terminal, started here so a failed `chdir` fails the start.
 pub(crate) struct Pty {
     child: Child,
-    file: File,
+    file: ManuallyDrop<File>,
     signals: UnixStream,
     sig: SigId,
 }
@@ -119,7 +119,7 @@ pub(crate) fn spawn(
     }
     Ok(Pty {
         child,
-        file: File::from(master),
+        file: ManuallyDrop::new(File::from(master)),
         signals,
         sig,
     })
@@ -214,7 +214,7 @@ impl EventedReadWrite for Pty {
     ) -> io::Result<()> {
         interest.key = READ_WRITE;
         unsafe {
-            poll.add_with_mode(&self.file, interest, mode)?;
+            poll.add_with_mode(&*self.file, interest, mode)?;
             poll.add_with_mode(&self.signals, Event::readable(CHILD), PollMode::Level)
         }
     }
@@ -226,12 +226,12 @@ impl EventedReadWrite for Pty {
         mode: PollMode,
     ) -> io::Result<()> {
         interest.key = READ_WRITE;
-        poll.modify_with_mode(&self.file, interest, mode)?;
+        poll.modify_with_mode(&*self.file, interest, mode)?;
         poll.modify_with_mode(&self.signals, Event::readable(CHILD), PollMode::Level)
     }
 
     fn deregister(&mut self, poll: &Arc<Poller>) -> io::Result<()> {
-        poll.delete(&self.file)?;
+        poll.delete(&*self.file)?;
         poll.delete(&self.signals)
     }
 
@@ -284,6 +284,8 @@ impl Drop for Pty {
     fn drop(&mut self) {
         unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGHUP) };
         unregister(self.sig);
+        // Closed before the wait, so a program that ignores SIGHUP reads EOF.
+        unsafe { ManuallyDrop::drop(&mut self.file) };
         match self.child.wait() {
             Ok(status) => log::info!("pty {}: hung up, {status}", self.id()),
             Err(error) => log::error!("pty {}: cannot reap the program: {error}", self.id()),
