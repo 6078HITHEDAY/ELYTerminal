@@ -1,4 +1,4 @@
-//! `cargo run --example shot -- [--keys "a ctrl-c lopt-f"] <png> <program> [args…]`: runs a program in the main window, types the keys as AppKit events, then photographs the window.
+//! `cargo run --example shot -- [--keys "a ctrl-c lopt-f repeat-up mark:é commit:é"] <png> <program> [args…]`: runs a program in the main window, types the keys as AppKit events, then photographs the window.
 
 #[cfg(target_os = "macos")]
 fn main() {
@@ -120,12 +120,12 @@ mod typing {
     use core_graphics::geometry::CGPoint;
     use objc::{
         class, msg_send,
-        runtime::{NO, Object},
+        runtime::{NO, Object, YES},
         sel, sel_impl,
     };
 
     /// US layout key codes and what each key types.
-    const KEYS: [(&str, u16, &str); 17] = [
+    const KEYS: [(&str, u16, &str); 18] = [
         ("a", 0, "a"),
         ("c", 8, "c"),
         ("e", 14, "e"),
@@ -143,10 +143,55 @@ mod typing {
         ("left", 123, "\u{F702}"),
         ("f1", 122, "\u{F704}"),
         ("f5", 96, "\u{F708}"),
+        ("f6", 97, "\u{F709}"),
     ];
 
-    /// Posts `spec`, such as `ctrl-c` or `lopt-f`, as a key going down and up on window `number`.
+    /// AppKit's `NSRange`.
+    #[repr(C)]
+    struct Range {
+        location: u64,
+        length: u64,
+    }
+
+    fn string(text: &str) -> *mut Object {
+        let text = std::ffi::CString::new(text).expect("no NUL in key text");
+        unsafe { msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()] }
+    }
+
+    /// `mark` composes `text` as an input method does; `commit` types it.
+    fn compose(call: &str, text: &str, number: u32) -> anyhow::Result<()> {
+        let none = Range {
+            location: i64::MAX as u64,
+            length: 0,
+        };
+        unsafe {
+            let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+            let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
+            anyhow::ensure!(!window.is_null(), "no window {number}");
+            let client: *mut Object = msg_send![window, firstResponder];
+            match call {
+                "mark" => {
+                    let end = Range {
+                        location: text.encode_utf16().count() as u64,
+                        length: 0,
+                    };
+                    let _: () = msg_send![client, setMarkedText: string(text) selectedRange: end replacementRange: none];
+                }
+                "commit" => {
+                    let _: () = msg_send![client, insertText: string(text) replacementRange: none];
+                }
+                other => anyhow::bail!("no input method call {other}"),
+            }
+        }
+        log::info!("shot: {call} {text:?}");
+        Ok(())
+    }
+
+    /// Posts `spec`, such as `ctrl-c`, `lopt-f` or `repeat-up`, as a key going down and up on window `number`.
     pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
+        if let Some((call, text)) = spec.split_once(':') {
+            return compose(call, text, number);
+        }
         let mut parts: Vec<&str> = spec.split('-').collect();
         let name = parts.pop().context("an empty key")?;
         let (_, code, plain) = KEYS
@@ -154,8 +199,13 @@ mod typing {
             .find(|(key, ..)| *key == name)
             .with_context(|| format!("no key code for {name}"))?;
         let mut flags: u64 = 0;
+        let mut repeat = NO;
         for modifier in &parts {
             flags |= match *modifier {
+                "repeat" => {
+                    repeat = YES;
+                    0
+                }
                 "shift" => 0x20000 | 0x02,
                 "ctrl" => 0x40000 | 0x01,
                 "lopt" => 0x80000 | 0x20,
@@ -185,10 +235,6 @@ mod typing {
         };
         for kind in [10u64, 11] {
             unsafe {
-                let string = |text: &str| -> *mut Object {
-                    let text = std::ffi::CString::new(text).expect("no NUL in key text");
-                    msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()]
-                };
                 let event: *mut Object = msg_send![
                     class!(NSEvent),
                     keyEventWithType: kind
@@ -199,7 +245,7 @@ mod typing {
                     context: std::ptr::null_mut::<Object>()
                     characters: string(&typed)
                     charactersIgnoringModifiers: string(&ignoring)
-                    isARepeat: NO
+                    isARepeat: if kind == 10 { repeat } else { NO }
                     keyCode: *code
                 ];
                 anyhow::ensure!(!event.is_null(), "AppKit refused the key {spec}");

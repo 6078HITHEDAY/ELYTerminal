@@ -11,7 +11,7 @@ use gpui::{
 use super::{
     frame::frame,
     ink::Ink,
-    input::{self, SendBackTab, SendTab},
+    input,
     paint::{self, Look},
     pty::{Events, Pty, PtyEvent, config, fit},
 };
@@ -261,8 +261,6 @@ impl Render for TerminalView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
-            .on_action(cx.listener(|view, _: &SendTab, _, cx| view.tab(false, cx)))
-            .on_action(cx.listener(|view, _: &SendBackTab, _, cx| view.tab(true, cx)))
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))

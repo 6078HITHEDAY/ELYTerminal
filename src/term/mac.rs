@@ -1,6 +1,7 @@
+use block::ConcreteBlock;
 use objc::{
     class, msg_send,
-    runtime::{NO, Object},
+    runtime::{BOOL, NO, Object},
     sel, sel_impl,
 };
 
@@ -8,23 +9,40 @@ use objc::{
 const KEY_DOWN: u64 = 10;
 const KEY_UP: u64 = 11;
 
+/// The Command key's bit in an event's modifier flags.
+const COMMAND: u64 = 1 << 20;
+
 /// The device bits of the left and right Option keys in an event's modifier flags.
 const LEFT_OPTION: u64 = 0x20;
 const RIGHT_OPTION: u64 = 0x40;
 
-/// Which Option keys are down in the key event AppKit is handling: left, then right.
-pub fn option_sides() -> anyhow::Result<(bool, bool)> {
+/// What gpui drops from the key event AppKit is handling.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyFacts {
+    pub left_option: bool,
+    pub right_option: bool,
+    /// Held down; gpui loses this for keys AppKit routes through commands.
+    pub repeat: bool,
+}
+
+/// The facts of the key event AppKit is handling now.
+pub fn key_facts() -> anyhow::Result<KeyFacts> {
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
         let event: *mut Object = msg_send![app, currentEvent];
-        anyhow::ensure!(!event.is_null(), "macOS: no key event to read Option from");
+        anyhow::ensure!(!event.is_null(), "macOS: no key event to read");
         let kind: u64 = msg_send![event, type];
         anyhow::ensure!(
             kind == KEY_DOWN || kind == KEY_UP,
             "macOS: the current event is type {kind}, not a key"
         );
         let flags: u64 = msg_send![event, modifierFlags];
-        Ok((flags & LEFT_OPTION != 0, flags & RIGHT_OPTION != 0))
+        let repeat: BOOL = msg_send![event, isARepeat];
+        Ok(KeyFacts {
+            left_option: flags & LEFT_OPTION != 0,
+            right_option: flags & RIGHT_OPTION != 0,
+            repeat: repeat != NO,
+        })
     }
 }
 
@@ -42,4 +60,34 @@ pub fn repeat_held_keys() {
         let _: () = msg_send![store, registerDefaults: defaults];
     }
     log::info!("macOS: held keys repeat");
+}
+
+/// Hands the focused view the Command key-ups AppKit swallows, as Ghostty does.
+pub fn deliver_command_key_ups() -> anyhow::Result<()> {
+    let handler = ConcreteBlock::new(|event: *mut Object| -> *mut Object {
+        unsafe {
+            let flags: u64 = msg_send![event, modifierFlags];
+            let window: *mut Object = msg_send![event, window];
+            if flags & COMMAND == 0 || window.is_null() {
+                return event;
+            }
+            let view: *mut Object = msg_send![window, firstResponder];
+            let _: () = msg_send![view, keyUp: event];
+            std::ptr::null_mut()
+        }
+    })
+    .copy();
+    unsafe {
+        let monitor: *mut Object = msg_send![
+            class!(NSEvent),
+            addLocalMonitorForEventsMatchingMask: 1u64 << KEY_UP
+            handler: &*handler
+        ];
+        anyhow::ensure!(
+            !monitor.is_null(),
+            "macOS: AppKit refused the key-up monitor"
+        );
+    }
+    log::info!("macOS: Command key-ups reach the focused view");
+    Ok(())
 }

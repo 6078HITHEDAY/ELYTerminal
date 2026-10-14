@@ -10,6 +10,7 @@ fn key(spec: &'static str, text: &'static str) -> Key<'static> {
         shift: parts.contains(&"shift"),
         ctrl: parts.contains(&"ctrl"),
         alt: parts.contains(&"alt"),
+        platform: parts.contains(&"cmd"),
         action: Action::Press,
     }
 }
@@ -257,4 +258,66 @@ fn kitty_report_all_alternates_and_text() {
         ..all
     };
     assert_eq!(kitty(released, everything).as_deref(), Some("\x1b[13;1:3u"));
+}
+
+#[test]
+fn flags_that_only_add_fields_keep_legacy_keys() {
+    let alternates = Kitty {
+        alternates: true,
+        ..Kitty::default()
+    };
+    let bytes = |spec, flags, app_cursor| encode(&key(spec, ""), app_cursor, flags);
+    assert_eq!(bytes("ctrl+c", alternates, false), Some(vec![0x03]));
+    assert_eq!(bytes("escape", alternates, false), Some(b"\x1b".to_vec()));
+    assert_eq!(bytes("up", alternates, true), Some(b"\x1bOA".to_vec()));
+    assert_eq!(bytes("f1", alternates, false), Some(b"\x1bOP".to_vec()));
+    assert_eq!(
+        bytes("ctrl+shift+a", alternates, false),
+        Some(b"\x1b[97:65;6u".to_vec())
+    );
+    let events = Kitty {
+        events: true,
+        ..Kitty::default()
+    };
+    let released = |spec| Key {
+        action: Action::Release,
+        ..key(spec, "")
+    };
+    assert_eq!(bytes("ctrl+c", events, false), Some(vec![0x03]));
+    assert_eq!(
+        encode(&released("ctrl+c"), false, events),
+        Some(b"\x1b[99;5:3u".to_vec())
+    );
+    assert_eq!(bytes("f1", events, false), Some(b"\x1b[P".to_vec()));
+    assert_eq!(bytes("escape", events, false), Some(b"\x1b".to_vec()));
+    assert_eq!(
+        encode(&released("escape"), false, events),
+        Some(b"\x1b[27;1:3u".to_vec())
+    );
+}
+
+#[test]
+fn super_is_kittys_eighth_bit() {
+    let events = Kitty {
+        events: true,
+        ..DISAMBIGUATE
+    };
+    assert_eq!(
+        kitty(key("cmd+ctrl+c", ""), DISAMBIGUATE).as_deref(),
+        Some("\x1b[99;13u")
+    );
+    let released = Key {
+        action: Action::Release,
+        ..key("cmd+ctrl+c", "")
+    };
+    assert_eq!(kitty(released, events).as_deref(), Some("\x1b[99;13:3u"));
+    assert_eq!(legacy(key("cmd+c", ""), false), None, "Cmd types nothing");
+    assert_eq!(
+        legacy(key("cmd+up", ""), false).as_deref(),
+        Some("\x1b[1;9A")
+    );
+    assert_eq!(
+        legacy(key("cmd+enter", ""), false).as_deref(),
+        Some("\x1b[27;9;13~")
+    );
 }

@@ -56,7 +56,10 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
     #[cfg(target_os = "macos")]
-    mac::repeat_held_keys();
+    {
+        mac::repeat_held_keys();
+        mac::deliver_command_key_ups()?;
+    }
     let family = &SettingsStore::get(cx).font_family;
     anyhow::ensure!(
         cx.text_system().all_font_names().contains(family),
