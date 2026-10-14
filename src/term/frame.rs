@@ -91,15 +91,17 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
         let spacer = cell
             .flags
             .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER);
+        let hidden = cell.flags.contains(Flags::HIDDEN);
         let cluster = cell
             .zerowidth()
+            .filter(|_| !hidden)
             .filter(|marks| !marks.is_empty())
             .map(|marks| {
                 std::iter::once(cell.c)
                     .chain(marks.iter().copied())
                     .collect::<String>()
             });
-        let shown = if spacer || cluster.is_some() {
+        let shown = if spacer || hidden || cluster.is_some() {
             ' '
         } else {
             cell.c
@@ -111,7 +113,7 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
                 column: point.column.0,
                 shape: content.cursor.shape,
                 wide: cell.flags.contains(Flags::WIDE_CHAR),
-                text: cluster.clone().unwrap_or_else(|| cell.c.to_string()),
+                text: cluster.clone().unwrap_or_else(|| shown.to_string()),
                 style: look,
             });
         }
@@ -140,10 +142,13 @@ fn style(cell: &Cell, ink: &Ink, set: &Colors) -> Style {
     if flags.contains(Flags::DIM) {
         fg = fg.opacity(DIM);
     }
-    if flags.contains(Flags::HIDDEN) {
+    let hidden = flags.contains(Flags::HIDDEN);
+    if hidden {
         fg = bg;
     }
-    let underline = if flags.contains(Flags::DOUBLE_UNDERLINE) {
+    let underline = if hidden {
+        Underline::None
+    } else if flags.contains(Flags::DOUBLE_UNDERLINE) {
         Underline::Double
     } else if flags.contains(Flags::UNDERCURL) {
         Underline::Curly
@@ -165,7 +170,7 @@ fn style(cell: &Cell, ink: &Ink, set: &Colors) -> Style {
         underline_color: cell
             .underline_color()
             .map_or(fg, |color| ink.resolve(color, set)),
-        strike: flags.contains(Flags::STRIKEOUT),
+        strike: flags.contains(Flags::STRIKEOUT) && !hidden,
     }
 }
 
@@ -252,8 +257,13 @@ mod tests {
     }
 
     #[test]
-    fn hidden_text_takes_its_ground() {
-        let (frame, ink) = shown(b"\x1b[8mh");
-        assert_eq!(frame.rows[0].runs[0].1.fg, ink.bg);
+    fn hidden_cells_show_nothing_but_their_ground() {
+        let (frame, _) = shown("\x1b[8;4;9;41mSe\u{301}\x1b[0m\x1b[2D".as_bytes());
+        assert_eq!(frame.rows[0].text.trim_end(), "");
+        assert!(frame.rows[0].clusters.is_empty());
+        let (_, style) = frame.rows[0].runs[0];
+        assert_eq!((style.underline, style.strike), (Underline::None, false));
+        assert!(style.bg.is_some(), "the ground stays");
+        assert_eq!(frame.cursor.expect("a cursor").text, " ");
     }
 }

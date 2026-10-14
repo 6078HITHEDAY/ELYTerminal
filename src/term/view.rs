@@ -47,6 +47,7 @@ pub struct TerminalView {
     shown: bool,
     _events: Task<()>,
     _blink: Task<()>,
+    _activation: Subscription,
     _settings: Subscription,
 }
 
@@ -60,7 +61,7 @@ impl Focusable for TerminalView {
 
 impl TerminalView {
     /// Draws `pty`; the first layout fits its grid to the box.
-    pub fn new(pty: Pty, events: Events, cx: &mut Context<Self>) -> Self {
+    pub fn new(pty: Pty, events: Events, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let size = {
             let term = pty.term.lock();
             (term.columns(), term.screen_lines())
@@ -74,6 +75,7 @@ impl TerminalView {
             shown: true,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
+            _activation: cx.observe_window_activation(window, |_, _, cx| cx.notify()),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
                     .term
@@ -228,7 +230,7 @@ impl Render for TerminalView {
         let shown = frame(&term, &ink);
         let blinks = term.cursor_style().blinking;
         drop(term);
-        let focused = self.focus.is_focused(window);
+        let focused = self.focus.is_focused(window) && window.is_window_active();
         self.blinking = focused && blinks;
         if !self.blinking {
             self.shown = true;

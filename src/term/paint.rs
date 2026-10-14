@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
-    App, Bounds, Entity, Font, FontId, FontStyle, FontWeight, Hsla, IntoElement, Pixels, Point,
-    Size, StrikethroughStyle, Styled, TextAlign, TextRun, UnderlineStyle, Window, canvas, fill,
-    outline, point, px, size,
+    Bounds, Entity, Font, FontId, FontStyle, FontWeight, Hsla, IntoElement, Pixels, Point, Size,
+    StrikethroughStyle, Styled, TextRun, UnderlineStyle, Window, canvas, fill, outline, point, px,
+    size,
 };
 
 use super::{
@@ -48,7 +48,7 @@ pub fn grid(
                 }
             });
         },
-        move |bounds, _, window, cx| {
+        move |bounds, _, window, _| {
             log::trace!(
                 "terminal: paint {:?}, row 0 {:?}",
                 bounds,
@@ -56,10 +56,10 @@ pub fn grid(
             );
             for (index, row) in frame.rows.iter().enumerate() {
                 let top = bounds.origin + point(px(0.), cell.height * index as f32);
-                paint_row(row, top, &look, window, cx);
+                paint_row(row, top, &look, window);
             }
             if let Some((cursor, shape)) = &cursor {
-                paint_cursor(cursor, *shape, bounds.origin, &look, window, cx);
+                paint_cursor(cursor, *shape, bounds.origin, &look, window);
             }
         },
     )
@@ -97,13 +97,7 @@ fn spans(row: &super::frame::Row) -> Vec<(usize, usize, Style)> {
         .collect()
 }
 
-fn paint_row(
-    row: &super::frame::Row,
-    top: Point<Pixels>,
-    look: &Look,
-    window: &mut Window,
-    cx: &mut App,
-) {
+fn paint_row(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: &mut Window) {
     let cell = look.cell;
     let at = |column: usize| top + point(cell.width * column as f32, px(0.));
     let spans = spans(row);
@@ -123,17 +117,9 @@ fn paint_row(
             runs(text, style, style.fg, look, window)
         })
         .collect();
-    let shaped = window.text_system().shape_line(
-        row.text.clone().into(),
-        look.size,
-        &runs,
-        Some(cell.width),
-    );
-    if let Err(error) = shaped.paint(top, cell.height, TextAlign::Left, None, window, cx) {
-        log::error!("terminal: a row failed to paint: {error:#}");
-    }
+    draw(&row.text, &runs, top, Some(cell.width), look, window);
     for (column, cluster, style) in &row.clusters {
-        text(cluster, style.fg, style, at(*column), look, window, cx);
+        text(cluster, style.fg, style, at(*column), look, window);
     }
     for (column, columns, style) in spans {
         let width = cell.width * columns as f32;
@@ -169,7 +155,7 @@ fn private(ch: char) -> bool {
     matches!(ch, '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}' | '\u{100000}'..='\u{10FFFD}')
 }
 
-/// Paints `content` alone at `origin`, a cell's worth.
+/// Paints `content` alone at `origin`, a cell's top-left, its marks where shaping puts them.
 fn text(
     content: &str,
     color: Hsla,
@@ -177,18 +163,65 @@ fn text(
     origin: Point<Pixels>,
     look: &Look,
     window: &mut Window,
-    cx: &mut App,
 ) {
     let runs = runs(content, style, color, look, window);
-    let shaped = window.text_system().shape_line(
-        content.to_string().into(),
-        look.size,
-        &runs,
-        Some(look.cell.width),
-    );
-    if let Err(error) = shaped.paint(origin, look.cell.height, TextAlign::Left, None, window, cx) {
-        log::error!("terminal: `{content}` failed to paint: {error:#}");
+    draw(content, &runs, origin, None, look, window);
+}
+
+/// Shapes `content` and paints each glyph on the cell's baseline below `top`; `force` sets every advance.
+fn draw(
+    content: &str,
+    runs: &[TextRun],
+    top: Point<Pixels>,
+    force: Option<Pixels>,
+    look: &Look,
+    window: &mut Window,
+) {
+    let shaped =
+        window
+            .text_system()
+            .shape_line(content.to_string().into(), look.size, runs, force);
+    let baseline = top.y + look.baseline;
+    for run in &shaped.runs {
+        for glyph in &run.glyphs {
+            let color = color_at(runs, glyph.index);
+            let at = point(
+                top.x + glyph.position.x,
+                baseline + upward(glyph.position.y),
+            );
+            let painted = if glyph.is_emoji {
+                window.paint_emoji(at, run.font_id, glyph.id, look.size)
+            } else {
+                window.paint_glyph(at, run.font_id, glyph.id, look.size, color)
+            };
+            if let Err(error) = painted {
+                log::error!("terminal: a glyph of `{content}` failed to paint: {error:#}");
+            }
+        }
     }
+}
+
+/// The color of the run holding byte `index`.
+fn color_at(runs: &[TextRun], index: usize) -> Hsla {
+    let mut end = 0;
+    runs.iter()
+        .find(|run| {
+            end += run.len;
+            index < end
+        })
+        .expect("a glyph indexes its own text")
+        .color
+}
+
+/// CoreText gives glyph offsets growing upward; the screen grows downward.
+#[cfg(target_os = "macos")]
+fn upward(y: Pixels) -> Pixels {
+    -y
+}
+
+#[cfg(not(target_os = "macos"))]
+fn upward(y: Pixels) -> Pixels {
+    y
 }
 
 /// Underlines and strikethrough under `width` from `origin`, a cell's top-left.
@@ -252,7 +285,6 @@ fn paint_cursor(
     origin: Point<Pixels>,
     look: &Look,
     window: &mut Window,
-    cx: &mut App,
 ) {
     let cell = look.cell;
     let corner = origin
@@ -272,7 +304,6 @@ fn paint_cursor(
                 corner,
                 look,
                 window,
-                cx,
             );
         }
         CursorShape::HollowBlock => {

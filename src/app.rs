@@ -73,11 +73,11 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         ..Default::default()
     };
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
-    let terminal = cx.new(|cx| TerminalView::new(pty, events, cx));
     let window = cx.open_window(options, |window, cx| {
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
+        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
         window.focus(&terminal.focus_handle(cx), cx);
         cx.new(|cx| Workspace {
             focus: cx.focus_handle(),
