@@ -37,3 +37,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 387bfa1: FAIL. Dim geometry brightened where pieces overlapped (gpui blends each quad and path triangle on its own); a combining mark sent its drawn base back to the font, thicker and past the cell. Fixed in 2804aa6: overlaps cut from rects, strokes turned into polygons, the cross cut around its first band, a drawn base drawn under its marks; pixels of the dim row checked, no value above the dim color.
 - Round 2, 2804aa6: PASS.
+
+## T08
+
+- Round 1, 25365a9: FAIL. Ely's focus bindings took F6 and Shift-F6; any kitty flag forced disambiguation; IME commits ignored kitty; macOS repeats routed through AppKit's commands went out as presses; Cmd combos never reached kitty; a stray key.zig of 876 lines slipped past the line rule. Fixed in 11d7a30: NoAction bindings under Terminal; each flag reshapes only what it names; Cmd is Super, bit 8; repeats read from AppKit's event; a local monitor hands Command key-ups to the view; key.zig out; the line rule reads every text file. The IME finding was answered: kitty's keys.c and Ghostty's encoder send commits as UTF-8 under every flag. Mutations of the encoder shown red in a scratch copy.
+- Round 2, 11d7a30: PASS.
