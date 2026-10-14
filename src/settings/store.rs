@@ -2,6 +2,7 @@ use std::{
     fs,
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use anyhow::Context as _;
@@ -58,7 +59,17 @@ pub fn load(path: &Path) -> anyhow::Result<Settings> {
             return Err(error).with_context(|| format!("settings: cannot read {}", path.display()));
         }
     };
-    let settings: Settings = serde_json::from_str(&text)
+    let mut reader = serde_json::Deserializer::from_str(&text);
+    let settings: Settings = serde_path_to_error::deserialize(&mut reader).map_err(|error| {
+        anyhow::anyhow!(
+            "settings: {} does not parse at `{}`: {}",
+            path.display(),
+            error.path(),
+            error.inner()
+        )
+    })?;
+    reader
+        .end()
         .with_context(|| format!("settings: {} does not parse", path.display()))?;
     settings
         .validate()
@@ -74,24 +85,39 @@ pub fn save(path: &Path, settings: &Settings) -> anyhow::Result<()> {
         .with_context(|| format!("settings: {} has no folder", path.display()))?;
     fs::create_dir_all(folder)
         .with_context(|| format!("settings: cannot create {}", folder.display()))?;
-    let temp = path.with_extension("json.tmp");
     let mut text = serde_json::to_string_pretty(settings).context("settings: cannot encode")?;
     text.push('\n');
-    let mut file = fs::File::create(&temp)
-        .with_context(|| format!("settings: cannot create {}", temp.display()))?;
-    file.write_all(text.as_bytes())
-        .and_then(|()| file.sync_all())
-        .with_context(|| format!("settings: cannot write {}", temp.display()))?;
-    fs::rename(&temp, path).with_context(|| {
-        format!(
-            "settings: cannot move {} to {}",
-            temp.display(),
-            path.display()
-        )
-    })?;
+    let count = SAVES.fetch_add(1, Ordering::Relaxed);
+    let temp = path.with_extension(format!("json.{}-{count}.tmp", std::process::id()));
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .and_then(|mut file| {
+            file.write_all(text.as_bytes())?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&temp, path));
+    if let Err(error) = written {
+        if temp.exists()
+            && let Err(left) = fs::remove_file(&temp)
+        {
+            log::error!("settings: {} stays behind: {left}", temp.display());
+        }
+        return Err(error).with_context(|| {
+            format!(
+                "settings: cannot write {} through {}",
+                path.display(),
+                temp.display()
+            )
+        });
+    }
     log::info!("settings: saved {}", path.display());
     Ok(())
 }
+
+/// Saves made by this process, so each temp file has its own name.
+static SAVES: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {
@@ -130,6 +156,34 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_saves_leave_one_whole_file() {
+        let folder = folder("overlap");
+        let path = folder.join("settings.json");
+        let writers: Vec<_> = (0..4)
+            .map(|writer| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for round in 0..50 {
+                        let settings = Settings {
+                            scrollback: writer * 1000 + round,
+                            ..Settings::default()
+                        };
+                        save(&path, &settings).expect("each save lands");
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("a writer finishes");
+        }
+        let settings = load(&path).expect("the file is whole");
+        assert_eq!(settings.scrollback % 1000, 49);
+        let left: Vec<_> = fs::read_dir(&folder).expect("folder").collect();
+        assert_eq!(left.len(), 1, "only settings.json remains");
+        fs::remove_dir_all(folder).expect("cleanup");
+    }
+
+    #[test]
     fn a_missing_field_takes_its_default() {
         let folder = folder("partial");
         let path = folder.join("settings.json");
@@ -150,10 +204,17 @@ mod tests {
         let error = load(&path).expect_err("does not parse");
         assert!(format!("{error:#}").contains("does not parse"));
         assert!(error.to_string().contains("settings.json"));
-        fs::write(&path, r#"{ "cursor_style": "beam" }"#).expect("write");
-        assert!(format!("{:#}", load(&path).expect_err("unknown style")).contains("beam"));
-        fs::write(&path, r#"{ "font_sise": 12 }"#).expect("write");
-        assert!(format!("{:#}", load(&path).expect_err("unknown field")).contains("font_sise"));
+        let named = |json: &str, field: &str| {
+            fs::write(&path, json).expect("write");
+            let error = format!("{:#}", load(&path).expect_err(json));
+            assert!(error.contains("settings.json"), "{error}");
+            assert!(error.contains(field), "{error}");
+        };
+        named(r#"{ "cursor_style": "beam" }"#, "`cursor_style`");
+        named(r#"{ "scrollback": -1 }"#, "`scrollback`");
+        named(r#"{ "font_size": "large" }"#, "`font_size`");
+        named(r#"{ "font_sise": 12 }"#, "font_sise");
+        named(r#"{ "font_size": 12 } x"#, "trailing characters");
         fs::remove_dir_all(folder).expect("cleanup");
     }
 
