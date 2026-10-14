@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -50,8 +51,14 @@ impl ShellIntegration {
 pub fn install(dir: &Path) -> anyhow::Result<()> {
     for (name, text) in SCRIPTS {
         let path = dir.join(name);
-        if fs::read_to_string(&path).is_ok_and(|kept| kept == text) {
-            continue;
+        match fs::read_to_string(&path) {
+            Ok(kept) if kept == text => continue,
+            Ok(_) => {}
+            Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::InvalidData) => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("shell integration: cannot read {}", path.display()));
+            }
         }
         let folder = path
             .parent()
@@ -98,11 +105,12 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         }
         "fish" => {
             let previous = env::var("XDG_DATA_DIRS").unwrap_or_default();
-            let data = if previous.is_empty() {
-                format!("{}:/usr/local/share:/usr/share", script("fish"))
+            let rest = if previous.is_empty() {
+                "/usr/local/share:/usr/share"
             } else {
-                format!("{}:{previous}", script("fish"))
+                &previous
             };
+            let data = format!("{}:{rest}", dir.display());
             launch.env.push(("XDG_DATA_DIRS".into(), data));
             launch.env.push(("ELY_FISH_XDG_DATA_DIRS".into(), previous));
         }
@@ -113,8 +121,12 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
                 vec![
                     "-NoLogo".into(),
                     "-NoExit".into(),
+                    "-ExecutionPolicy".into(),
+                    "Bypass".into(),
                     "-Command".into(),
-                    format!(". '{file}'"),
+                    format!(
+                        "try {{ . '{file}' }} catch {{ [Console]::Error.WriteLine(\"ELYTerminal: shell integration failed: $_\"); exit 1 }}"
+                    ),
                 ],
             ));
         }

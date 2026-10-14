@@ -7,6 +7,6 @@ end
 set -e ELY_FISH_XDG_DATA_DIRS
 if status is-interactive
     function _ely_prompt --on-event fish_prompt
-        printf '\e]7;file://%s\a' (string replace -a % %25 -- $PWD)
+        printf '\e]7;file://%s\a' (string escape --style=url -- $PWD)
     end
 end

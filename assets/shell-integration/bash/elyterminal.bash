@@ -13,6 +13,16 @@ else
   [ -r ~/.bashrc ] && builtin source ~/.bashrc
 fi
 _ely_prompt() {
-  builtin printf '\e]7;file://%s\a\e]2;%s\a' "${PWD//\%/%25}" "${PWD##*/}"
+  builtin local ret=$? LC_ALL=C char url= i title
+  for (( i = 0; i < ${#PWD}; i++ )); do
+    char=${PWD:i:1}
+    case $char in
+      [[:cntrl:]]|%) builtin printf -v char '%%%02X' "'$char" ;;
+    esac
+    url+=$char
+  done
+  title=${PWD##*/}
+  builtin printf '\e]7;file://%s\a\e]2;%s\a' "$url" "${title//[[:cntrl:]]/}"
+  builtin return $ret
 }
 PROMPT_COMMAND="_ely_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"

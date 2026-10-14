@@ -8,7 +8,15 @@ fi
 [[ -r "${ZDOTDIR:-$HOME}/.zshenv" ]] && builtin source "${ZDOTDIR:-$HOME}/.zshenv"
 if [[ -o interactive ]]; then
   _ely_precmd() {
-    builtin printf '\e]7;file://%s\a\e]2;%s\a' "${PWD//\%/%25}" "${${PWD:t}:-/}"
+    builtin local ret=$? LC_ALL=C char url=
+    for char in ${(s::)PWD}; do
+      case $char in
+        [[:cntrl:]]|%) builtin printf -v char '%%%02X' "'$char" ;;
+      esac
+      url+=$char
+    done
+    builtin printf '\e]7;file://%s\a\e]2;%s\a' "$url" "${${${PWD:t}:-/}//[[:cntrl:]]/}"
+    builtin return ret
   }
   _ely_preexec() {
     builtin printf '\e]2;%s\a' "${1//[[:cntrl:]]/}"
