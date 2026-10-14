@@ -1,0 +1,23 @@
+[package]
+name = "elyterminal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "A terminal on GPUI and Ely."
+repository = "https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal"
+publish = false
+
+[dependencies]
+anyhow = "1"
+ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "12512217bd9bc652ed6bbf10461b00cc26c01c21" }
+env_logger = "0.11"
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }
+log = "0.4"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
