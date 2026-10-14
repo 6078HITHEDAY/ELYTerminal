@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     fs, io,
     path::{Path, PathBuf},
@@ -43,20 +44,37 @@ fn list(folder: &Path) -> Listing {
     Ok(entries)
 }
 
-/// Changes by path, and the folders from `root` down that hold one.
+/// `path` as marks are keyed: on macOS, whose file systems ignore Unicode forms, composed as Git writes it.
+fn mark_key(path: &Path) -> Cow<'_, Path> {
+    #[cfg(target_os = "macos")]
+    if let Some(text) = path.to_str()
+        && !unicode_normalization::is_nfc(text)
+    {
+        use unicode_normalization::UnicodeNormalization;
+        return Cow::Owned(text.nfc().collect::<String>().into());
+    }
+    Cow::Borrowed(path)
+}
+
+/// Changes by their keys, and the folders from `root` down that hold one.
 fn marks(
     root: &Path,
     changes: Vec<(PathBuf, GitStatus)>,
 ) -> (HashMap<PathBuf, GitStatus>, HashSet<PathBuf>) {
-    let dirty = changes
-        .iter()
-        .flat_map(|(path, _)| {
+    let root = mark_key(root);
+    let marks: HashMap<PathBuf, GitStatus> = changes
+        .into_iter()
+        .map(|(path, status)| (mark_key(&path).into_owned(), status))
+        .collect();
+    let dirty = marks
+        .keys()
+        .flat_map(|path| {
             let up = path.ancestors().skip(1);
-            up.take_while(|folder| folder.starts_with(root))
+            up.take_while(|folder| folder.starts_with(&root))
         })
         .map(Path::to_path_buf)
         .collect();
-    (changes.into_iter().collect(), dirty)
+    (marks, dirty)
 }
 
 /// Git's mark on a node: its letter and tint; a dot on a folder that holds changes.
@@ -191,7 +209,7 @@ impl Files {
 
     /// Folder `path`'s node, its entries once read; `untracked` when an untracked folder holds it.
     fn folder(&self, path: &Path, label: String, untracked: bool) -> TreeNode {
-        let own = |path: &Path| self.marks.get(path).copied();
+        let own = |path: &Path| self.marks.get(mark_key(path).as_ref()).copied();
         let mark = own(path).or(untracked.then_some(GitStatus::Untracked));
         let inside = mark == Some(GitStatus::Untracked);
         let node = TreeNode::new(key(path), label).icon(IconName::Folder);
@@ -199,11 +217,11 @@ impl Files {
             None => node.pending(),
             Some(Err(_)) => return node.children([]).note("unreadable").tone(Tone::Danger),
             Some(Ok(entries)) => node.children(entries.iter().map(|entry| {
-                let path = path.join(&entry.name);
+                let (path, label) = (path.join(&entry.name), sessions::one_line(&entry.name));
                 if entry.folder {
-                    return self.folder(&path, entry.name.clone(), inside);
+                    return self.folder(&path, label, inside);
                 }
-                let file = TreeNode::new(key(&path), entry.name.clone()).icon(IconName::File);
+                let file = TreeNode::new(key(&path), label).icon(IconName::File);
                 badge(
                     file,
                     own(&path).or(inside.then_some(GitStatus::Untracked)),
@@ -211,7 +229,7 @@ impl Files {
                 )
             })),
         };
-        badge(node, mark, self.dirty.contains(path))
+        badge(node, mark, self.dirty.contains(mark_key(path).as_ref()))
     }
 }
 
@@ -220,7 +238,7 @@ impl Render for Files {
         let home = dirs::home_dir();
         let label = match self.root.file_name() {
             Some(name) if home.as_deref() != Some(self.root.as_path()) => {
-                name.to_string_lossy().into()
+                sessions::one_line(&name.to_string_lossy())
             }
             _ => sessions::shown(&self.root, home.as_deref()),
         };

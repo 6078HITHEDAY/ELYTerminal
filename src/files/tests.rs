@@ -133,3 +133,87 @@ fn the_tree_wears_marks_and_an_untracked_folder_marks_what_it_holds() {
     );
     assert_eq!(files.folder(&root, "r".into(), false), expected);
 }
+
+#[test]
+fn names_with_newlines_label_on_one_line_and_keep_their_paths() {
+    let root = PathBuf::from("/r");
+    let (folder, file) = (root.join("line\nbreak"), root.join("report\n2026.txt"));
+    let mut files = Files::new(root.clone());
+    let entries = vec![
+        Entry {
+            name: "line\nbreak".into(),
+            folder: true,
+        },
+        Entry {
+            name: "report\n2026.txt".into(),
+            folder: false,
+        },
+    ];
+    files.listings.insert(root.clone(), Ok(entries));
+    let expected = TreeNode::new(key(&root), "r")
+        .icon(IconName::Folder)
+        .children([
+            TreeNode::new(key(&folder), "line␊break")
+                .icon(IconName::Folder)
+                .pending(),
+            TreeNode::new(key(&file), "report␊2026.txt").icon(IconName::File),
+        ]);
+    assert_eq!(files.folder(&root, "r".into(), false), expected);
+}
+
+/// Runs git in `root` as a fixed author, unsigned.
+#[cfg(target_os = "macos")]
+fn run(root: &Path, args: &[&str]) {
+    let done = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["-c", "user.name=Ely", "-c", "user.email=ely@example.com"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .output()
+        .expect("git runs");
+    let error = String::from_utf8_lossy(&done.stderr);
+    assert!(done.status.success(), "git {args:?}: {error}");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn decomposed_names_on_disk_wear_the_composed_marks_git_writes() {
+    let root = folder("files-nfd");
+    run(&root, &["init", "-q"]);
+    run(&root, &["config", "core.precomposeunicode", "true"]);
+    run(&root, &["config", "status.showUntrackedFiles", "normal"]);
+    let (dossier, tracked, untracked) = (
+        "dossier-e\u{301}",
+        "tracked-e\u{301}.txt",
+        "new-e\u{301}.txt",
+    );
+    fs::create_dir(root.join(dossier)).expect("a folder");
+    fs::write(root.join(dossier).join("inner.txt"), "first").expect("a file");
+    fs::write(root.join(tracked), "first").expect("a file");
+    run(&root, &["add", "."]);
+    run(&root, &["commit", "-qm", "first"]);
+    fs::write(root.join(dossier).join("inner.txt"), "second").expect("an edit");
+    fs::write(root.join(tracked), "second").expect("an edit");
+    fs::write(root.join(untracked), "new").expect("an untracked file");
+
+    let mut files = Files::new(root.clone());
+    files.listings.insert(root.clone(), list(&root));
+    let changes = git::changes(&root).expect("status").expect("a work tree");
+    (files.marks, files.dirty) = marks(&root, changes);
+    let node = |name: &str, icon| TreeNode::new(key(&root.join(name)), name).icon(icon);
+    let dotted = |node: TreeNode| node.note("•").tone(Tone::Warning);
+    let expected = dotted(
+        TreeNode::new(key(&root), "r")
+            .icon(IconName::Folder)
+            .children([
+                node(".git", IconName::Folder).pending(),
+                dotted(node(dossier, IconName::Folder).pending()),
+                node(untracked, IconName::File)
+                    .note("U")
+                    .tone(Tone::Success),
+                node(tracked, IconName::File).note("M").tone(Tone::Warning),
+            ]),
+    );
+    assert_eq!(files.folder(&root, "r".into(), false), expected);
+}

@@ -27,13 +27,25 @@ pub struct Session {
     pub _events: Subscription,
 }
 
-/// `folder` as a row shows it: the home folder as `~`.
+/// `folder` as a row shows it: the home folder as `~`, on one line.
 pub fn shown(folder: &Path, home: Option<&Path>) -> String {
-    match home.and_then(|home| folder.strip_prefix(home).ok()) {
+    let shown = match home.and_then(|home| folder.strip_prefix(home).ok()) {
         Some(rest) if rest.as_os_str().is_empty() => "~".into(),
         Some(rest) => format!("~{MAIN_SEPARATOR}{}", rest.display()),
         None => folder.display().to_string(),
-    }
+    };
+    one_line(&shown)
+}
+
+/// `text` on one line, as gpui shapes labels: each control character as its picture, `␊` for a newline.
+pub fn one_line(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\0'..='\x1f' => char::from_u32(0x2400 + c as u32).expect("a control picture"),
+            '\x7f' => '\u{2421}',
+            c => c,
+        })
+        .collect()
 }
 
 /// The session shown once session `closed` of `left + 1` is gone, `active` having been shown.
@@ -102,6 +114,16 @@ mod tests {
             "a sibling is no child"
         );
         assert_eq!(shown("/tmp"), "/tmp");
+        assert_eq!(
+            shown("/Users/ely/line\nbreak"),
+            format!("~{MAIN_SEPARATOR}line␊break")
+        );
+    }
+
+    #[test]
+    fn control_characters_show_as_their_pictures() {
+        assert_eq!(one_line("a\nb\tc\rd\0e\u{7f}"), "a␊b␉c␍d␀e␡");
+        assert_eq!(one_line("café ✓"), "café ✓", "printable text stays");
     }
 
     #[test]

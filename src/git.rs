@@ -36,11 +36,15 @@ pub fn changes(folder: &Path) -> anyhow::Result<Option<Vec<(PathBuf, GitStatus)>
         );
     }
     let place = String::from_utf8_lossy(&place.stdout);
-    let mut lines = place.lines();
-    if lines.next() != Some("true") {
-        return Ok(None);
-    }
-    let prefix = lines.next().context("git: rev-parse printed no prefix")?;
+    // The prefix may hold newlines of its own.
+    let answer = place
+        .strip_suffix('\n')
+        .and_then(|place| place.split_once('\n'));
+    let prefix = match answer {
+        Some(("true", prefix)) => prefix,
+        Some(("false", _)) => return Ok(None),
+        _ => bail!("git: rev-parse in {} printed {place:?}", folder.display()),
+    };
     let status = git(folder, &["status", "--porcelain=v1", "-z", "--", "."])?;
     if !status.status.success() {
         let error = String::from_utf8_lossy(&status.stderr);
@@ -214,5 +218,20 @@ mod tests {
         );
         assert_eq!(changes(&root.join(".git")).expect("rev-parse"), None);
         assert_eq!(changes(&folder("git-outside")).expect("rev-parse"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_named_with_a_newline_keeps_its_whole_prefix() {
+        let root = folder("git-newline");
+        run(&root, &["init", "-q"]);
+        let inner = root.join("line\nbreak");
+        fs::create_dir_all(&inner).expect("a folder");
+        fs::write(inner.join("tracked.txt"), "first").expect("a file");
+        run(&root, &["add", "."]);
+        run(&root, &["commit", "-qm", "first"]);
+        fs::write(inner.join("tracked.txt"), "second").expect("an edit");
+        let edit = (inner.join("tracked.txt"), GitStatus::Modified);
+        assert_eq!(changes(&inner).expect("status"), Some(vec![edit]));
     }
 }
