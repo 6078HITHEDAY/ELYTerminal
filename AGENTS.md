@@ -20,7 +20,7 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 
 ## Rules
 
-- Files stay at or under 500 lines. Comments are one short line, and rare.
+- Hand-written files stay at or under 500 lines; `Cargo.lock`, which Cargo writes, is exempt. Comments are one short line, and rare.
 - Fail fast. No silent fallbacks. An error names its owner and what failed.
 - Log every state change on a key path with `log`: spawn, exit, folder change, settings load and save, blur path.
 - No dead code, no versioned names, no compatibility shims.

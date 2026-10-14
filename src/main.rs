@@ -21,10 +21,21 @@ impl Render for Workspace {
     }
 }
 
+/// A Linux app with no display server fails at start instead of running headless.
+#[cfg(target_os = "linux")]
+fn application() -> gpui::Application {
+    gpui_platform::linux(gpui::WindowingModes::WAYLAND | gpui::WindowingModes::X11)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn application() -> gpui::Application {
+    gpui_platform::application()
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
         .init();
-    gpui_platform::application()
+    application()
         .with_assets(Assets)
         .run(|cx: &mut App| {
             ely_gpui_component::init(cx).expect("Ely failed to start");

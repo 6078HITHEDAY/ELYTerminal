@@ -16,6 +16,7 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: scripts/check.sh
+      - run: cargo build --locked
 
   platforms:
     strategy:
@@ -29,5 +30,5 @@ jobs:
         with:
           toolchain: "1.95"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --quiet
-      - run: cargo build
+      - run: cargo test --locked --quiet
+      - run: cargo build --locked
