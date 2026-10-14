@@ -1,11 +1,13 @@
 use std::{collections::HashSet, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 
-use alacritty_terminal::{event::Event, grid::Dimensions, vte::ansi::CursorShape};
+use alacritty_terminal::{
+    event::Event, grid::Dimensions, term::ClipboardType, vte::ansi::CursorShape,
+};
 use futures::StreamExt;
 use gpui::{
-    Bounds, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures,
-    FontStyle, FontWeight, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled,
-    Subscription, Task, Window, div, prelude::*, px, size,
+    Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontStyle,
+    FontWeight, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled, Subscription,
+    Task, Window, div, prelude::*, px, size,
 };
 
 use super::{
@@ -169,13 +171,9 @@ impl TerminalView {
             Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
             Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
             Event::Bell => cx.emit(TerminalEvent::Bell),
-            Event::ClipboardStore(_, text) => {
-                log::info!(
-                    "terminal {}: OSC 52 copied {} characters",
-                    self.pty.pid,
-                    text.chars().count()
-                );
-                cx.write_to_clipboard(ClipboardItem::new_string(text))
+            Event::ClipboardStore(kind, text) => {
+                log::info!("terminal {}: OSC 52 writes the {kind:?}", self.pty.pid);
+                self.copy_text(text, kind == ClipboardType::Selection, cx);
             }
             Event::ClipboardLoad(..) => log::error!(
                 "terminal {}: a clipboard read arrived though OSC 52 reads are off",

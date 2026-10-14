@@ -203,7 +203,7 @@ impl TerminalView {
                 self.pty.pid
             );
             if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
-                self.copy_text(text, cx);
+                self.copy_text(text, true, cx);
             }
         }
         let Some(released) = button(event.button) else {
@@ -282,18 +282,29 @@ impl TerminalView {
     /// The selection to the clipboard.
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
         match self.selected() {
-            Some(text) => self.copy_text(text, cx),
+            Some(text) => self.copy_text(text, false, cx),
             None => log::debug!("terminal {}: nothing selected to copy", self.pty.pid),
         }
     }
 
-    fn copy_text(&self, text: String, cx: &mut Context<Self>) {
+    /// Text to the clipboard; `primary` text goes to Linux's selection, as Ghostty puts it.
+    pub(super) fn copy_text(&self, text: String, primary: bool, cx: &mut Context<Self>) {
+        let count = text.chars().count();
+        let item = ClipboardItem::new_string(text);
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        if primary {
+            log::info!(
+                "terminal {}: copied {count} characters to the selection",
+                self.pty.pid
+            );
+            return cx.write_to_primary(item);
+        }
         log::info!(
-            "terminal {}: copied {} characters",
+            "terminal {}: copied {count} characters{}",
             self.pty.pid,
-            text.chars().count()
+            if primary { ", no primary here" } else { "" }
         );
-        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        cx.write_to_clipboard(item);
     }
 
     /// The clipboard's text to the program, bracketed when it asked.

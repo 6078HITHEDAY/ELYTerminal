@@ -1,0 +1,180 @@
+use super::*;
+
+fn scan(chunks: &[&[u8]]) -> Vec<String> {
+    let mut scanner = Osc7::default();
+    let mut found = Vec::new();
+    for chunk in chunks {
+        scanner.feed(chunk, &mut |body| {
+            found.push(String::from_utf8(body.to_vec()).expect("utf-8"))
+        });
+    }
+    found
+}
+
+#[test]
+fn finds_osc_7_ended_by_bel_or_st_across_reads() {
+    assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["file:///a"]);
+    assert_eq!(scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]), ["file:///b"]);
+    assert_eq!(scan(&[b"\x1b", b"]7;x\x07\x1b]7;y\x1b\\"]), ["x", "y"]);
+}
+
+#[test]
+fn other_sequences_and_cancels_pass() {
+    assert!(scan(&[b"\x1b]0;title\x07\x1b[31m"]).is_empty());
+    assert!(scan(&[b"\x1b]7;file:///a\x18\x07"]).is_empty());
+    assert_eq!(scan(&[b"\x1b]7;lost\x1b]7;kept\x07"]), ["kept"]);
+}
+
+#[test]
+fn an_overlong_body_is_dropped() {
+    let mut long = b"\x1b]7;".to_vec();
+    long.extend(std::iter::repeat_n(b'a', MOST + 1));
+    long.push(0x07);
+    assert!(scan(&[&long]).is_empty());
+    assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["b"]);
+}
+
+#[test]
+fn mouse_modes_follow_private_modes_in_order_across_reads() {
+    use crate::term::mouse::{Format, Tracking};
+    let mut modes = MouseModes::default();
+    assert_eq!(modes.feed(b"a\x1b[?"), None);
+    assert!(modes.feed(b"1006;9h").is_some());
+    assert_eq!(modes.mode.format, Format::Sgr);
+    assert_eq!(modes.mode.tracking, Tracking::X10);
+    assert_eq!(modes.feed(b"\x1b[9m\x1b[?25l\x1b[?9"), None);
+    assert!(modes.feed(b"l").is_some());
+    assert_eq!(modes.mode.tracking, Tracking::Off);
+    modes.feed(b"\x1b[?1000h\x1b[?9h\x1b[?9l");
+    assert_eq!(modes.mode.tracking, Tracking::Off, "9 replaced 1000");
+    modes.feed(b"\x1b[?1002h");
+    let reset = modes.feed(b"\x1bc");
+    assert_eq!(reset, Some(MouseMode::default()), "a reset ends it");
+    modes.feed(b"\x1b[?09;\x1b[?1003h");
+    assert_eq!(modes.mode.tracking, Tracking::Any);
+}
+
+#[test]
+fn mouse_modes_read_through_controls_as_the_parser_does() {
+    use crate::term::mouse::{Format, Tracking};
+    let mut modes = MouseModes::default();
+    modes.feed(b"\x1b[?1000\x00h\x1b[?1006");
+    modes.feed(b"\x00h");
+    let on = MouseMode {
+        tracking: Tracking::Normal,
+        format: Format::Sgr,
+    };
+    assert_eq!(
+        modes.mode, on,
+        "NUL runs inside a sequence, across reads too"
+    );
+    modes.feed(b"\x1b[?1000\x00l\x1b[?1006\x7f\xc3\xa9l");
+    assert_eq!(
+        modes.mode,
+        MouseMode::default(),
+        "DEL and high bytes are skipped"
+    );
+    modes.feed(b"\x1b\x07[?1002;12:9");
+    modes.feed(b"9:1;9h");
+    assert_eq!(
+        modes.mode.tracking,
+        Tracking::X10,
+        "subparameters are skipped"
+    );
+    modes.feed(b"\x1b[?1003\x18h\x1b[?1003\x1ah");
+    assert_eq!(modes.mode.tracking, Tracking::X10, "CAN and SUB cancel");
+    let normal = |subparameters: usize| {
+        [b"\x1b[?1000".as_slice(), &b":0".repeat(subparameters), b"h"].concat()
+    };
+    modes.feed(&normal(32));
+    assert_eq!(
+        modes.mode.tracking,
+        Tracking::X10,
+        "33 values: vte drops it"
+    );
+    modes.feed(&normal(31));
+    assert_eq!(modes.mode.tracking, Tracking::Normal, "32 values hold");
+}
+
+#[test]
+fn a_local_uri_gives_its_decoded_folder() {
+    assert_eq!(
+        folder(b"file:///tmp/ely%20dir"),
+        Some(PathBuf::from("/tmp/ely dir"))
+    );
+    assert_eq!(folder(b"file://localhost/x"), Some(PathBuf::from("/x")));
+    let host = gethostname::gethostname().into_string().expect("host");
+    let named = format!("file://{host}/y");
+    assert_eq!(folder(named.as_bytes()), Some(PathBuf::from("/y")));
+    assert_eq!(
+        folder("file:///%E4%B8%AD".as_bytes()),
+        Some(PathBuf::from("/中"))
+    );
+}
+
+#[test]
+fn other_hosts_and_bad_uris_give_none() {
+    assert_eq!(folder(b"file://elsewhere.invalid/tmp"), None);
+    assert_eq!(folder(b"http://x/y"), None);
+    assert_eq!(folder(b"file:///%FF"), None);
+}
+
+/// vte's own reading of `bytes`, under the same mode rules.
+fn parsed(bytes: &[u8]) -> MouseMode {
+    use alacritty_terminal::vte::{Params, Parser, Perform};
+    struct Modes(MouseMode);
+    impl Perform for Modes {
+        fn csi_dispatch(&mut self, params: &Params, between: &[u8], ignore: bool, action: char) {
+            if !ignore && between == b"?" && matches!(action, 'h' | 'l') {
+                for param in params.iter() {
+                    self.0.apply(u32::from(param[0]), action == 'h');
+                }
+            }
+        }
+
+        fn esc_dispatch(&mut self, between: &[u8], _: bool, byte: u8) {
+            if between.is_empty() && byte == b'c' {
+                self.0 = MouseMode::default();
+            }
+        }
+    }
+    let mut modes = Modes(MouseMode::default());
+    Parser::new().advance(&mut modes, bytes);
+    modes.0
+}
+
+#[test]
+fn the_tap_reads_mouse_modes_as_vte_does_byte_by_byte() {
+    let cases: [&[u8]; 10] = [
+        b"\x1b[?1000;1006h\x1b[?1000\x00l",
+        b"\x1b[?1000\x00h\x1b[?1006h\x1b[?1005\x0bh",
+        b"\x1b\x00\x7f[?\x07100\xc3\xa90h\x1b[?1006\x08l",
+        b"\x1b[?1002;12:99:1;9h\x1b[?:9h",
+        b"\x1b[?1003\x18h\x1b[?1003\x1ah\x1b[?1003\x1b[?1002h",
+        b"\x1b[?9h\x1b[?1000$h\x1b[?1000<h\x1b[>1000h\x1b[1000h",
+        b"\x1b]0;x\x1b[?1000h\x07\x1bP?9h\x1b\\\x1b(c\x1bc",
+        b"\x1b[?1000h\x1b[?1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31;1003h",
+        b"\x1b[?1000h\x1b[?1;2;3;4;5;6;7;8;9;10;11;12;13;14;15;16;17;18;19;20;21;22;23;24;25;26;27;28;29;30;31;32;1003l",
+        b"\x1b[?65537;1000h\x1b[?01002h\x1b[?h\x1b[?;1003h",
+    ];
+    let values = |subparameters: usize| {
+        [
+            b"\x1b[?1000h\x1b[?1003".as_slice(),
+            &b":0".repeat(subparameters),
+            b"h",
+        ]
+        .concat()
+    };
+    for case in cases
+        .map(<[u8]>::to_vec)
+        .into_iter()
+        .chain([values(31), values(32)])
+    {
+        let case = case.as_slice();
+        let mut modes = MouseModes::default();
+        for end in 1..=case.len() {
+            modes.feed(&case[end - 1..end]);
+            assert_eq!(modes.mode, parsed(&case[..end]), "{case:?} to byte {end}");
+        }
+    }
+}

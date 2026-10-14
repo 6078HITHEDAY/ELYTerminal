@@ -182,7 +182,7 @@ impl Osc7 {
     }
 }
 
-/// The most parameters one private mode sequence keeps, as vte's.
+/// The most values, subparameters too, one sequence holds before vte drops it.
 const PARAMS: usize = 32;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -194,11 +194,15 @@ enum Csi {
     Private,
 }
 
-/// The mouse modes as xterm holds them; alacritty drops 9 and splits the rest.
+/// The mouse modes as xterm holds them, read as vte reads; alacritty drops 9.
 #[derive(Default)]
 pub(crate) struct MouseModes {
     state: Csi,
     params: Vec<u32>,
+    /// Values begun, subparameters too.
+    fields: usize,
+    /// Past a `:`, whose subparameters the parser's mode sets skip.
+    sub: bool,
     mode: MouseMode,
 }
 
@@ -219,7 +223,10 @@ impl MouseModes {
             let byte = rest[0];
             rest = &rest[1..];
             self.state = match (self.state, byte) {
+                (_, 0x18 | 0x1a) => Csi::Ground,
                 (_, 0x1b) => Csi::Escape,
+                // Mid-sequence, C0 runs and DEL is skipped, as in vte.
+                (state, 0x00..=0x1f | 0x7f..=0xff) => state,
                 (Csi::Escape, b'[') => Csi::Bracket,
                 (Csi::Escape, b'c') => {
                     self.mode = MouseMode::default();
@@ -227,17 +234,25 @@ impl MouseModes {
                 }
                 (Csi::Bracket, b'?') => {
                     self.params = vec![0];
+                    self.fields = 1;
+                    self.sub = false;
                     Csi::Private
                 }
                 (Csi::Private, b'0'..=b'9') => {
-                    let last = self.params.last_mut().expect("a parameter in progress");
-                    *last = last
-                        .saturating_mul(10)
-                        .saturating_add(u32::from(byte - b'0'));
+                    if !self.sub {
+                        let last = self.params.last_mut().expect("a parameter in progress");
+                        *last = last
+                            .saturating_mul(10)
+                            .saturating_add(u32::from(byte - b'0'));
+                    }
                     Csi::Private
                 }
-                (Csi::Private, b';') if self.params.len() < PARAMS => {
-                    self.params.push(0);
+                (Csi::Private, b':' | b';') if self.fields < PARAMS => {
+                    self.fields += 1;
+                    self.sub = byte == b':';
+                    if !self.sub {
+                        self.params.push(0);
+                    }
                     Csi::Private
                 }
                 (Csi::Private, b'h' | b'l') => {
@@ -313,83 +328,4 @@ fn decode(bytes: &[u8]) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scan(chunks: &[&[u8]]) -> Vec<String> {
-        let mut scanner = Osc7::default();
-        let mut found = Vec::new();
-        for chunk in chunks {
-            scanner.feed(chunk, &mut |body| {
-                found.push(String::from_utf8(body.to_vec()).expect("utf-8"))
-            });
-        }
-        found
-    }
-
-    #[test]
-    fn finds_osc_7_ended_by_bel_or_st_across_reads() {
-        assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["file:///a"]);
-        assert_eq!(scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]), ["file:///b"]);
-        assert_eq!(scan(&[b"\x1b", b"]7;x\x07\x1b]7;y\x1b\\"]), ["x", "y"]);
-    }
-
-    #[test]
-    fn other_sequences_and_cancels_pass() {
-        assert!(scan(&[b"\x1b]0;title\x07\x1b[31m"]).is_empty());
-        assert!(scan(&[b"\x1b]7;file:///a\x18\x07"]).is_empty());
-        assert_eq!(scan(&[b"\x1b]7;lost\x1b]7;kept\x07"]), ["kept"]);
-    }
-
-    #[test]
-    fn an_overlong_body_is_dropped() {
-        let mut long = b"\x1b]7;".to_vec();
-        long.extend(std::iter::repeat_n(b'a', MOST + 1));
-        long.push(0x07);
-        assert!(scan(&[&long]).is_empty());
-        assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["b"]);
-    }
-
-    #[test]
-    fn mouse_modes_follow_private_modes_in_order_across_reads() {
-        use crate::term::mouse::{Format, Tracking};
-        let mut modes = MouseModes::default();
-        assert_eq!(modes.feed(b"a\x1b[?"), None);
-        assert!(modes.feed(b"1006;9h").is_some());
-        assert_eq!(modes.mode.format, Format::Sgr);
-        assert_eq!(modes.mode.tracking, Tracking::X10);
-        assert_eq!(modes.feed(b"\x1b[9m\x1b[?25l\x1b[?9"), None);
-        assert!(modes.feed(b"l").is_some());
-        assert_eq!(modes.mode.tracking, Tracking::Off);
-        modes.feed(b"\x1b[?1000h\x1b[?9h\x1b[?9l");
-        assert_eq!(modes.mode.tracking, Tracking::Off, "9 replaced 1000");
-        modes.feed(b"\x1b[?1002h");
-        let reset = modes.feed(b"\x1bc");
-        assert_eq!(reset, Some(MouseMode::default()), "a reset ends it");
-        modes.feed(b"\x1b[?09;\x1b[?1003h");
-        assert_eq!(modes.mode.tracking, Tracking::Any);
-    }
-
-    #[test]
-    fn a_local_uri_gives_its_decoded_folder() {
-        assert_eq!(
-            folder(b"file:///tmp/ely%20dir"),
-            Some(PathBuf::from("/tmp/ely dir"))
-        );
-        assert_eq!(folder(b"file://localhost/x"), Some(PathBuf::from("/x")));
-        let host = gethostname::gethostname().into_string().expect("host");
-        let named = format!("file://{host}/y");
-        assert_eq!(folder(named.as_bytes()), Some(PathBuf::from("/y")));
-        assert_eq!(
-            folder("file:///%E4%B8%AD".as_bytes()),
-            Some(PathBuf::from("/中"))
-        );
-    }
-
-    #[test]
-    fn other_hosts_and_bad_uris_give_none() {
-        assert_eq!(folder(b"file://elsewhere.invalid/tmp"), None);
-        assert_eq!(folder(b"http://x/y"), None);
-        assert_eq!(folder(b"file:///%FF"), None);
-    }
-}
+mod tests;
