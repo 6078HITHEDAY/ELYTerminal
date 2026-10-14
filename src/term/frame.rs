@@ -6,7 +6,10 @@ use alacritty_terminal::{
 };
 use gpui::Hsla;
 
-use super::ink::{DIM, Ink};
+use super::{
+    boxes,
+    ink::{DIM, Ink},
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Underline {
@@ -39,6 +42,8 @@ pub struct Row {
     pub runs: Vec<(usize, Style)>,
     /// Cells with combining marks, painted alone at their column.
     pub clusters: Vec<(usize, String, Style)>,
+    /// Cells the terminal draws as shapes: column, char, style.
+    pub boxes: Vec<(usize, char, Style)>,
 }
 
 /// The cursor where it shows: its cell, shape, and what the cell holds.
@@ -69,6 +74,9 @@ impl Frame {
                 let mut cells: Vec<String> = row.text.chars().map(String::from).collect();
                 for (column, cluster, _) in &row.clusters {
                     cells[*column] = cluster.clone();
+                }
+                for (column, ch, _) in &row.boxes {
+                    cells[*column] = ch.to_string();
                 }
                 cells.concat().trim_end().to_string()
             })
@@ -101,7 +109,8 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
                     .chain(marks.iter().copied())
                     .collect::<String>()
             });
-        let shown = if spacer || hidden || cluster.is_some() {
+        let drawn = !hidden && cluster.is_none() && boxes::drawn(cell.c);
+        let shown = if spacer || hidden || drawn || cluster.is_some() {
             ' '
         } else {
             cell.c
@@ -113,12 +122,17 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
                 column: point.column.0,
                 shape: content.cursor.shape,
                 wide: cell.flags.contains(Flags::WIDE_CHAR),
-                text: cluster.clone().unwrap_or_else(|| shown.to_string()),
+                text: cluster
+                    .clone()
+                    .unwrap_or_else(|| if drawn { cell.c } else { shown }.to_string()),
                 style: look,
             });
         }
         if let Some(cluster) = cluster {
             rows[row].clusters.push((point.column.0, cluster, look));
+        }
+        if drawn {
+            rows[row].boxes.push((point.column.0, cell.c, look));
         }
     }
     Frame { rows, cursor }
@@ -254,6 +268,23 @@ mod tests {
         assert_eq!(cursor.text, "中");
         let (hidden, _) = shown(b"x\x1b[?25l");
         assert_eq!(hidden.cursor, None);
+    }
+
+    #[test]
+    fn drawn_characters_leave_the_font() {
+        let (frame, ink) = shown("a\u{2500}\u{E0B0}\x1b[1D".as_bytes());
+        assert_eq!(&frame.rows[0].text[..3], "a  ");
+        let drawn: Vec<_> = frame.rows[0]
+            .boxes
+            .iter()
+            .map(|(at, ch, _)| (*at, *ch))
+            .collect();
+        assert_eq!(drawn, [(1, '\u{2500}'), (2, '\u{E0B0}')]);
+        assert_eq!(frame.rows[0].boxes[0].2.fg, ink.fg);
+        assert_eq!(frame.text(), "a\u{2500}\u{E0B0}");
+        assert_eq!(frame.cursor.expect("a cursor").text, "\u{E0B0}");
+        let (hidden, _) = shown(b"\x1b[8m\xe2\x94\x80");
+        assert!(hidden.rows[0].boxes.is_empty(), "hidden lines draw nothing");
     }
 
     #[test]

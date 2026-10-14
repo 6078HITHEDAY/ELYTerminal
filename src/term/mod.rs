@@ -1,3 +1,4 @@
+mod boxes;
 pub mod frame;
 pub mod ink;
 mod paint;
