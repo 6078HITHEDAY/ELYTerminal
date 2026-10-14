@@ -1,62 +1,20 @@
 use std::borrow::Cow;
 
 use anyhow::Context as _;
-use ely_gpui_component::{primitives::FocusScope, theme::ActiveTheme};
+use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, FocusHandle, Focusable, IntoElement, ParentElement,
-    Render, Styled, Subscription, TitlebarOptions, Window, WindowBounds, WindowHandle,
-    WindowOptions, px, size,
+    App, AppContext, Bounds, Focusable, TitlebarOptions, WindowBounds, WindowDecorations,
+    WindowHandle, WindowOptions, px, size,
 };
 
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
     settings::SettingsStore,
-    term::{
-        ICONS, Launch, MONO, TerminalEvent, TerminalView, config, input, shell::ShellIntegration,
-        spawn,
-    },
+    term::{ICONS, Launch, MONO, TerminalView, config, input, shell::ShellIntegration, spawn},
     themes,
+    workspace::{self, TITLE, Workspace},
 };
-
-/// The window title while the program names none.
-const TITLE: &str = "ELYTerminal";
-
-/// The main window's content.
-pub struct Workspace {
-    focus: FocusHandle,
-    terminal: Entity<TerminalView>,
-    _events: Subscription,
-}
-
-impl Workspace {
-    /// The window wears the terminal's title.
-    fn terminal_event(
-        &mut self,
-        _: &Entity<TerminalView>,
-        event: &TerminalEvent,
-        window: &mut Window,
-        _: &mut Context<Self>,
-    ) {
-        if let TerminalEvent::Title(title) = event {
-            let title = if title.is_empty() { TITLE } else { title };
-            if window.window_title() != title {
-                log::debug!("app: the window title is {title:?}");
-                window.set_window_title(title);
-            }
-        }
-    }
-}
-
-impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        FocusScope::new(&self.focus)
-            .root()
-            .size_full()
-            .bg(cx.theme().colors.bg)
-            .child(self.terminal.clone())
-    }
-}
 
 /// Fonts, settings, integration scripts and the chosen font, each checked before a window opens.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
@@ -82,6 +40,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     SettingsStore::init(cx)?;
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
+    workspace::bind_keys(cx);
     #[cfg(target_os = "macos")]
     {
         mac::repeat_held_keys();
@@ -103,8 +62,11 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
             title: Some(TITLE.into()),
-            ..Default::default()
+            appears_transparent: true,
+            traffic_light_position: Some(cx.theme().traffic_light_origin()),
         }),
+        // Ely's columns draw the controls; only Linux reads this, and must not draw its own.
+        window_decorations: Some(WindowDecorations::Client),
         ..Default::default()
     };
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
@@ -114,11 +76,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
             .detach();
         let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
         window.focus(&terminal.focus_handle(cx), cx);
-        cx.new(|cx| Workspace {
-            focus: cx.focus_handle(),
-            _events: cx.subscribe_in(&terminal, window, Workspace::terminal_event),
-            terminal,
-        })
+        cx.new(|cx| Workspace::new(terminal, window, cx))
     })?;
     log::info!("app: main window open");
     Ok(window)

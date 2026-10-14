@@ -4,3 +4,4 @@ pub mod term;
 #[cfg(test)]
 mod testlog;
 pub mod themes;
+pub mod workspace;

@@ -143,8 +143,9 @@ mod typing {
     };
 
     /// US layout key codes and what each key types.
-    const KEYS: [(&str, u16, &str); 19] = [
+    const KEYS: [(&str, u16, &str); 20] = [
         ("a", 0, "a"),
+        ("b", 11, "b"),
         ("c", 8, "c"),
         ("e", 14, "e"),
         ("f", 3, "f"),
