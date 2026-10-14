@@ -42,3 +42,9 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 25365a9: FAIL. Ely's focus bindings took F6 and Shift-F6; any kitty flag forced disambiguation; IME commits ignored kitty; macOS repeats routed through AppKit's commands went out as presses; Cmd combos never reached kitty; a stray key.zig of 876 lines slipped past the line rule. Fixed in 11d7a30: NoAction bindings under Terminal; each flag reshapes only what it names; Cmd is Super, bit 8; repeats read from AppKit's event; a local monitor hands Command key-ups to the view; key.zig out; the line rule reads every text file. The IME finding was answered: kitty's keys.c and Ghostty's encoder send commits as UTF-8 under every flag. Mutations of the encoder shown red in a scratch copy.
 - Round 2, 11d7a30: PASS.
+
+## T09
+
+- Round 1, 9f81f1f: FAIL. Resetting mode 9 revived an older 1000 (alacritty keeps each mouse mode apart); a second held button wiped the first one's release; URLs lost their combining marks; selections logged nothing; two shot comments ran past 200 characters. Fixed in d6fa38e: the tap holds one tracking and one format as xterm does; reported buttons kept as a set, motion reports the first held; marks kept; selection start, run and end logged; the gesture syntax moved to AGENTS.md. shot now hands real buttons to the view and shows its window without activating.
+- Round 2, d6fa38e: FAIL. A NUL inside CSI ? 1000 l ended the tap's sequence while vte runs it and goes on, so tracking stayed on. Fixed in 8bb2763: the scanner mirrors vte's escape and CSI transitions (C0 runs, DEL and high bytes skipped, CAN and SUB cancel, ESC restarts, subparameters count toward 32 values); a test compares it with vte's parser after every byte. Copy on select and OSC 52 primary writes go to Linux's selection.
+- Round 3, 8bb2763: PASS.
