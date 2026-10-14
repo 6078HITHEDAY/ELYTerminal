@@ -30,5 +30,13 @@ jobs:
         with:
           toolchain: "1.95"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --locked --quiet
+      - if: runner.os != 'Linux'
+        run: cargo test --locked --quiet
+      # The Linux job container runs as root, which ignores the file permissions the tests check.
+      - if: runner.os == 'Linux'
+        run: |
+          useradd --create-home ci
+          chmod o+x "$HOME"
+          chown -R ci "$GITHUB_WORKSPACE" "$HOME/.cargo" "$HOME/.rustup"
+          runuser -u ci -- env HOME=/home/ci CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup" PATH="$PATH" cargo test --locked --quiet
       - run: cargo build --locked

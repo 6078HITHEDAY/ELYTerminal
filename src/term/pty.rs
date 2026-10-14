@@ -18,14 +18,20 @@ pub enum PtyEvent {
     Folder(PathBuf),
 }
 
-/// Hands the grid's events to the session.
+/// Hands the grid's events to the session; `pid` names the program in logs.
 #[derive(Clone)]
-pub struct Listener(UnboundedSender<PtyEvent>);
+pub struct Listener {
+    sender: UnboundedSender<PtyEvent>,
+    pid: u32,
+}
 
 impl EventListener for Listener {
     fn send_event(&self, event: Event) {
-        if self.0.unbounded_send(PtyEvent::Term(event)).is_err() {
-            log::debug!("pty: an event after its session closed");
+        if let Event::ChildExit(status) = &event {
+            log::info!("pty {}: the program ended, {status}", self.pid);
+        }
+        if self.sender.unbounded_send(PtyEvent::Term(event)).is_err() {
+            log::debug!("pty {}: an event after its session closed", self.pid);
         }
     }
 }
@@ -43,13 +49,14 @@ pub struct Launch {
 pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub events: UnboundedReceiver<PtyEvent>,
+    pub pid: u32,
     notifier: Notifier,
 }
 
-/// Starts `launch` on a pty of `size` cells, each `cell` pixels, keeping `scrollback` lines.
+/// Starts `launch` on a pty of `columns` by `lines` cells, each `cell` pixels, keeping `scrollback` lines.
 pub fn spawn(
     launch: &Launch,
-    size: TermSize,
+    (columns, lines): (usize, usize),
     cell: (u16, u16),
     scrollback: usize,
 ) -> anyhow::Result<Pty> {
@@ -58,14 +65,9 @@ pub fn spawn(
         "pty: cannot start in {}: no such folder",
         launch.cwd.display()
     );
-    let (sender, events) = unbounded();
-    let listener = Listener(sender.clone());
-    let config = Config {
-        scrolling_history: scrollback,
-        kitty_keyboard: true,
-        ..Config::default()
-    };
-    let term = Arc::new(FairMutex::new(Term::new(config, &size, listener.clone())));
+    #[cfg(unix)]
+    rustix::fs::access(&launch.cwd, rustix::fs::Access::EXEC_OK)
+        .map_err(|error| anyhow::anyhow!("pty: cannot enter {}: {error}", launch.cwd.display()))?;
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -85,17 +87,30 @@ pub fn spawn(
         #[cfg(windows)]
         escape_args: true,
     };
-    let pty = tty::new(&options, window_size(&size, cell), 0)?;
+    let size = fit(columns, lines, cell);
+    let pty = tty::new(&options, size, 0)?;
+    let pid = child_id(&pty)?;
     log::info!(
-        "pty: started {:?} in {}, child {}",
+        "pty {pid}: started {:?} in {}",
         launch.program,
-        launch.cwd.display(),
-        child_id(&pty)
+        launch.cwd.display()
     );
+    let (sender, events) = unbounded();
+    let listener = Listener {
+        sender: sender.clone(),
+        pid,
+    };
+    let config = Config {
+        scrolling_history: scrollback,
+        kitty_keyboard: true,
+        ..Config::default()
+    };
+    let grid = TermSize::new(size.num_cols.into(), size.num_lines.into());
+    let term = Arc::new(FairMutex::new(Term::new(config, &grid, listener.clone())));
     let event_loop = EventLoop::new(
         term.clone(),
         listener,
-        Tapped::new(pty, sender),
+        Tapped::new(pty, sender, pid),
         true,
         false,
     )?;
@@ -104,6 +119,7 @@ pub fn spawn(
     Ok(Pty {
         term,
         events,
+        pid,
         notifier,
     })
 }
@@ -114,35 +130,39 @@ impl Pty {
         self.notifier.notify(bytes);
     }
 
-    /// Fits the grid and tells the program its new size.
-    pub fn resize(&mut self, size: TermSize, cell: (u16, u16)) {
-        self.notifier.on_resize(window_size(&size, cell));
-        self.term.lock().resize(size);
+    /// Fits the grid and tells the program its new size; both get the same counts.
+    pub fn resize(&mut self, (columns, lines): (usize, usize), cell: (u16, u16)) {
+        let size = fit(columns, lines, cell);
+        self.notifier.on_resize(size);
+        self.term
+            .lock()
+            .resize(TermSize::new(size.num_cols.into(), size.num_lines.into()));
     }
 }
 
 impl Drop for Pty {
     fn drop(&mut self) {
         if self.notifier.0.send(Msg::Shutdown).is_err() {
-            log::debug!("pty: the event loop had already stopped");
+            log::debug!("pty {}: the event loop had already stopped", self.pid);
         }
     }
 }
 
 #[cfg(unix)]
-fn child_id(pty: &tty::Pty) -> String {
-    pty.child().id().to_string()
+fn child_id(pty: &tty::Pty) -> anyhow::Result<u32> {
+    Ok(pty.child().id())
 }
 
 #[cfg(windows)]
-fn child_id(pty: &tty::Pty) -> String {
+fn child_id(pty: &tty::Pty) -> anyhow::Result<u32> {
     pty.child_watcher()
         .pid()
-        .map_or_else(|| "without an id".into(), |pid| pid.to_string())
+        .map(u32::from)
+        .ok_or_else(|| anyhow::anyhow!("pty: Windows gave the program no id"))
 }
 
-/// A pty's size; counts past what the kernel holds are cut and logged.
-pub fn window_size(size: &TermSize, cell: (u16, u16)) -> WindowSize {
+/// A pty's size, at least 2 by 1; counts past what the kernel holds are cut and logged.
+pub fn fit(columns: usize, lines: usize, cell: (u16, u16)) -> WindowSize {
     let cells = |count: usize, side: u16| {
         let most = (i16::MAX as u16).min(u16::MAX / side.max(1));
         let kept = u16::try_from(count).unwrap_or(u16::MAX).min(most);
@@ -152,8 +172,8 @@ pub fn window_size(size: &TermSize, cell: (u16, u16)) -> WindowSize {
         kept
     };
     WindowSize {
-        num_lines: cells(size.screen_lines, cell.1),
-        num_cols: cells(size.columns, cell.0),
+        num_lines: cells(lines.max(1), cell.1),
+        num_cols: cells(columns.max(2), cell.0),
         cell_width: cell.0,
         cell_height: cell.1,
     }
@@ -161,18 +181,31 @@ pub fn window_size(size: &TermSize, cell: (u16, u16)) -> WindowSize {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use alacritty_terminal::index::{Column, Line};
+    use alacritty_terminal::{
+        grid::Dimensions,
+        index::{Column, Line},
+    };
     use futures::StreamExt;
 
     use super::*;
 
-    fn run(script: &str) -> (Vec<PathBuf>, String, bool) {
+    struct Ran {
+        folders: Vec<PathBuf>,
+        text: String,
+        success: bool,
+        pid: u32,
+        columns: usize,
+    }
+
+    fn run(script: &str, size: (usize, usize)) -> Ran {
+        // ponytail: a second init fails by design
+        env_logger::builder().is_test(true).try_init().ok();
         let launch = Launch {
             program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
             cwd: std::env::temp_dir(),
             env: vec![("ELY".into(), "ok".into())],
         };
-        let mut pty = spawn(&launch, TermSize::new(40, 4), (8, 16), 100).expect("sh starts");
+        let mut pty = spawn(&launch, size, (8, 16), 100).expect("sh starts");
         let (folders, success) = futures::executor::block_on(async {
             let (mut folders, mut success) = (Vec::new(), false);
             while let Some(event) = pty.events.next().await {
@@ -187,25 +220,39 @@ mod tests {
         });
         let term = pty.term.lock();
         let row = &term.grid()[Line(0)];
-        let text: String = (0..20).map(|column| row[Column(column)].c).collect();
-        (folders, text.trim_end().to_string(), success)
+        let text: String = (0..24).map(|column| row[Column(column)].c).collect();
+        Ran {
+            folders,
+            text: text.trim_end().to_string(),
+            success,
+            pid: pty.pid,
+            columns: term.columns(),
+        }
     }
 
     #[test]
-    fn a_program_prints_into_the_grid_with_its_variables() {
-        let (folders, text, success) = run("printf 'ely %s' \"$ELY\"");
-        assert!(folders.is_empty());
-        assert_eq!(text, "ely ok");
-        assert!(success);
+    fn a_program_prints_into_the_grid_with_its_variables_and_id() {
+        let ran = run("printf 'ely %s %s' \"$ELY\" $$", (40, 4));
+        assert!(ran.folders.is_empty());
+        assert_eq!(ran.text, format!("ely ok {}", ran.pid));
+        assert!(ran.success);
     }
 
     #[test]
     fn osc_7_reaches_the_session_as_a_folder() {
-        let (folders, text, _) = run(
+        let ran = run(
             "printf '\\033]7;file:///tmp/a%%20b\\007x\\033]7;file://elsewhere.invalid/c\\033\\\\'",
+            (40, 4),
         );
-        assert_eq!(folders, [PathBuf::from("/tmp/a b")]);
-        assert_eq!(text, "x");
+        assert_eq!(ran.folders, [PathBuf::from("/tmp/a b")]);
+        assert_eq!(ran.text, "x");
+    }
+
+    #[test]
+    fn a_size_past_the_kernel_is_one_size_for_grid_and_program() {
+        let ran = run("stty size", (9000, 8));
+        assert_eq!(ran.columns, usize::from(u16::MAX / 8));
+        assert_eq!(ran.text, format!("8 {}", u16::MAX / 8));
     }
 
     #[test]
@@ -215,15 +262,35 @@ mod tests {
             cwd: "/nonexistent/ely".into(),
             env: Vec::new(),
         };
-        let error = spawn(&launch, TermSize::new(20, 4), (8, 16), 100)
+        let error = spawn(&launch, (20, 4), (8, 16), 100)
             .err()
             .expect("a missing folder is an error");
         assert!(error.to_string().contains("/nonexistent/ely"));
     }
 
     #[test]
-    fn more_cells_than_a_pty_holds_cap_at_its_most() {
-        let size = window_size(&TermSize::new(70_000, 24), (8, 16));
+    fn a_folder_that_cannot_be_entered_stops_the_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let folder = std::env::temp_dir().join(format!("elyterminal-shut-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a temp folder");
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o600)).expect("600");
+        let launch = Launch {
+            program: Some(("/bin/sh".into(), vec!["-c".into(), "true".into()])),
+            cwd: folder.clone(),
+            env: Vec::new(),
+        };
+        let started = spawn(&launch, (20, 4), (8, 16), 100);
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");
+        std::fs::remove_dir(&folder).expect("the temp folder goes");
+        let error = started.err().expect("a folder it cannot enter is an error");
+        assert!(error.to_string().contains("cannot enter"), "{error}");
+    }
+
+    #[test]
+    fn sizes_hold_at_least_two_by_one_and_cap_at_the_kernel() {
+        let size = fit(70_000, 24, (8, 16));
         assert_eq!((size.num_cols, size.num_lines), (u16::MAX / 8, 24));
+        let size = fit(0, 0, (8, 16));
+        assert_eq!((size.num_cols, size.num_lines), (2, 1));
     }
 }

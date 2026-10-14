@@ -17,14 +17,18 @@ pub(crate) struct Tapped<P> {
     pub inner: P,
     scanner: Osc7,
     events: UnboundedSender<PtyEvent>,
+    pid: u32,
+    last: Option<PathBuf>,
 }
 
 impl<P> Tapped<P> {
-    pub fn new(inner: P, events: UnboundedSender<PtyEvent>) -> Self {
+    pub fn new(inner: P, events: UnboundedSender<PtyEvent>, pid: u32) -> Self {
         Self {
             inner,
             scanner: Osc7::default(),
             events,
+            pid,
+            last: None,
         }
     }
 }
@@ -32,12 +36,19 @@ impl<P> Tapped<P> {
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let count = self.inner.reader().read(buf)?;
-        let events = &self.events;
+        let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         self.scanner.feed(&buf[..count], &mut |body| {
-            if let Some(folder) = folder(body)
-                && events.unbounded_send(PtyEvent::Folder(folder)).is_err()
-            {
-                log::debug!("pty: a folder report after its session closed");
+            let Some(folder) = folder(body) else {
+                return;
+            };
+            if last.as_ref() == Some(&folder) {
+                log::debug!("pty {pid}: folder {} again", folder.display());
+            } else {
+                log::info!("pty {pid}: folder {}", folder.display());
+                *last = Some(folder.clone());
+            }
+            if events.unbounded_send(PtyEvent::Folder(folder)).is_err() {
+                log::debug!("pty {pid}: a folder report after its session closed");
             }
         });
         Ok(count)
