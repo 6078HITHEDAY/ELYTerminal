@@ -53,7 +53,12 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
                 log::debug!("pty {pid}: a folder report after its session closed");
             }
         });
-        if let Some(mode) = self.mouse.feed(&buf[..count]) {
+        let resets = self.mouse.resets;
+        let changed = self.mouse.feed(&buf[..count]);
+        if self.mouse.resets != resets && events.unbounded_send(PtyEvent::Reset).is_err() {
+            log::debug!("pty {pid}: a reset after its session closed");
+        }
+        if let Some(mode) = changed {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
@@ -194,7 +199,7 @@ enum Csi {
     Private,
 }
 
-/// The mouse modes as xterm holds them, read as vte reads; alacritty drops 9.
+/// The mouse modes as xterm holds them, and resets, read as vte reads; alacritty drops 9.
 #[derive(Default)]
 pub(crate) struct MouseModes {
     state: Csi,
@@ -204,6 +209,8 @@ pub(crate) struct MouseModes {
     /// Past a `:`, whose subparameters the parser's mode sets skip.
     sub: bool,
     mode: MouseMode,
+    /// Full resets, `ESC c`, seen so far.
+    pub resets: usize,
 }
 
 impl MouseModes {
@@ -230,6 +237,7 @@ impl MouseModes {
                 (Csi::Escape, b'[') => Csi::Bracket,
                 (Csi::Escape, b'c') => {
                     self.mode = MouseMode::default();
+                    self.resets += 1;
                     Csi::Ground
                 }
                 (Csi::Bracket, b'?') => {

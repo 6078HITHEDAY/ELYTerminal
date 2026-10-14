@@ -1,13 +1,16 @@
+use std::ops::Range;
+
 use alacritty_terminal::{
     grid::Dimensions,
-    index::{Column, Direction, Point},
+    index::{Column, Line, Point},
     term::{
         Term,
-        search::{Match, RegexIter, RegexSearch},
+        cell::{Cell, Flags},
+        search::Match,
     },
 };
 use ely_gpui_component::{
-    editor::{FindOptions, FindWidget},
+    editor::{FindOptions, FindWidget, find_all},
     forms::{InputEvent, TextInput},
 };
 use gpui::{
@@ -24,7 +27,7 @@ use super::{
 pub struct Finder {
     query: Entity<TextInput>,
     options: FindOptions,
-    hits: Vec<Match>,
+    found: Found,
     current: Option<usize>,
     error: Option<SharedString>,
     _input: Subscription,
@@ -35,7 +38,8 @@ impl Finder {
     pub fn lit<T>(&self, term: &Term<T>, color: Hsla) -> Vec<(Match, Hsla)> {
         let offset = term.grid().display_offset() as i32;
         let (top, bottom) = (-offset, term.screen_lines() as i32 - 1 - offset);
-        self.hits
+        self.found
+            .hits
             .iter()
             .enumerate()
             .filter(|(_, hit)| hit.end().line.0 >= top && hit.start().line.0 <= bottom)
@@ -47,28 +51,122 @@ impl Finder {
     }
 }
 
-/// `query` under `options` as the grid's search reads it; word edges are ASCII, which its lazy DFA needs.
-fn pattern(query: &str, options: FindOptions) -> String {
-    let body = if options.regex {
-        query.to_string()
-    } else {
-        regex::escape(query)
-    };
-    let body = if options.word {
-        format!(r"(?-u:\b)(?:{body})(?-u:\b)")
-    } else {
-        body
-    };
-    let case = if options.case { "(?-i)" } else { "(?i)" };
-    format!("{case}{body}")
+/// One search of the grid: its shown text, and each match as cells and as bytes of that text.
+#[derive(Default)]
+struct Found {
+    text: String,
+    hits: Vec<Match>,
+    bytes: Vec<Range<usize>>,
+    /// The grid's history then, to follow lines that scrolled since.
+    history: usize,
 }
 
-/// Every match of `pattern` in the scrollback and the screen, oldest first.
-fn search_all<T>(term: &Term<T>, pattern: &str) -> Result<Vec<Match>, String> {
-    let mut regex = RegexSearch::new(pattern).map_err(|error| error.to_string())?;
-    let start = Point::new(term.topmost_line(), Column(0));
-    let end = Point::new(term.bottommost_line(), term.last_column());
-    Ok(RegexIter::new(start, end, Direction::Right, term, &mut regex).collect())
+const SPACERS: Flags = Flags::WIDE_CHAR_SPACER.union(Flags::LEADING_WIDE_CHAR_SPACER);
+
+/// What a cell shows: its character and marks; a hidden cell shows a space.
+fn shown(cell: &Cell) -> impl Iterator<Item = char> + '_ {
+    let hidden = cell.flags.contains(Flags::HIDDEN);
+    let marks = cell.zerowidth().filter(|_| !hidden);
+    std::iter::once(if hidden { ' ' } else { cell.c }).chain(marks.into_iter().flatten().copied())
+}
+
+/// The grid's shown text, oldest row first, lines ended by newlines; and each row's first byte.
+fn grid_text<T>(term: &Term<T>) -> (String, Vec<(usize, Line)>) {
+    let (mut text, mut rows) = (String::new(), Vec::new());
+    for line in term.topmost_line().0..=term.bottommost_line().0 {
+        let row = &term.grid()[Line(line)];
+        let cells = (0..term.columns()).map(|column| &row[Column(column)]);
+        let wraps = row[term.last_column()].flags.contains(Flags::WRAPLINE);
+        let end = if wraps {
+            term.columns()
+        } else {
+            let blank = |cell: &Cell| shown(cell).eq([' ']);
+            cells
+                .clone()
+                .rposition(|cell| !blank(cell))
+                .map_or(0, |at| at + 1)
+        };
+        rows.push((text.len(), Line(line)));
+        for cell in cells
+            .take(end)
+            .filter(|cell| !cell.flags.intersects(SPACERS))
+        {
+            text.extend(shown(cell));
+        }
+        if !wraps {
+            text.push('\n');
+        }
+    }
+    (text, rows)
+}
+
+/// The cell showing byte `offset` of the grid's text; a line's end maps to the cell after its text.
+fn cell_at<T>(term: &Term<T>, rows: &[(usize, Line)], offset: usize) -> Point {
+    let (mut end, line) = rows[rows.partition_point(|(start, _)| *start <= offset) - 1];
+    let row = &term.grid()[line];
+    for column in 0..term.columns() {
+        let cell = &row[Column(column)];
+        if !cell.flags.intersects(SPACERS) {
+            end += shown(cell).map(char::len_utf8).sum::<usize>();
+        }
+        if offset < end {
+            return Point::new(line, Column(column));
+        }
+    }
+    Point::new(line, term.last_column())
+}
+
+impl Found {
+    /// Every match of `query`, oldest first; a pattern that does not compile is an error.
+    fn search<T>(term: &Term<T>, query: &str, options: FindOptions) -> Result<Self, String> {
+        let history = term.grid().history_size();
+        if query.is_empty() {
+            return Ok(Self {
+                history,
+                ..Self::default()
+            });
+        }
+        let (text, rows) = grid_text(term);
+        let bytes = find_all(&text, query, options)?;
+        let hits = bytes
+            .iter()
+            .map(|range| cell_at(term, &rows, range.start)..=cell_at(term, &rows, range.end - 1))
+            .collect();
+        Ok(Self {
+            text,
+            hits,
+            bytes,
+            history,
+        })
+    }
+
+    /// The bytes of the line holding byte `offset`.
+    fn line(&self, offset: usize) -> Range<usize> {
+        let start = self.text[..offset].rfind('\n').map_or(0, |at| at + 1);
+        let end = self.text[offset..]
+            .find('\n')
+            .map_or(self.text.len(), |at| offset + at);
+        start..end
+    }
+
+    /// The match that was `then`'s `at`: same line and place, nearest its scrolled spot; else the nearest.
+    fn follow(&self, then: &Found, at: usize) -> Option<usize> {
+        let was = then.bytes[at].start;
+        let line = then.line(was);
+        let (text, offset) = (&then.text[line.clone()], was - line.start);
+        let scrolled = self.history as i32 - then.history as i32;
+        let expected = then.hits[at].start().line.0 - scrolled;
+        let distance = |index: &usize| (self.hits[*index].start().line.0 - expected).abs();
+        let all = 0..self.hits.len();
+        all.clone()
+            .filter(|&index| {
+                let start = self.bytes[index].start;
+                let line = self.line(start);
+                start - line.start == offset && self.text[line] == *text
+            })
+            .min_by_key(distance)
+            .or_else(|| all.min_by_key(distance))
+    }
 }
 
 /// The match one newer than `current`, or one older, round the ends.
@@ -97,7 +195,7 @@ impl TerminalView {
                 self.finder = Some(Finder {
                     query: query.clone(),
                     options: FindOptions::default(),
-                    hits: Vec::new(),
+                    found: Found::default(),
                     current: None,
                     error: None,
                     _input: input,
@@ -121,40 +219,42 @@ impl TerminalView {
         }
     }
 
-    /// Finds the query anew; a `fresh` query starts at the newest match, new output keeps the current one.
+    /// Finds the query anew: fresh, from the newest match; else following the current one.
     pub(super) fn search(&mut self, fresh: bool, cx: &mut Context<Self>) {
         let Some(finder) = self.finder.as_mut() else {
             return;
         };
         let query = finder.query.read(cx).text().to_string();
-        let found = if query.is_empty() {
-            Ok(Vec::new())
-        } else {
-            search_all(&self.pty.term.lock(), &pattern(&query, finder.options))
-        };
-        let (hits, error) = match found {
-            Ok(hits) => (hits, None),
+        let found = Found::search(&self.pty.term.lock(), &query, finder.options);
+        let (found, error) = match found {
+            Ok(found) => (found, None),
             Err(error) => {
                 log::debug!(
                     "terminal {}: {query:?} is no pattern: {error}",
                     self.pty.pid
                 );
-                (Vec::new(), Some(SharedString::from(error)))
+                (Found::default(), Some(SharedString::from(error)))
             }
         };
-        let newest = hits.len().checked_sub(1);
-        let kept = finder.current.filter(|at| *at < hits.len());
-        finder.current = if fresh { newest } else { kept.or(newest) };
+        finder.current = match finder.current {
+            Some(at) if !fresh => found.follow(&finder.found, at),
+            _ => found.hits.len().checked_sub(1),
+        };
         finder.error = error;
-        finder.hits = hits;
+        finder.found = found;
         if fresh {
             log::debug!(
                 "terminal {}: {} matches of {query:?}",
                 self.pty.pid,
-                finder.hits.len()
+                finder.found.hits.len()
             );
             self.reveal(cx);
         } else {
+            let count = finder.found.hits.len();
+            log::trace!(
+                "terminal {}: {count} matches as the grid changed",
+                self.pty.pid
+            );
             cx.notify();
         }
     }
@@ -164,7 +264,7 @@ impl TerminalView {
         let Some(finder) = self.finder.as_mut() else {
             return;
         };
-        finder.current = stepped(finder.current, finder.hits.len(), newer);
+        finder.current = stepped(finder.current, finder.found.hits.len(), newer);
         self.reveal(cx);
         cx.notify();
     }
@@ -172,7 +272,7 @@ impl TerminalView {
     fn reveal(&mut self, cx: &mut Context<Self>) {
         let start = self.finder.as_ref().and_then(|finder| {
             let at = finder.current?;
-            Some(*finder.hits[at].start())
+            Some(*finder.found.hits[at].start())
         });
         if let Some(start) = start {
             log::trace!("terminal {}: match at {start:?}", self.pty.pid);
@@ -192,7 +292,7 @@ impl TerminalView {
     pub(super) fn find_box(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let finder = self.finder.as_ref()?;
         let (flip, step, close, back) = (cx.entity(), cx.entity(), cx.entity(), cx.entity());
-        let total = finder.hits.len();
+        let total = finder.found.hits.len();
         let widget = FindWidget::new(
             ("find", cx.entity_id()),
             &finder.query,
@@ -219,46 +319,4 @@ impl TerminalView {
 }
 
 #[cfg(test)]
-mod tests {
-    use alacritty_terminal::term::test::mock_term;
-
-    use super::*;
-
-    #[test]
-    fn find_takes_case_words_and_patterns() {
-        let term = mock_term("one two One\r\nthree phone one");
-        let count = |query: &str, options: FindOptions| {
-            search_all(&term, &pattern(query, options)).map(|all| all.len())
-        };
-        assert_eq!(count("one", FindOptions::default()), Ok(4));
-        let case = FindOptions {
-            case: true,
-            ..FindOptions::default()
-        };
-        assert_eq!(count("One", case), Ok(1));
-        let word = FindOptions {
-            word: true,
-            ..FindOptions::default()
-        };
-        assert_eq!(count("one", word), Ok(3), "phone holds no whole word");
-        let regex = FindOptions {
-            regex: true,
-            ..FindOptions::default()
-        };
-        assert_eq!(count("t[wh]", regex), Ok(2));
-        assert_eq!(
-            count("(", FindOptions::default()),
-            Ok(0),
-            "plain text is escaped"
-        );
-        assert!(count("(", regex).is_err());
-    }
-
-    #[test]
-    fn steps_go_round_the_ends() {
-        assert_eq!(stepped(Some(0), 3, false), Some(2));
-        assert_eq!(stepped(Some(2), 3, true), Some(0));
-        assert_eq!(stepped(Some(1), 3, false), Some(0));
-        assert_eq!(stepped(None, 0, true), None);
-    }
-}
+mod tests;

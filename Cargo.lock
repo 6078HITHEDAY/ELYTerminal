@@ -1766,7 +1766,6 @@ dependencies = [
  "objc",
  "polling",
  "raw-window-handle",
- "regex",
  "rustix-openpty",
  "serde",
  "serde_json",

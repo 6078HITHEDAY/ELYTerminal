@@ -56,7 +56,7 @@ pub fn grid(
                         origin + point(cell.width * column as f32, cell.height * row as f32);
                     view.caret = Bounds::new(corner, cell);
                 }
-                if view.fit(columns, lines) {
+                if view.fit(columns, lines, cx) {
                     cx.notify();
                     window.request_animation_frame();
                 }

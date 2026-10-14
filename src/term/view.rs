@@ -117,6 +117,7 @@ impl TerminalView {
                     .term
                     .lock()
                     .set_options(config(SettingsStore::get(cx)));
+                view.search(false, cx);
                 cx.notify();
             }),
         }
@@ -158,7 +159,7 @@ impl TerminalView {
     }
 
     /// Fits the grid to `columns` by `lines`; true when the size changed.
-    pub(super) fn fit(&mut self, columns: usize, lines: usize) -> bool {
+    pub(super) fn fit(&mut self, columns: usize, lines: usize, cx: &mut Context<Self>) -> bool {
         let fitted = fit(columns, lines, self.cell);
         let size = (usize::from(fitted.num_cols), usize::from(fitted.num_lines));
         if size == self.size {
@@ -167,6 +168,7 @@ impl TerminalView {
         self.size = size;
         self.pty.resize(size, self.cell);
         log::debug!("terminal {}: {} by {}", self.pty.pid, size.0, size.1);
+        self.search(false, cx);
         true
     }
 
@@ -202,9 +204,15 @@ impl TerminalView {
                 PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
+                PtyEvent::Reset => {
+                    log::debug!("terminal {}: a reset; the title follows", self.pty.pid);
+                    // Setting the options sends the grid's title, empty after a reset.
+                    let settings = config(SettingsStore::get(cx));
+                    self.pty.term.lock().set_options(settings);
+                }
             }
         }
-        // ponytail: a full search per output batch while find is open; search new lines alone if scrollbacks lag.
+        // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
             self.search(false, cx);
         }
