@@ -194,6 +194,26 @@ fn a_line_that_grows_or_changes_keeps_the_match_at_its_place() {
         "needle 6 itself before needle 60 in its place"
     );
 
+    let mut twins = term("needle\r\nneedle", 20, 3, 10);
+    let then = found(&twins, "needle", PLAIN);
+    feed(&mut twins, "!");
+    let now = found(&twins, "needle", PLAIN);
+    assert_eq!(
+        now.follow(&then, 1),
+        Some(1),
+        "the grown line, not its twin above"
+    );
+
+    let mut rewritten = term("needle\r\nA\r\nneedle", 20, 4, 10);
+    let then = found(&rewritten, "needle", PLAIN);
+    feed(&mut rewritten, "\x1b[2;1HB\x1b[3;7H!");
+    let now = found(&rewritten, "needle", PLAIN);
+    assert_eq!(
+        now.follow(&then, 1),
+        Some(1),
+        "grown in its place, though the line above changed"
+    );
+
     let mut changed = term("needle A needle B", 30, 3, 10);
     let then = found(&changed, "needle", PLAIN);
     feed(&mut changed, "\rneedle X needle Y");

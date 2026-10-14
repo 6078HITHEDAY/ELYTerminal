@@ -192,11 +192,21 @@ impl Found {
         start..self.breaks.get(ends).copied().unwrap_or(self.text.len())
     }
 
-    /// The match that was `then`'s `at`: at its place in its line, kept, grown or cut; else the nearest.
+    /// The text of the line before `line`, if one is.
+    fn above(&self, line: &Range<usize>) -> Option<&str> {
+        let end = line.start.checked_sub(1)?;
+        Some(&self.text[self.line(end)])
+    }
+
+    /// The match that was `then`'s `at`: its line kept, grown or cut, held under the same line or in place; else the nearest.
     fn follow(&self, then: &Found, at: usize) -> Option<usize> {
         let was = then.bytes[at].start;
         let line = then.line(was);
-        let (whole, offset) = (&then.text[line.clone()], was - line.start);
+        let (whole, offset, above) = (
+            &then.text[line.clone()],
+            was - line.start,
+            then.above(&line),
+        );
         let place = *then.hits[at].start();
         let grew = self.history as i32 - then.history as i32;
         // A cleared or trimmed history moves no line; a resize pulls lines back down.
@@ -209,16 +219,22 @@ impl Found {
         for (index, bytes) in self.bytes.iter().enumerate() {
             let line = self.line(bytes.start);
             let now = &self.text[line.clone()];
-            let rank = match bytes.start - line.start == offset {
-                true if now == whole => 0,
-                true if now.starts_with(whole) || whole.starts_with(now) => 1,
-                _ => 2,
+            let kin = match bytes.start - line.start == offset {
+                true if now == whole => Some(0),
+                true if now.starts_with(whole) || whole.starts_with(now) => Some(1),
+                _ => None,
             };
             let start = self.hits[index].start();
             let away = (start.line.0 + scrolled - place.line.0).abs();
-            let key = (rank, away, start.column.0.abs_diff(place.column.0));
-            if best.is_none_or(|(least, _)| key < least) {
-                best = Some((key, index));
+            let column = start.column.0.abs_diff(place.column.0);
+            let held = kin.is_some() && ((away, column) == (0, 0) || self.above(&line) == above);
+            let rank = match kin {
+                Some(kin) if held => kin,
+                Some(kin) => 2 + kin,
+                None => 4,
+            };
+            if best.is_none_or(|(least, _)| (rank, away, column) < least) {
+                best = Some(((rank, away, column), index));
             }
         }
         best.map(|(_, index)| index)
