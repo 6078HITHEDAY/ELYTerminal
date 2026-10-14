@@ -1757,12 +1757,14 @@ dependencies = [
  "gethostname",
  "gpui-pre",
  "gpui-pre-platform",
+ "libc",
  "log",
  "polling",
- "rustix",
+ "rustix-openpty",
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "signal-hook",
 ]
 
 [[package]]

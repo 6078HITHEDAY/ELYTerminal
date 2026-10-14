@@ -1,11 +1,12 @@
 use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
 
+#[cfg(windows)]
+use alacritty_terminal::tty;
 use alacritty_terminal::{
     event::{Event, EventListener, Notify, OnResize, WindowSize},
     event_loop::{EventLoop, Msg, Notifier},
     sync::FairMutex,
     term::{Config, Term, test::TermSize},
-    tty::{self, Options, Shell},
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
@@ -53,6 +54,11 @@ pub struct Pty {
     notifier: Notifier,
 }
 
+#[cfg(unix)]
+type Raw = super::unix::Pty;
+#[cfg(windows)]
+type Raw = tty::Pty;
+
 /// Starts `launch` on a pty of `columns` by `lines` cells, each `cell` pixels, keeping `scrollback` lines.
 pub fn spawn(
     launch: &Launch,
@@ -60,14 +66,6 @@ pub fn spawn(
     cell: (u16, u16),
     scrollback: usize,
 ) -> anyhow::Result<Pty> {
-    anyhow::ensure!(
-        launch.cwd.is_dir(),
-        "pty: cannot start in {}: no such folder",
-        launch.cwd.display()
-    );
-    #[cfg(unix)]
-    rustix::fs::access(&launch.cwd, rustix::fs::Access::EXEC_OK)
-        .map_err(|error| anyhow::anyhow!("pty: cannot enter {}: {error}", launch.cwd.display()))?;
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -76,20 +74,15 @@ pub fn spawn(
         env.insert("LANG".into(), "en_US.UTF-8".into());
     }
     env.extend(launch.env.iter().cloned());
-    let options = Options {
-        shell: launch
-            .program
-            .clone()
-            .map(|(program, args)| Shell::new(program, args)),
-        working_directory: Some(launch.cwd.clone()),
-        drain_on_exit: true,
-        env,
-        #[cfg(windows)]
-        escape_args: true,
-    };
     let size = fit(columns, lines, cell);
-    let pty = tty::new(&options, size, 0)?;
-    let pid = child_id(&pty)?;
+    let raw = start(launch, env, size).map_err(|error| {
+        anyhow::anyhow!(
+            "pty: cannot start {:?} in {}: {error}",
+            launch.program,
+            launch.cwd.display()
+        )
+    })?;
+    let pid = child_id(&raw)?;
     log::info!(
         "pty {pid}: started {:?} in {}",
         launch.program,
@@ -110,7 +103,7 @@ pub fn spawn(
     let event_loop = EventLoop::new(
         term.clone(),
         listener,
-        Tapped::new(pty, sender, pid),
+        Tapped::new(raw, sender, pid),
         true,
         false,
     )?;
@@ -122,6 +115,26 @@ pub fn spawn(
         pid,
         notifier,
     })
+}
+
+#[cfg(unix)]
+fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std::io::Result<Raw> {
+    super::unix::spawn(launch.program.as_ref(), &launch.cwd, &env, size)
+}
+
+#[cfg(windows)]
+fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std::io::Result<Raw> {
+    let options = tty::Options {
+        shell: launch
+            .program
+            .clone()
+            .map(|(program, args)| tty::Shell::new(program, args)),
+        working_directory: Some(launch.cwd.clone()),
+        drain_on_exit: true,
+        env,
+        escape_args: true,
+    };
+    tty::new(&options, size, 0)
 }
 
 impl Pty {
@@ -144,17 +157,19 @@ impl Drop for Pty {
     fn drop(&mut self) {
         if self.notifier.0.send(Msg::Shutdown).is_err() {
             log::debug!("pty {}: the event loop had already stopped", self.pid);
+        } else {
+            log::info!("pty {}: closing", self.pid);
         }
     }
 }
 
 #[cfg(unix)]
-fn child_id(pty: &tty::Pty) -> anyhow::Result<u32> {
-    Ok(pty.child().id())
+fn child_id(pty: &Raw) -> anyhow::Result<u32> {
+    Ok(pty.id())
 }
 
 #[cfg(windows)]
-fn child_id(pty: &tty::Pty) -> anyhow::Result<u32> {
+fn child_id(pty: &Raw) -> anyhow::Result<u32> {
     pty.child_watcher()
         .pid()
         .map(u32::from)
@@ -198,8 +213,7 @@ mod tests {
     }
 
     fn run(script: &str, size: (usize, usize)) -> Ran {
-        // ponytail: a second init fails by design
-        env_logger::builder().is_test(true).try_init().ok();
+        crate::testlog::init();
         let launch = Launch {
             program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
             cwd: std::env::temp_dir(),
@@ -256,6 +270,43 @@ mod tests {
     }
 
     #[test]
+    fn closing_a_session_hangs_up_its_program() {
+        crate::testlog::init();
+        let launch = Launch {
+            program: Some((
+                "/bin/sh".into(),
+                vec!["-c".into(), "printf READY; exec cat".into()],
+            )),
+            cwd: std::env::temp_dir(),
+            env: Vec::new(),
+        };
+        let mut pty = spawn(&launch, (20, 4), (8, 16), 100).expect("sh starts");
+        futures::executor::block_on(async {
+            while let Some(event) = pty.events.next().await {
+                let term = pty.term.lock();
+                let text: String = (0..5)
+                    .map(|column| term.grid()[Line(0)][Column(column)].c)
+                    .collect();
+                drop(term);
+                if matches!(event, PtyEvent::Term(Event::Wakeup)) && text == "READY" {
+                    break;
+                }
+            }
+        });
+        let pid = pty.pid;
+        drop(pty);
+        let hung_up = format!("pty {pid}: hung up, signal: 1 (SIGHUP)");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !crate::testlog::logged(&hung_up) {
+            assert!(std::time::Instant::now() < deadline, "no `{hung_up}`");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(crate::testlog::logged(&format!("pty {pid}: closing")));
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        assert!(!alive, "the program was reaped");
+    }
+
+    #[test]
     fn a_missing_folder_stops_the_start() {
         let launch = Launch {
             program: None,
@@ -283,7 +334,9 @@ mod tests {
         std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");
         std::fs::remove_dir(&folder).expect("the temp folder goes");
         let error = started.err().expect("a folder it cannot enter is an error");
-        assert!(error.to_string().contains("cannot enter"), "{error}");
+        let error = error.to_string();
+        assert!(error.contains("Permission denied"), "{error}");
+        assert!(error.contains(&folder.display().to_string()), "{error}");
     }
 
     #[test]
