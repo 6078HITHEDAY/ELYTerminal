@@ -64,3 +64,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 5fd674e: FAIL. A session switched while a mouse button was down left the hidden terminal's pressed button set: its release landed on the other session, and back on the first one plain moves went out as drags. Fixed in dcf9f7b: a terminal about to be hidden ends its mouse gesture as releases would, the selection drag ending and each heard press reported coming up at the last cell in the current protocol; the reviewer's repro now gives the program a press and its release, as the single-session control does.
 - Round 2, dcf9f7b: PASS.
+
+## T13
+
+- Round 1, 8369d96: FAIL. A file or folder named with a newline aborted gpui's line shaping under Ely's Ellipsis; on macOS a decomposed name on disk missed Git's composed mark; a folder named with a newline split the rev-parse prefix, so marks fell on a wrong path. Fixed in 937dab8: a label built from a path shows control characters as their pictures, the session row's folder too, which shared the cause; on macOS a name meets Git's mark in composed form; the prefix keeps its own newlines.
+- Round 2, 937dab8: PASS.

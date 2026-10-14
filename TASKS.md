@@ -34,7 +34,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 8. Right panel: Files
 
-- [ ] T13 Git/Files switch; file tree of the session's folder with Git colors; open; reload on folder and prompt.
+- [x] T13 Git/Files switch; file tree of the session's folder with Git colors; open; reload on folder and prompt.
 
 ## 9. Right panel: Git
 
