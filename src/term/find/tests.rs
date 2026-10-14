@@ -131,6 +131,16 @@ fn the_current_match_follows_its_line() {
         "of like lines, the one that scrolled"
     );
 
+    let mut cleared = term("n\r\nn\r\nn\r\nn\r\nn", 10, 3, 10);
+    let then = found(&cleared, "n", PLAIN);
+    feed(&mut cleared, "\x1b[3J");
+    let now = found(&cleared, "n", PLAIN);
+    assert_eq!(
+        now.follow(&then, 3),
+        Some(1),
+        "a cleared history moves no line"
+    );
+
     let mut gone = term("needle A\r\nneedle B\r\n\r\nneedle C", 20, 5, 10);
     let then = found(&gone, "needle", PLAIN);
     feed(&mut gone, "\x1b[2;1H\x1b[2K");
@@ -144,6 +154,64 @@ fn the_current_match_follows_its_line() {
     assert_eq!(now.follow(&then, 0), Some(0));
     assert_eq!(now.hits[0].start().column, Column(15), "the reflowed cells");
     assert_ne!(now.hits[0].start(), then.hits[0].start());
+}
+
+#[test]
+fn a_line_that_grows_or_changes_keeps_the_match_at_its_place() {
+    let mut grown = term("needle A needle B", 30, 3, 10);
+    let then = found(&grown, "needle", PLAIN);
+    feed(&mut grown, "!");
+    let now = found(&grown, "needle", PLAIN);
+    assert_eq!(
+        now.follow(&then, 1),
+        Some(1),
+        "the same text runs through it"
+    );
+
+    let mut ring = term(
+        "needle 1\r\nneedle 2\r\nneedle 3\r\nneedle 4\r\nneedle 5",
+        10,
+        3,
+        2,
+    );
+    let then = found(&ring, "needle", PLAIN);
+    feed(&mut ring, "!\r\nneedle 6");
+    let now = found(&ring, "needle", PLAIN);
+    assert_eq!(now.follow(&then, 4), Some(3), "needle 5!, a line up");
+
+    let mut both = term(
+        "needle 1\r\nneedle 2\r\nneedle 5\r\nneedle 6\r\nneedle 60",
+        10,
+        3,
+        2,
+    );
+    let then = found(&both, "needle", PLAIN);
+    feed(&mut both, "\r\nx");
+    let now = found(&both, "needle", PLAIN);
+    assert_eq!(
+        now.follow(&then, 3),
+        Some(2),
+        "needle 6 itself before needle 60 in its place"
+    );
+
+    let mut changed = term("needle A needle B", 30, 3, 10);
+    let then = found(&changed, "needle", PLAIN);
+    feed(&mut changed, "\rneedle X needle Y");
+    let now = found(&changed, "needle", PLAIN);
+    assert_eq!(now.follow(&then, 1), Some(1), "else the nearest column");
+}
+
+#[test]
+fn following_a_long_line_takes_one_pass() {
+    let mut long = term(&"a".repeat(1_000_000), 147, 48, 10_000);
+    let then = found(&long, "a", PLAIN);
+    feed(&mut long, "!");
+    let now = found(&long, "a", PLAIN);
+    let last = then.hits.len() - 1;
+    let clock = std::time::Instant::now();
+    assert_eq!(now.follow(&then, last), Some(last));
+    let took = clock.elapsed();
+    assert!(took.as_secs() < 5, "a quadratic follow took {took:?}");
 }
 
 #[test]

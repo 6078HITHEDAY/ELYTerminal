@@ -40,8 +40,10 @@ impl Workspace {
     ) {
         if let TerminalEvent::Title(title) = event {
             let title = if title.is_empty() { TITLE } else { title };
-            log::debug!("app: the window title is {title:?}");
-            window.set_window_title(title);
+            if window.window_title() != title {
+                log::debug!("app: the window title is {title:?}");
+                window.set_window_title(title);
+            }
         }
     }
 }

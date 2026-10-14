@@ -20,8 +20,6 @@ pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
     Mouse(MouseMode),
-    /// A full reset, `ESC c`, which empties the title without a title event.
-    Reset,
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.
@@ -251,7 +249,7 @@ mod tests {
                     PtyEvent::Folder(folder) => folders.push(folder),
                     PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                     PtyEvent::Term(Event::Exit) => break,
-                    PtyEvent::Term(_) | PtyEvent::Mouse(_) | PtyEvent::Reset => {}
+                    PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
                 }
             }
             (folders, success)

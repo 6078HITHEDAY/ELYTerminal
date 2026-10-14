@@ -38,12 +38,13 @@ impl Finder {
     pub fn lit<T>(&self, term: &Term<T>, color: Hsla) -> Vec<(Match, Hsla)> {
         let offset = term.grid().display_offset() as i32;
         let (top, bottom) = (-offset, term.screen_lines() as i32 - 1 - offset);
-        self.found
-            .hits
+        let hits = &self.found.hits;
+        let first = hits.partition_point(|hit| hit.end().line.0 < top);
+        hits[first..]
             .iter()
-            .enumerate()
-            .filter(|(_, hit)| hit.end().line.0 >= top && hit.start().line.0 <= bottom)
-            .map(|(at, hit)| {
+            .take_while(|hit| hit.start().line.0 <= bottom)
+            .zip(first..)
+            .map(|(hit, at)| {
                 let wash = if Some(at) == self.current { 0.55 } else { 0.25 };
                 (hit.clone(), color.opacity(wash))
             })
@@ -51,14 +52,17 @@ impl Finder {
     }
 }
 
-/// One search of the grid: its shown text, and each match as cells and as bytes of that text.
+/// One search of the grid: its shown text and line ends, and each match as cells and as bytes.
 #[derive(Default)]
 struct Found {
     text: String,
+    /// Where each newline sits in the text.
+    breaks: Vec<usize>,
     hits: Vec<Match>,
     bytes: Vec<Range<usize>>,
-    /// The grid's history then, to follow lines that scrolled since.
+    /// The grid's history and size then, to follow lines that scrolled since.
     history: usize,
+    size: (usize, usize),
 }
 
 const SPACERS: Flags = Flags::WIDE_CHAR_SPACER.union(Flags::LEADING_WIDE_CHAR_SPACER);
@@ -100,72 +104,124 @@ fn grid_text<T>(term: &Term<T>) -> (String, Vec<(usize, Line)>) {
     (text, rows)
 }
 
-/// The cell showing byte `offset` of the grid's text; a line's end maps to the cell after its text.
-fn cell_at<T>(term: &Term<T>, rows: &[(usize, Line)], offset: usize) -> Point {
-    let (mut end, line) = rows[rows.partition_point(|(start, _)| *start <= offset) - 1];
-    let row = &term.grid()[line];
-    for column in 0..term.columns() {
-        let cell = &row[Column(column)];
-        if !cell.flags.intersects(SPACERS) {
-            end += shown(cell).map(char::len_utf8).sum::<usize>();
+/// Walks the grid's cells in text order, so rising byte offsets map to cells in one pass.
+struct Walk<'a, T> {
+    term: &'a Term<T>,
+    rows: &'a [(usize, Line)],
+    row: usize,
+    column: usize,
+    /// The text's byte where `column` starts.
+    at: usize,
+}
+
+impl<T> Walk<'_, T> {
+    /// The cell showing byte `offset`, at or past the last asked; a line's end maps past its text.
+    fn cell(&mut self, offset: usize) -> Point {
+        while self
+            .rows
+            .get(self.row + 1)
+            .is_some_and(|(start, _)| *start <= offset)
+        {
+            self.row += 1;
+            self.column = 0;
+            self.at = self.rows[self.row].0;
         }
-        if offset < end {
-            return Point::new(line, Column(column));
+        let line = self.rows[self.row].1;
+        let row = &self.term.grid()[line];
+        while self.column < self.term.columns() {
+            let cell = &row[Column(self.column)];
+            let size = match cell.flags.intersects(SPACERS) {
+                true => 0,
+                false => shown(cell).map(char::len_utf8).sum(),
+            };
+            if offset < self.at + size {
+                return Point::new(line, Column(self.column));
+            }
+            self.at += size;
+            self.column += 1;
         }
+        Point::new(line, self.term.last_column())
     }
-    Point::new(line, term.last_column())
 }
 
 impl Found {
     /// Every match of `query`, oldest first; a pattern that does not compile is an error.
     fn search<T>(term: &Term<T>, query: &str, options: FindOptions) -> Result<Self, String> {
         let history = term.grid().history_size();
+        let size = (term.columns(), term.screen_lines());
         if query.is_empty() {
             return Ok(Self {
                 history,
+                size,
                 ..Self::default()
             });
         }
         let (text, rows) = grid_text(term);
         let bytes = find_all(&text, query, options)?;
+        let mut walk = Walk {
+            term,
+            rows: &rows,
+            row: 0,
+            column: 0,
+            at: 0,
+        };
         let hits = bytes
             .iter()
-            .map(|range| cell_at(term, &rows, range.start)..=cell_at(term, &rows, range.end - 1))
+            .map(|range| {
+                let start = walk.cell(range.start);
+                start..=walk.cell(range.end - 1)
+            })
             .collect();
+        let breaks = text.match_indices('\n').map(|(at, _)| at).collect();
         Ok(Self {
             text,
+            breaks,
             hits,
             bytes,
             history,
+            size,
         })
     }
 
     /// The bytes of the line holding byte `offset`.
     fn line(&self, offset: usize) -> Range<usize> {
-        let start = self.text[..offset].rfind('\n').map_or(0, |at| at + 1);
-        let end = self.text[offset..]
-            .find('\n')
-            .map_or(self.text.len(), |at| offset + at);
-        start..end
+        let ends = self.breaks.partition_point(|&at| at < offset);
+        let start = ends
+            .checked_sub(1)
+            .map_or(0, |before| self.breaks[before] + 1);
+        start..self.breaks.get(ends).copied().unwrap_or(self.text.len())
     }
 
-    /// The match that was `then`'s `at`: same line and place, nearest its scrolled spot; else the nearest.
+    /// The match that was `then`'s `at`: at its place in its line, kept, grown or cut; else the nearest.
     fn follow(&self, then: &Found, at: usize) -> Option<usize> {
         let was = then.bytes[at].start;
         let line = then.line(was);
-        let (text, offset) = (&then.text[line.clone()], was - line.start);
-        let scrolled = self.history as i32 - then.history as i32;
-        let expected = then.hits[at].start().line.0 - scrolled;
-        let distance = |index: &usize| (self.hits[*index].start().line.0 - expected).abs();
-        let all = 0..self.hits.len();
-        all.clone()
-            .filter(|&index| {
-                let start = self.bytes[index].start;
-                let line = self.line(start);
-                start - line.start == offset && self.text[line] == *text
-            })
-            .min_by_key(distance)
-            .or_else(|| all.min_by_key(distance))
+        let (whole, offset) = (&then.text[line.clone()], was - line.start);
+        let place = *then.hits[at].start();
+        let grew = self.history as i32 - then.history as i32;
+        // A cleared or trimmed history moves no line; a resize pulls lines back down.
+        let scrolled = if self.size == then.size {
+            grew.max(0)
+        } else {
+            grew
+        };
+        let mut best: Option<((u8, i32, usize), usize)> = None;
+        for (index, bytes) in self.bytes.iter().enumerate() {
+            let line = self.line(bytes.start);
+            let now = &self.text[line.clone()];
+            let rank = match bytes.start - line.start == offset {
+                true if now == whole => 0,
+                true if now.starts_with(whole) || whole.starts_with(now) => 1,
+                _ => 2,
+            };
+            let start = self.hits[index].start();
+            let away = (start.line.0 + scrolled - place.line.0).abs();
+            let key = (rank, away, start.column.0.abs_diff(place.column.0));
+            if best.is_none_or(|(least, _)| key < least) {
+                best = Some((key, index));
+            }
+        }
+        best.map(|(_, index)| index)
     }
 }
 
@@ -250,9 +306,9 @@ impl TerminalView {
             );
             self.reveal(cx);
         } else {
-            let count = finder.found.hits.len();
+            let (count, current) = (finder.found.hits.len(), finder.current);
             log::trace!(
-                "terminal {}: {count} matches as the grid changed",
+                "terminal {}: {count} matches as the grid changed, current {current:?}",
                 self.pty.pid
             );
             cx.notify();

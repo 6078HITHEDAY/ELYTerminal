@@ -204,12 +204,6 @@ impl TerminalView {
                 PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
-                PtyEvent::Reset => {
-                    log::debug!("terminal {}: a reset; the title follows", self.pty.pid);
-                    // Setting the options sends the grid's title, empty after a reset.
-                    let settings = config(SettingsStore::get(cx));
-                    self.pty.term.lock().set_options(settings);
-                }
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
@@ -222,7 +216,12 @@ impl TerminalView {
     fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
             Event::Wakeup => self.shown = true,
-            Event::MouseCursorDirty | Event::CursorBlinkingChange => {}
+            Event::MouseCursorDirty => {}
+            // A reset empties the title and sends only this; setting the options sends the title.
+            Event::CursorBlinkingChange => {
+                let settings = config(SettingsStore::get(cx));
+                self.pty.term.lock().set_options(settings);
+            }
             Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
             Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
             Event::Bell => {

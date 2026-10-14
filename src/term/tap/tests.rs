@@ -50,7 +50,6 @@ fn mouse_modes_follow_private_modes_in_order_across_reads() {
     modes.feed(b"\x1b[?1002h");
     let reset = modes.feed(b"\x1bc");
     assert_eq!(reset, Some(MouseMode::default()), "a reset ends it");
-    assert_eq!(modes.resets, 1);
     modes.feed(b"\x1b[?09;\x1b[?1003h");
     assert_eq!(modes.mode.tracking, Tracking::Any);
 }
@@ -120,10 +119,10 @@ fn other_hosts_and_bad_uris_give_none() {
     assert_eq!(folder(b"file:///%FF"), None);
 }
 
-/// vte's own reading of `bytes`, under the same mode rules: the mode, and the resets.
-fn parsed(bytes: &[u8]) -> (MouseMode, usize) {
+/// vte's own reading of `bytes`, under the same mode rules.
+fn parsed(bytes: &[u8]) -> MouseMode {
     use alacritty_terminal::vte::{Params, Parser, Perform};
-    struct Modes(MouseMode, usize);
+    struct Modes(MouseMode);
     impl Perform for Modes {
         fn csi_dispatch(&mut self, params: &Params, between: &[u8], ignore: bool, action: char) {
             if !ignore && between == b"?" && matches!(action, 'h' | 'l') {
@@ -136,13 +135,12 @@ fn parsed(bytes: &[u8]) -> (MouseMode, usize) {
         fn esc_dispatch(&mut self, between: &[u8], _: bool, byte: u8) {
             if between.is_empty() && byte == b'c' {
                 self.0 = MouseMode::default();
-                self.1 += 1;
             }
         }
     }
-    let mut modes = Modes(MouseMode::default(), 0);
+    let mut modes = Modes(MouseMode::default());
     Parser::new().advance(&mut modes, bytes);
-    (modes.0, modes.1)
+    modes.0
 }
 
 #[test]
@@ -176,8 +174,7 @@ fn the_tap_reads_mouse_modes_as_vte_does_byte_by_byte() {
         let mut modes = MouseModes::default();
         for end in 1..=case.len() {
             modes.feed(&case[end - 1..end]);
-            let seen = (modes.mode, modes.resets);
-            assert_eq!(seen, parsed(&case[..end]), "{case:?} to byte {end}");
+            assert_eq!(modes.mode, parsed(&case[..end]), "{case:?} to byte {end}");
         }
     }
 }
