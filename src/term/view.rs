@@ -3,14 +3,15 @@ use std::{path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 use alacritty_terminal::{event::Event, grid::Dimensions, vte::ansi::CursorShape};
 use futures::StreamExt;
 use gpui::{
-    ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontStyle,
-    FontWeight, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, Task, Window,
-    div, prelude::*, px, size,
+    Bounds, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures,
+    FontStyle, FontWeight, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, Task,
+    Window, div, prelude::*, px, size,
 };
 
 use super::{
     frame::frame,
     ink::Ink,
+    input::{self, SendBackTab, SendTab},
     paint::{self, Look},
     pty::{Events, Pty, PtyEvent, config, fit},
 };
@@ -39,8 +40,12 @@ pub enum TerminalEvent {
 
 /// A program on a pseudo-terminal, drawn cell by cell in the theme and font the settings choose.
 pub struct TerminalView {
-    pty: Pty,
-    focus: FocusHandle,
+    pub(super) pty: Pty,
+    pub(super) focus: FocusHandle,
+    /// Text an input method is composing, drawn at the cursor.
+    pub(super) marked: Option<String>,
+    /// The cursor's cell in the window, from the last layout.
+    pub(super) caret: Bounds<Pixels>,
     size: (usize, usize),
     cell: (u16, u16),
     blinking: bool,
@@ -69,6 +74,8 @@ impl TerminalView {
         Self {
             pty,
             focus: cx.focus_handle().tab_stop(true),
+            marked: None,
+            caret: Bounds::default(),
             size,
             cell: (8, 16),
             blinking: false,
@@ -218,6 +225,8 @@ fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look>
         font,
         cursor: ink.cursor,
         cursor_text: ink.cursor_text,
+        fg: ink.fg,
+        bg: ink.bg,
     })
 }
 
@@ -248,8 +257,12 @@ impl Render for TerminalView {
             });
         let root = div()
             .id(("terminal", cx.entity_id()))
-            .key_context("Terminal")
+            .key_context(input::CONTEXT)
             .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::key_down))
+            .on_key_up(cx.listener(Self::key_up))
+            .on_action(cx.listener(|view, _: &SendTab, _, cx| view.tab(false, cx)))
+            .on_action(cx.listener(|view, _: &SendBackTab, _, cx| view.tab(true, cx)))
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))
@@ -260,7 +273,14 @@ impl Render for TerminalView {
                     f32::from(look.cell.width).round() as u16,
                     f32::from(look.cell.height).round() as u16,
                 );
-                root.child(paint::grid(cx.entity(), Rc::new(shown), cursor, look))
+                let preedit = self.marked.clone();
+                root.child(paint::grid(
+                    cx.entity(),
+                    Rc::new(shown),
+                    cursor,
+                    preedit,
+                    look,
+                ))
             }
             Err(error) => {
                 log::error!("terminal {}: {error:#}", self.pty.pid);

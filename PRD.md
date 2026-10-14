@@ -47,7 +47,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
 - Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
-- Keys: xterm encoding with modifiers, application cursor and keypad modes, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags.
+- Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
 - IME: marked text drawn at the cursor; committed text sent to the program.
 - Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen.
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.

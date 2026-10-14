@@ -1,6 +1,10 @@
 mod boxes;
 pub mod frame;
 pub mod ink;
+pub mod input;
+pub mod keys;
+#[cfg(target_os = "macos")]
+pub mod mac;
 mod paint;
 mod pty;
 pub mod shell;

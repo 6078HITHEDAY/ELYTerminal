@@ -7,9 +7,11 @@ use gpui::{
     Render, Styled, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, px, size,
 };
 
+#[cfg(target_os = "macos")]
+use crate::term::mac;
 use crate::{
     settings::SettingsStore,
-    term::{ICONS, Launch, MONO, TerminalView, config, shell::ShellIntegration, spawn},
+    term::{ICONS, Launch, MONO, TerminalView, config, input, shell::ShellIntegration, spawn},
     themes,
 };
 
@@ -52,6 +54,9 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     }
     SettingsStore::init(cx)?;
     ShellIntegration::init(cx)?;
+    input::bind_keys(cx);
+    #[cfg(target_os = "macos")]
+    mac::repeat_held_keys();
     let family = &SettingsStore::get(cx).font_family;
     anyhow::ensure!(
         cx.text_system().all_font_names().contains(family),

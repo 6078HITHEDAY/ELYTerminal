@@ -60,6 +60,8 @@ pub struct Cursor {
 pub struct Frame {
     pub rows: Vec<Row>,
     pub cursor: Option<Cursor>,
+    /// The cursor's row and column while on screen, shown or hidden.
+    pub caret: Option<(usize, usize)>,
 }
 
 impl Frame {
@@ -121,7 +123,15 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
             rows[row].alone.push((point.column.0, alone, look));
         }
     }
-    Frame { rows, cursor }
+    let row = at.line.0 + offset;
+    let caret = (0..rows.len() as i32)
+        .contains(&row)
+        .then_some((row as usize, at.column.0));
+    Frame {
+        rows,
+        cursor,
+        caret,
+    }
 }
 
 fn push(row: &mut Row, shown: char, style: Style) {
@@ -272,6 +282,12 @@ mod tests {
         assert_eq!(frame.rows[0].alone[0].2.fg, ink.fg);
         assert_eq!(frame.text(), "a\u{2500}\u{E0B0}\u{2500}\u{301}");
         assert_eq!(frame.cursor.expect("a cursor").text, "\u{E0B0}");
+        let (gone, _) = shown(b"ab\x1b[?25l");
+        assert_eq!(
+            (gone.cursor, gone.caret),
+            (None, Some((0, 2))),
+            "a hidden cursor keeps its cell"
+        );
         let (hidden, _) = shown(b"\x1b[8m\xe2\x94\x80");
         assert!(hidden.rows[0].alone.is_empty(), "hidden lines draw nothing");
     }

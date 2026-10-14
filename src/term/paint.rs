@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use alacritty_terminal::vte::ansi::CursorShape;
 use gpui::{
-    Bounds, ContentMask, Entity, Font, FontId, FontStyle, FontWeight, Hsla, IntoElement,
-    PathBuilder, Pixels, Point, Size, StrikethroughStyle, Styled, TextRun, UnderlineStyle, Window,
-    canvas, fill, outline, point, px, size,
+    Bounds, ContentMask, ElementInputHandler, Entity, Font, FontId, FontStyle, FontWeight, Hsla,
+    IntoElement, PathBuilder, Pixels, Point, Size, StrikethroughStyle, Styled, TextRun,
+    UnderlineStyle, Window, canvas, fill, outline, point, px, size,
 };
 
 use super::{
@@ -28,46 +28,99 @@ pub struct Look {
     pub rule: Pixels,
     pub cursor: Hsla,
     pub cursor_text: Hsla,
+    /// The terminal's own text and ground, for text an input method composes.
+    pub fg: Hsla,
+    pub bg: Hsla,
 }
 
-/// The grid fitted to its box: it sizes the pty, then paints each row and the cursor.
+/// The grid fitted to its box: it sizes the pty, then paints each row, the cursor and composed text.
 pub fn grid(
     view: Entity<TerminalView>,
     frame: Rc<Frame>,
     cursor: Option<(Cursor, CursorShape)>,
+    preedit: Option<String>,
     look: Look,
 ) -> impl IntoElement {
     let cell = look.cell;
+    let (fit, input) = (view.clone(), view);
+    let at = frame.caret;
     canvas(
         move |bounds, window, cx| {
             let columns = (bounds.size.width / cell.width).floor() as usize;
             let lines = (bounds.size.height / cell.height).floor() as usize;
-            view.update(cx, |view, cx| {
+            let origin = snapped(bounds.origin, window);
+            fit.update(cx, |view, cx| {
+                if let Some((row, column)) = at {
+                    let corner =
+                        origin + point(cell.width * column as f32, cell.height * row as f32);
+                    view.caret = Bounds::new(corner, cell);
+                }
                 if view.fit(columns, lines) {
                     cx.notify();
                     window.request_animation_frame();
                 }
             });
         },
-        move |bounds, _, window, _| {
+        move |bounds, _, window, cx| {
             log::trace!(
                 "terminal: paint {:?}, row 0 {:?}",
                 bounds,
                 frame.rows.first().map(|row| row.text.trim_end())
             );
-            let scale = window.scale_factor();
-            let snap = |length: Pixels| px((f32::from(length) * scale).round() / scale);
-            let origin = point(snap(bounds.origin.x), snap(bounds.origin.y));
+            let focus = input.read(cx).focus.clone();
+            window.handle_input(&focus, ElementInputHandler::new(bounds, input.clone()), cx);
+            let origin = snapped(bounds.origin, window);
             for (index, row) in frame.rows.iter().enumerate() {
                 let top = origin + point(px(0.), cell.height * index as f32);
                 paint_row(row, top, &look, window);
             }
-            if let Some((cursor, shape)) = &cursor {
-                paint_cursor(cursor, *shape, origin, &look, window);
+            match (&preedit, at, &cursor) {
+                (Some(text), Some(at), _) => paint_preedit(text, at, origin, &look, window),
+                (None, _, Some((cursor, shape))) => {
+                    paint_cursor(cursor, *shape, origin, &look, window)
+                }
+                _ => {}
             }
         },
     )
     .size_full()
+}
+
+/// `origin` on a whole device pixel.
+fn snapped(origin: Point<Pixels>, window: &Window) -> Point<Pixels> {
+    let scale = window.scale_factor();
+    let snap = |length: Pixels| px((f32::from(length) * scale).round() / scale);
+    point(snap(origin.x), snap(origin.y))
+}
+
+/// Text an input method composes, over the cursor's cell on the terminal's ground, underlined.
+fn paint_preedit(
+    text: &str,
+    (row, column): (usize, usize),
+    origin: Point<Pixels>,
+    look: &Look,
+    window: &mut Window,
+) {
+    let cell = look.cell;
+    let corner = origin + point(cell.width * column as f32, cell.height * row as f32);
+    let style = Style {
+        fg: look.fg,
+        bg: None,
+        bold: false,
+        italic: false,
+        underline: Underline::Single,
+        underline_color: look.fg,
+        strike: false,
+    };
+    let runs = runs(text, &style, look.fg, look, window);
+    let width = window
+        .text_system()
+        .shape_line(text.to_string().into(), look.size, &runs, None)
+        .width
+        .max(cell.width);
+    window.paint_quad(fill(Bounds::new(corner, size(width, cell.height)), look.bg));
+    draw(text, &runs, corner, None, look, window);
+    decorate(corner, width, &style, look, window);
 }
 
 fn face(style: &Style, base: &Font) -> Font {
