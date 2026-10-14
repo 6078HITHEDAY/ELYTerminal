@@ -1,6 +1,7 @@
 use alacritty_terminal::{
     event::EventListener,
     grid::Dimensions,
+    index::Point,
     term::{Term, cell::Cell, cell::Flags, color::Colors},
     vte::ansi::CursorShape,
 };
@@ -92,7 +93,19 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
     for indexed in content.display_iter {
         let (point, cell) = (indexed.point, indexed.cell);
         let row = (point.line.0 + offset) as usize;
-        let look = style(cell, ink, content.colors);
+        let mut look = style(cell, ink, content.colors);
+        let selected = content.selection.as_ref().is_some_and(|range| {
+            let (line, column) = (point.line, point.column);
+            range.contains(point)
+                || (cell.flags.contains(Flags::WIDE_CHAR)
+                    && range.contains(Point::new(line, column + 1)))
+                || (cell.flags.contains(Flags::WIDE_CHAR_SPACER)
+                    && range.contains(Point::new(line, column - 1)))
+        });
+        if selected {
+            look.bg = Some(ink.selection);
+            look.fg = ink.selection_text.unwrap_or(look.fg);
+        }
         let spacer = cell
             .flags
             .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER);
@@ -290,6 +303,33 @@ mod tests {
         );
         let (hidden, _) = shown(b"\x1b[8m\xe2\x94\x80");
         assert!(hidden.rows[0].alone.is_empty(), "hidden lines draw nothing");
+    }
+
+    #[test]
+    fn selected_cells_wear_the_selection_colors() {
+        use alacritty_terminal::{
+            index::{Column, Line, Side},
+            selection::{Selection, SelectionType},
+        };
+        let mut term = Term::new(Config::default(), &TermSize::new(12, 3), VoidListener);
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, "ab\u{4e2d}d".as_bytes());
+        let start = Point::new(Line(0), Column(1));
+        let mut selection = Selection::new(SelectionType::Simple, start, Side::Left);
+        selection.update(Point::new(Line(0), Column(3)), Side::Left);
+        term.selection = Some(selection);
+        let ink = Ink::new(themes::find("dracula").expect("dracula"), term.colors());
+        let frame = frame(&term, &ink);
+        let grounds: Vec<_> = frame.rows[0]
+            .runs
+            .iter()
+            .map(|(bytes, style)| (*bytes, style.bg))
+            .collect();
+        assert_eq!(
+            &grounds[..3],
+            [(1, None), (5, Some(ink.selection)), (8, None)],
+            "b and both halves of the wide cell, whose spacer is picked"
+        );
     }
 
     #[test]

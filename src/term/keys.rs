@@ -51,6 +51,16 @@ pub fn encode(key: &Key, app_cursor: bool, kitty: Kitty) -> Option<Vec<u8>> {
     }
 }
 
+/// Pasted text as the program gets it; bracketed text loses ESC and Ctrl-C, as alacritty's does.
+pub fn paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        let text = text.replace(['\x1b', '\x03'], "");
+        format!("\x1b[200~{text}\x1b[201~").into_bytes()
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+    }
+}
+
 /// xterm's modifier code: one plus shift 1, alt 2, ctrl 4, super 8.
 fn code(key: &Key) -> u32 {
     1 + u32::from(key.shift)

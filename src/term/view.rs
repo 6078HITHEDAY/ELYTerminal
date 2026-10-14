@@ -1,18 +1,19 @@
-use std::{path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
+use std::{collections::HashSet, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 
 use alacritty_terminal::{event::Event, grid::Dimensions, vte::ansi::CursorShape};
 use futures::StreamExt;
 use gpui::{
     Bounds, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures,
-    FontStyle, FontWeight, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, Task,
-    Window, div, prelude::*, px, size,
+    FontStyle, FontWeight, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled,
+    Subscription, Task, Window, div, prelude::*, px, size,
 };
 
 use super::{
     frame::frame,
     ink::Ink,
-    input,
+    input::{self, Copy, Paste},
     paint::{self, Look},
+    pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
 };
 use crate::{
@@ -46,7 +47,12 @@ pub struct TerminalView {
     pub(super) marked: Option<String>,
     /// The cursor's cell in the window, from the last layout.
     pub(super) caret: Bounds<Pixels>,
-    size: (usize, usize),
+    pub(super) pointer: Pointer,
+    /// X10 mouse reporting, mode 9, as the tap follows it.
+    pub(super) x10: bool,
+    /// Keys whose press this terminal saw, so their releases may go out.
+    pub(super) held: HashSet<String>,
+    pub(super) size: (usize, usize),
     cell: (u16, u16),
     blinking: bool,
     shown: bool,
@@ -76,6 +82,9 @@ impl TerminalView {
             focus: cx.focus_handle().tab_stop(true),
             marked: None,
             caret: Bounds::default(),
+            pointer: Pointer::default(),
+            x10: false,
+            held: HashSet::new(),
             size,
             cell: (8, 16),
             blinking: false,
@@ -146,6 +155,7 @@ impl TerminalView {
             match event {
                 PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
                 PtyEvent::Term(event) => self.term_event(event, cx),
+                PtyEvent::X10(on) => self.x10 = on,
             }
         }
         cx.notify();
@@ -159,6 +169,11 @@ impl TerminalView {
             Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
             Event::Bell => cx.emit(TerminalEvent::Bell),
             Event::ClipboardStore(_, text) => {
+                log::info!(
+                    "terminal {}: OSC 52 copied {} characters",
+                    self.pty.pid,
+                    text.chars().count()
+                );
                 cx.write_to_clipboard(ClipboardItem::new_string(text))
             }
             Event::ClipboardLoad(..) => log::error!(
@@ -261,10 +276,22 @@ impl Render for TerminalView {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
+            .on_action(cx.listener(|view, _: &Copy, _, cx| view.copy(cx)))
+            .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
+            .on_any_mouse_down(cx.listener(Self::mouse_down))
+            .on_mouse_move(cx.listener(Self::mouse_move))
+            .on_scroll_wheel(cx.listener(Self::wheel))
+            .cursor_text()
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))
             .bg(ink.bg.alpha(settings.background_opacity));
+        let root = [MouseButton::Left, MouseButton::Middle, MouseButton::Right]
+            .into_iter()
+            .fold(root, |root, button| {
+                root.on_mouse_up(button, cx.listener(Self::mouse_up))
+                    .on_mouse_up_out(button, cx.listener(Self::mouse_up))
+            });
         match look(&settings, &ink, window) {
             Ok(look) => {
                 self.cell = (

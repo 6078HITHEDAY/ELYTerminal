@@ -26,7 +26,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 6. Main window and layout
 
-- [ ] T11 `ColumnShell` with sessions, terminal and right columns; toggles kept in settings; window title.
+- [ ] T11 `ColumnShell` with sessions, terminal and right columns; toggles kept in settings; window title; a transparent title bar over the window's background, as Ghostty's.
 
 ## 7. Sessions panel
 
@@ -55,7 +55,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 12. Menus and shortcuts
 
-- [ ] T22 macOS menu bar; key bindings on all platforms; a key whose press a binding takes sends no release, as in kitty.
+- [ ] T22 macOS menu bar; key bindings on all platforms.
 
 ## 13. Acceptance
 

@@ -321,3 +321,12 @@ fn super_is_kittys_eighth_bit() {
         Some("\x1b[27;9;13~")
     );
 }
+
+#[test]
+fn pastes_end_lines_with_cr_or_go_bracketed_without_escapes() {
+    assert_eq!(paste("a\r\nb\nc", false), b"a\rb\rc");
+    assert_eq!(
+        paste("x\n\x1b[201~rm\x03", true),
+        b"\x1b[200~x\n[201~rm\x1b[201~"
+    );
+}

@@ -14,11 +14,13 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use super::tap::Tapped;
 use crate::settings::{CursorStyle, Settings};
 
-/// What a session hears from its pty: the grid's events and the folder the shell reports.
+/// What a session hears from its pty: the grid's events, the folder the shell reports, and mode 9.
 #[derive(Debug)]
 pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
+    /// X10 mouse reporting turned on or off.
+    X10(bool),
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.
@@ -248,7 +250,7 @@ mod tests {
                     PtyEvent::Folder(folder) => folders.push(folder),
                     PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                     PtyEvent::Term(Event::Exit) => break,
-                    PtyEvent::Term(_) => {}
+                    PtyEvent::Term(_) | PtyEvent::X10(_) => {}
                 }
             }
             (folders, success)

@@ -1755,6 +1755,7 @@ dependencies = [
  "dirs 7.0.0",
  "ely-gpui-component",
  "env_logger",
+ "foreign-types",
  "futures",
  "gethostname",
  "gpui-pre",

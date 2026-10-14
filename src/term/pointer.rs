@@ -1,0 +1,296 @@
+use alacritty_terminal::{
+    grid::Scroll,
+    index::{Column, Line, Point as Cell, Side},
+    selection::{Selection, SelectionType},
+    term::TermMode,
+};
+use gpui::{
+    ClipboardItem, Context, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Window,
+};
+
+use super::{
+    keys,
+    links::link_at,
+    mouse::{self, Button, Gesture, Report, Tracking},
+    view::TerminalView,
+};
+use crate::settings::SettingsStore;
+
+/// Lines one wheel notch scrolls, as Ghostty's discrete wheel.
+const NOTCH: f32 = 3.;
+
+/// Where the grid sits, and what the mouse is doing to it.
+#[derive(Default)]
+pub struct Pointer {
+    /// The grid's top-left in the window, from the last layout.
+    pub origin: Point<Pixels>,
+    pub cell: Size<Pixels>,
+    /// The left button is down and drawing a selection.
+    selecting: bool,
+    /// The button whose press went to the program.
+    pressed: Option<Button>,
+    /// The cell of the last report; motion inside it sends nothing.
+    last: Option<(usize, usize)>,
+    /// Wheel travel short of a line.
+    rest: Pixels,
+}
+
+fn button(button: MouseButton) -> Option<Button> {
+    match button {
+        MouseButton::Left => Some(Button::Left),
+        MouseButton::Middle => Some(Button::Middle),
+        MouseButton::Right => Some(Button::Right),
+        MouseButton::Navigate(_) => None,
+    }
+}
+
+impl TerminalView {
+    /// The screen cell under a window position, clamped to the grid; its grid point; its half.
+    fn cell_at(&self, position: Point<Pixels>) -> ((usize, usize), Cell, Side) {
+        let Pointer { origin, cell, .. } = self.pointer;
+        let x = ((position.x - origin.x) / cell.width).max(0.);
+        let y = ((position.y - origin.y) / cell.height).max(0.);
+        let (columns, lines) = self.size;
+        let (column, row) = ((x as usize).min(columns - 1), (y as usize).min(lines - 1));
+        let side = if x as usize >= columns || x.fract() >= 0.5 {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        let offset = self.pty.term.lock().grid().display_offset() as i32;
+        let point = Cell::new(Line(row as i32 - offset), Column(column));
+        ((column, row), point, side)
+    }
+
+    /// What the program tracks; none while Shift holds the mouse for selecting.
+    fn tracking(&self, modifiers: &Modifiers) -> Tracking {
+        if modifiers.shift {
+            return Tracking::Off;
+        }
+        Tracking::new(*self.pty.term.lock().mode(), self.x10)
+    }
+
+    fn report(
+        &mut self,
+        button: Option<Button>,
+        gesture: Gesture,
+        cell: (usize, usize),
+        modifiers: &Modifiers,
+        tracking: Tracking,
+    ) -> bool {
+        let report = Report {
+            button,
+            gesture,
+            cell,
+            shift: modifiers.shift,
+            alt: modifiers.alt,
+            ctrl: modifiers.control,
+        };
+        let mode = *self.pty.term.lock().mode();
+        let Some(bytes) = mouse::encode(&report, tracking, mode) else {
+            return false;
+        };
+        log::trace!("terminal {}: {report:?} sends {bytes:?}", self.pty.pid);
+        self.pty.write(bytes);
+        self.pointer.last = Some(cell);
+        true
+    }
+
+    pub(super) fn mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        let (cell, point, side) = self.cell_at(event.position);
+        let opens = if cfg!(target_os = "macos") {
+            event.modifiers.platform
+        } else {
+            event.modifiers.control
+        };
+        if event.button == MouseButton::Left && opens {
+            let link = link_at(&self.pty.term.lock(), point);
+            if let Some(link) = link {
+                log::info!("terminal {}: opens {link}", self.pty.pid);
+                cx.open_url(&link);
+                return;
+            }
+        }
+        let tracking = self.tracking(&event.modifiers);
+        if tracking != Tracking::Off {
+            let Some(pressed) = button(event.button) else {
+                return;
+            };
+            if self.report(
+                Some(pressed),
+                Gesture::Press,
+                cell,
+                &event.modifiers,
+                tracking,
+            ) {
+                self.pointer.pressed = Some(pressed);
+            }
+            return;
+        }
+        if event.button != MouseButton::Left {
+            return;
+        }
+        let mut term = self.pty.term.lock();
+        match (
+            term.selection.as_mut(),
+            event.modifiers.shift,
+            event.click_count,
+        ) {
+            (Some(selection), true, 1) => selection.update(point, side),
+            _ => {
+                let kind = match event.click_count {
+                    2 => SelectionType::Semantic,
+                    3.. => SelectionType::Lines,
+                    _ => SelectionType::Simple,
+                };
+                term.selection = Some(Selection::new(kind, point, side));
+            }
+        }
+        drop(term);
+        self.pointer.selecting = true;
+        cx.notify();
+    }
+
+    pub(super) fn mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (cell, point, side) = self.cell_at(event.position);
+        if self.pointer.selecting && event.pressed_button == Some(MouseButton::Left) {
+            if let Some(selection) = self.pty.term.lock().selection.as_mut() {
+                selection.update(point, side);
+            }
+            cx.notify();
+            return;
+        }
+        let tracking = self.tracking(&event.modifiers);
+        if tracking != Tracking::Off && self.pointer.last != Some(cell) {
+            let held = self.pointer.pressed;
+            self.report(held, Gesture::Motion, cell, &event.modifiers, tracking);
+        }
+    }
+
+    pub(super) fn mouse_up(
+        &mut self,
+        event: &MouseUpEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button == MouseButton::Left && std::mem::take(&mut self.pointer.selecting) {
+            let selected = self.selected();
+            if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
+                self.copy_text(text, cx);
+            }
+        }
+        let released = button(event.button);
+        if released.is_some() && self.pointer.pressed == released {
+            self.pointer.pressed = None;
+            let (cell, ..) = self.cell_at(event.position);
+            let tracking = Tracking::new(*self.pty.term.lock().mode(), self.x10);
+            self.report(released, Gesture::Release, cell, &event.modifiers, tracking);
+        }
+    }
+
+    pub(super) fn wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let height = self.pointer.cell.height;
+        if height <= Pixels::ZERO {
+            return;
+        }
+        cx.stop_propagation();
+        self.pointer.rest += match event.delta {
+            ScrollDelta::Pixels(delta) => delta.y,
+            ScrollDelta::Lines(delta) => height * delta.y * NOTCH,
+        };
+        let lines = (self.pointer.rest / height).trunc() as i32;
+        if lines == 0 {
+            return;
+        }
+        self.pointer.rest -= height * lines as f32;
+        log::trace!("terminal {}: wheel {lines} lines", self.pty.pid);
+        let (cell, ..) = self.cell_at(event.position);
+        let tracking = self.tracking(&event.modifiers);
+        let mode = *self.pty.term.lock().mode();
+        if tracking != Tracking::Off {
+            let turn = if lines > 0 {
+                Button::WheelUp
+            } else {
+                Button::WheelDown
+            };
+            for _ in 0..lines.unsigned_abs() {
+                self.report(Some(turn), Gesture::Press, cell, &event.modifiers, tracking);
+            }
+        } else if mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL) {
+            let arrow: &[u8] = match (lines > 0, mode.contains(TermMode::APP_CURSOR)) {
+                (true, true) => b"\x1bOA",
+                (true, false) => b"\x1b[A",
+                (false, true) => b"\x1bOB",
+                (false, false) => b"\x1b[B",
+            };
+            self.pty.write(arrow.repeat(lines.unsigned_abs() as usize));
+        } else {
+            self.pty.term.lock().scroll_display(Scroll::Delta(lines));
+            cx.notify();
+        }
+    }
+
+    /// The selected text, without the newline alacritty ends a whole line with, as Ghostty copies it.
+    fn selected(&self) -> Option<String> {
+        let mut text = self.pty.term.lock().selection_to_string()?;
+        if text.ends_with('\n') {
+            text.pop();
+        }
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// The selection to the clipboard.
+    pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
+        match self.selected() {
+            Some(text) => self.copy_text(text, cx),
+            None => log::debug!("terminal {}: nothing selected to copy", self.pty.pid),
+        }
+    }
+
+    fn copy_text(&self, text: String, cx: &mut Context<Self>) {
+        log::info!(
+            "terminal {}: copied {} characters",
+            self.pty.pid,
+            text.chars().count()
+        );
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+    }
+
+    /// The clipboard's text to the program, bracketed when it asked.
+    pub(super) fn paste(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            log::debug!("terminal {}: no text to paste", self.pty.pid);
+            return;
+        };
+        let bracketed = self
+            .pty
+            .term
+            .lock()
+            .mode()
+            .contains(TermMode::BRACKETED_PASTE);
+        log::info!(
+            "terminal {}: pastes {} characters{}",
+            self.pty.pid,
+            text.chars().count(),
+            if bracketed { ", bracketed" } else { "" }
+        );
+        self.input(keys::paste(&text, bracketed), cx);
+    }
+}

@@ -1,4 +1,4 @@
-//! `cargo run --example shot -- [--keys "a ctrl-c lopt-f repeat-up mark:é commit:é"] <png> <program> [args…]`: runs a program in the main window, types the keys as AppKit events, then photographs the window.
+//! `cargo run --example shot -- [--keys "a ctrl-c lopt-f repeat-up mark:é commit:é shift-click@40,20"] <png> <program> [args…]`: runs a program in the main window, types the keys and mouse gestures as AppKit events, then photographs the window.
 
 #[cfg(target_os = "macos")]
 fn main() {
@@ -30,7 +30,6 @@ fn main() {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");
             let window = app::open(launch, cx).expect("the window opens");
-            cx.activate(true);
             cx.spawn(async move |cx| {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 let number = window
@@ -117,7 +116,12 @@ mod capture {
 #[cfg(target_os = "macos")]
 mod typing {
     use anyhow::Context as _;
-    use core_graphics::geometry::CGPoint;
+    use core_graphics::{
+        event::{CGEvent, CGEventFlags, ScrollEventUnit},
+        event_source::{CGEventSource, CGEventSourceStateID},
+        geometry::{CGPoint, CGRect},
+    };
+    use foreign_types::ForeignType;
     use objc::{
         class, msg_send,
         runtime::{NO, Object, YES},
@@ -125,13 +129,14 @@ mod typing {
     };
 
     /// US layout key codes and what each key types.
-    const KEYS: [(&str, u16, &str); 18] = [
+    const KEYS: [(&str, u16, &str); 19] = [
         ("a", 0, "a"),
         ("c", 8, "c"),
         ("e", 14, "e"),
         ("f", 3, "f"),
         ("i", 34, "i"),
         ("s", 1, "s"),
+        ("v", 9, "v"),
         ("[", 33, "["),
         ("space", 49, " "),
         ("tab", 48, "\t"),
@@ -187,17 +192,103 @@ mod typing {
         Ok(())
     }
 
-    /// Posts `spec`, such as `ctrl-c`, `lopt-f` or `repeat-up`, as a key going down and up on window `number`.
+    unsafe extern "C" {
+        fn CGEventSetLocation(event: *mut core_graphics::sys::CGEvent, location: CGPoint);
+    }
+
+    /// `click@x,y` (`click2`, `click3`, `rclick`), `drag@x,y@x,y`, `move@x,y`, `scrollup@x,y@lines` or `scrolldown`, at points from the content's top-left; AppKit routes no window-less scroll, so it goes to the view.
+    fn mouse(name: &str, flags: u64, number: u32) -> anyhow::Result<()> {
+        let mut fields = name.split('@');
+        let gesture = fields.next().context("a gesture")?;
+        let numbers: Vec<f64> = fields
+            .flat_map(|field| field.split(','))
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .with_context(|| format!("numbers in {name}"))?;
+        let needed = match gesture {
+            "drag" => 4,
+            "scrollup" | "scrolldown" => 3,
+            _ => 2,
+        };
+        anyhow::ensure!(numbers.len() == needed, "{name} needs {needed} numbers");
+        unsafe {
+            let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+            let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
+            anyhow::ensure!(!window.is_null(), "no window {number}");
+            let content: *mut Object = msg_send![window, contentView];
+            let height = {
+                let frame: CGRect = msg_send![content, frame];
+                frame.size.height
+            };
+            let at = |index: usize| CGPoint::new(numbers[index], height - numbers[index + 1]);
+            let post = |kind: u64, point: CGPoint, clicks: i64| -> anyhow::Result<()> {
+                let event: *mut Object = msg_send![
+                    class!(NSEvent),
+                    mouseEventWithType: kind
+                    location: point
+                    modifierFlags: flags
+                    timestamp: 0.0f64
+                    windowNumber: i64::from(number)
+                    context: std::ptr::null_mut::<Object>()
+                    eventNumber: 0i64
+                    clickCount: clicks
+                    pressure: 1.0f32
+                ];
+                anyhow::ensure!(!event.is_null(), "AppKit refused the mouse event {name}");
+                let _: () = msg_send![app, postEvent: event atStart: NO];
+                Ok(())
+            };
+            match gesture {
+                "click" | "click2" | "click3" => {
+                    for clicks in 1..=gesture[5..].parse().unwrap_or(1) {
+                        post(1, at(0), clicks)?;
+                        post(2, at(0), clicks)?;
+                    }
+                }
+                "rclick" => {
+                    post(3, at(0), 1)?;
+                    post(4, at(0), 1)?;
+                }
+                "drag" => {
+                    post(1, at(0), 1)?;
+                    post(6, at(2), 1)?;
+                    post(2, at(2), 1)?;
+                }
+                "move" => post(5, at(0), 0)?,
+                "scrollup" | "scrolldown" => {
+                    let lines = numbers[2] as i32 * if gesture == "scrollup" { 1 } else { -1 };
+                    let screens: *mut Object = msg_send![class!(NSScreen), screens];
+                    let main: *mut Object = msg_send![screens, objectAtIndex: 0u64];
+                    let screen: CGRect = msg_send![main, frame];
+                    let point = at(0);
+                    let source = CGEventSource::new(CGEventSourceStateID::Private)
+                        .map_err(|_| anyhow::anyhow!("no event source"))?;
+                    let event =
+                        CGEvent::new_scroll_event(source, ScrollEventUnit::LINE, 1, lines, 0, 0)
+                            .map_err(|_| anyhow::anyhow!("no scroll event"))?;
+                    let place = CGPoint::new(point.x, screen.size.height - point.y);
+                    CGEventSetLocation(event.as_ptr(), place);
+                    event.set_flags(CGEventFlags::from_bits_truncate(flags));
+                    let native: *mut Object =
+                        msg_send![class!(NSEvent), eventWithCGEvent: event.as_ptr()];
+                    anyhow::ensure!(!native.is_null(), "AppKit refused the scroll {name}");
+                    let view: *mut Object = msg_send![window, firstResponder];
+                    let _: () = msg_send![view, scrollWheel: native];
+                }
+                other => anyhow::bail!("no mouse gesture {other}"),
+            }
+        }
+        log::info!("shot: mouse {name}");
+        Ok(())
+    }
+
+    /// Posts `spec`, such as `ctrl-c`, `lopt-f`, `repeat-up` or `shift-drag@0,0@40,20`, as AppKit events on window `number`.
     pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
         if let Some((call, text)) = spec.split_once(':') {
             return compose(call, text, number);
         }
         let mut parts: Vec<&str> = spec.split('-').collect();
         let name = parts.pop().context("an empty key")?;
-        let (_, code, plain) = KEYS
-            .iter()
-            .find(|(key, ..)| *key == name)
-            .with_context(|| format!("no key code for {name}"))?;
         let mut flags: u64 = 0;
         let mut repeat = NO;
         for modifier in &parts {
@@ -214,6 +305,13 @@ mod typing {
                 other => anyhow::bail!("no modifier {other}"),
             };
         }
+        if name.contains('@') {
+            return mouse(name, flags, number);
+        }
+        let (_, code, plain) = KEYS
+            .iter()
+            .find(|(key, ..)| *key == name)
+            .with_context(|| format!("no key code for {name}"))?;
         if plain
             .chars()
             .next()

@@ -14,6 +14,9 @@ pub struct Ink {
     pub bg: Hsla,
     pub cursor: Hsla,
     pub cursor_text: Hsla,
+    pub selection: Hsla,
+    /// None keeps each cell's own color.
+    pub selection_text: Option<Hsla>,
 }
 
 impl Ink {
@@ -31,6 +34,8 @@ impl Ink {
             bg: named(NamedColor::Background).unwrap_or(theme.background),
             cursor: named(NamedColor::Cursor).unwrap_or(theme.cursor),
             cursor_text: theme.cursor_text,
+            selection: theme.selection_background,
+            selection_text: theme.selection_foreground,
         }
     }
 

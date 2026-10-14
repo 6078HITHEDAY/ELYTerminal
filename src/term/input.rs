@@ -3,7 +3,7 @@ use std::ops::Range;
 use alacritty_terminal::{grid::Scroll, term::TermMode};
 use gpui::{
     App, Bounds, Context, EntityInputHandler, KeyBinding, KeyDownEvent, KeyUpEvent, Keystroke,
-    NoAction, Pixels, Point, UTF16Selection, Window,
+    NoAction, Pixels, Point, UTF16Selection, Window, actions,
 };
 
 use super::{
@@ -11,11 +11,22 @@ use super::{
     view::TerminalView,
 };
 
+actions!(elyterminal, [Copy, Paste]);
+
 /// The key context a terminal's root sets.
 pub const CONTEXT: &str = "Terminal";
 
-/// Ely's focus keys go to the terminal's listeners instead.
+/// Copy and paste; Ely's focus keys go to the terminal's listeners instead.
 pub fn bind_keys(cx: &mut App) {
+    let (copy, paste) = if cfg!(target_os = "macos") {
+        ("cmd-c", "cmd-v")
+    } else {
+        ("ctrl-shift-c", "ctrl-shift-v")
+    };
+    cx.bind_keys([
+        KeyBinding::new(copy, Copy, Some(CONTEXT)),
+        KeyBinding::new(paste, Paste, Some(CONTEXT)),
+    ]);
     cx.bind_keys(
         ["tab", "shift-tab", "f6", "shift-f6"]
             .map(|key| KeyBinding::new(key, NoAction, Some(CONTEXT))),
@@ -23,9 +34,12 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 impl TerminalView {
-    /// Bytes from the keyboard: back to the newest line, then to the program.
+    /// Bytes from the keyboard: back to the newest line, no selection, then to the program.
     pub(super) fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        self.pty.term.lock().scroll_display(Scroll::Bottom);
+        let mut term = self.pty.term.lock();
+        term.scroll_display(Scroll::Bottom);
+        term.selection = None;
+        drop(term);
         self.pty.write(bytes);
         cx.notify();
     }
@@ -39,6 +53,7 @@ impl TerminalView {
         if event.prefer_character_input {
             return;
         }
+        self.held.insert(event.keystroke.key.clone());
         let facts = self.facts();
         let action = if event.is_held || facts.repeat {
             Action::Repeat
@@ -50,7 +65,11 @@ impl TerminalView {
         }
     }
 
+    /// A release goes out only for a press this terminal saw: none for one a binding took.
     pub(super) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if !self.held.remove(&event.keystroke.key) {
+            return;
+        }
         let facts = self.facts();
         if self.send(&event.keystroke, Action::Release, facts, cx) {
             cx.stop_propagation();

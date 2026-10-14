@@ -3,9 +3,12 @@ pub mod frame;
 pub mod ink;
 pub mod input;
 pub mod keys;
+mod links;
 #[cfg(target_os = "macos")]
 pub mod mac;
+pub mod mouse;
 mod paint;
+mod pointer;
 mod pty;
 pub mod shell;
 mod tap;

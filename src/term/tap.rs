@@ -12,10 +12,11 @@ use super::pty::PtyEvent;
 /// The longest OSC body kept; longer ones are dropped whole.
 const MOST: usize = 4096;
 
-/// A pty whose reader hands each byte to an OSC 7 scanner before the parser sees it.
+/// A pty whose reader hands each byte to the OSC 7 and mode 9 scanners before the parser sees it.
 pub(crate) struct Tapped<P> {
     pub inner: P,
     scanner: Osc7,
+    x10: Mode9,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -26,6 +27,7 @@ impl<P> Tapped<P> {
         Self {
             inner,
             scanner: Osc7::default(),
+            x10: Mode9::default(),
             events,
             pid,
             last: None,
@@ -51,6 +53,15 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
                 log::debug!("pty {pid}: a folder report after its session closed");
             }
         });
+        if let Some(on) = self.x10.feed(&buf[..count]) {
+            log::info!(
+                "pty {pid}: X10 mouse reporting {}",
+                if on { "on" } else { "off" }
+            );
+            if events.unbounded_send(PtyEvent::X10(on)).is_err() {
+                log::debug!("pty {pid}: a mouse mode after its session closed");
+            }
+        }
         Ok(count)
     }
 }
@@ -174,6 +185,82 @@ impl Osc7 {
     }
 }
 
+/// The most parameters one private mode sequence keeps, as vte's.
+const PARAMS: usize = 32;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Csi {
+    #[default]
+    Ground,
+    Escape,
+    Bracket,
+    Private,
+}
+
+/// Follows `CSI ? 9 h` and `l`, X10 mouse reporting, across reads: alacritty's parser drops mode 9.
+#[derive(Default)]
+pub(crate) struct Mode9 {
+    state: Csi,
+    params: Vec<u32>,
+    on: bool,
+}
+
+impl Mode9 {
+    /// The mode after `bytes`, when they changed it.
+    pub fn feed(&mut self, bytes: &[u8]) -> Option<bool> {
+        let was = self.on;
+        let mut rest = bytes;
+        while !rest.is_empty() {
+            if self.state == Csi::Ground {
+                let Some(at) = rest.iter().position(|&byte| byte == 0x1b) else {
+                    break;
+                };
+                self.state = Csi::Escape;
+                rest = &rest[at + 1..];
+                continue;
+            }
+            let byte = rest[0];
+            rest = &rest[1..];
+            self.state = match (self.state, byte) {
+                (_, 0x1b) => Csi::Escape,
+                (Csi::Escape, b'[') => Csi::Bracket,
+                (Csi::Escape, b'c') => {
+                    self.on = false;
+                    Csi::Ground
+                }
+                (Csi::Bracket, b'?') => {
+                    self.params = vec![0];
+                    Csi::Private
+                }
+                (Csi::Private, b'0'..=b'9') => {
+                    let last = self.params.last_mut().expect("a parameter in progress");
+                    *last = last
+                        .saturating_mul(10)
+                        .saturating_add(u32::from(byte - b'0'));
+                    Csi::Private
+                }
+                (Csi::Private, b';') if self.params.len() < PARAMS => {
+                    self.params.push(0);
+                    Csi::Private
+                }
+                (Csi::Private, b'h' | b'l') => {
+                    let set = byte == b'h';
+                    for mode in &self.params {
+                        match mode {
+                            9 => self.on = set,
+                            1000 | 1002 | 1003 if set => self.on = false,
+                            _ => {}
+                        }
+                    }
+                    Csi::Ground
+                }
+                _ => Csi::Ground,
+            };
+        }
+        (self.on != was).then_some(self.on)
+    }
+}
+
 /// The local folder an OSC 7 `file://host/path` names; another host's folder is none.
 pub(crate) fn folder(body: &[u8]) -> Option<PathBuf> {
     let Some(rest) = body.strip_prefix(b"file://") else {
@@ -269,6 +356,20 @@ mod tests {
         long.push(0x07);
         assert!(scan(&[&long]).is_empty());
         assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["b"]);
+    }
+
+    #[test]
+    fn mode_9_follows_its_sets_resets_and_the_modes_that_replace_it() {
+        let mut mode = Mode9::default();
+        assert_eq!(mode.feed(b"a\x1b[?"), None);
+        assert_eq!(mode.feed(b"1006;9h"), Some(true));
+        assert_eq!(mode.feed(b"\x1b[9m\x1b[?25l\x1b[?9"), None);
+        assert_eq!(mode.feed(b"l"), Some(false));
+        assert_eq!(mode.feed(b"\x1b[?9h\x1b[?1000h"), None, "1000 replaced it");
+        assert_eq!(mode.feed(b"\x1b[?9h"), Some(true));
+        assert_eq!(mode.feed(b"\x1b[?1000l"), None);
+        assert_eq!(mode.feed(b"\x1bc"), Some(false), "a reset ends it");
+        assert_eq!(mode.feed(b"\x1b[?09;\x1b[?9h"), Some(true));
     }
 
     #[test]

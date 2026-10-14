@@ -50,6 +50,7 @@ pub fn grid(
             let lines = (bounds.size.height / cell.height).floor() as usize;
             let origin = snapped(bounds.origin, window);
             fit.update(cx, |view, cx| {
+                (view.pointer.origin, view.pointer.cell) = (origin, cell);
                 if let Some((row, column)) = at {
                     let corner =
                         origin + point(cell.width * column as f32, cell.height * row as f32);
