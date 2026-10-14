@@ -12,7 +12,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 4. Themes
 
-- [ ] T03 Built-in themes from upstream files; mapping onto Ely's `Palette`; dark-mode choice; tests.
+- [x] T03 Built-in themes from upstream files; mapping onto Ely's `Palette`; dark-mode choice; tests.
 
 ## 5. Terminal engine
 

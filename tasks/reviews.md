@@ -11,3 +11,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, e1770ba: FAIL. One shared temp name let overlapping saves corrupt the file; parse errors lost the field name. Fixed in 83ec4b1: a temp per save (pid, counter, create_new), cleaned on failure; serde_path_to_error names the field; a four-writer test, red on the old save.
 - Round 2, 83ec4b1: PASS.
+
+## T03
+
+- Round 1, 7d4d535: PASS. Theme files match upstream 21f281d byte for byte.
