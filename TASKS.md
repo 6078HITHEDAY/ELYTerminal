@@ -8,7 +8,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 3. Settings model and storage
 
-- [ ] T02 `Settings` with defaults and ranges; load (missing file, missing field, bad file, bad value) and atomic save; tests.
+- [x] T02 `Settings` with defaults and ranges; load (missing file, missing field, bad file, bad value) and atomic save; tests.
 
 ## 4. Themes
 
