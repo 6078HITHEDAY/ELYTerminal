@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use super::{
-    boxes::{self, Shape, Step},
+    boxes::{self, Shape},
     frame::{Cursor, Frame, Style, Underline},
     view::TerminalView,
 };
@@ -122,11 +122,8 @@ fn paint_row(row: &super::frame::Row, top: Point<Pixels>, look: &Look, window: &
         })
         .collect();
     draw(&row.text, &runs, top, Some(cell.width), look, window);
-    for (column, cluster, style) in &row.clusters {
-        text(cluster, style.fg, style, at(*column), look, window);
-    }
-    for (column, ch, style) in &row.boxes {
-        paint_drawn(*ch, style.fg, at(*column), look, window);
+    for (column, content, style) in &row.alone {
+        paint_alone(content, style.fg, style, at(*column), look, window);
     }
     for (column, columns, style) in spans {
         let width = cell.width * columns as f32;
@@ -231,6 +228,29 @@ fn upward(y: Pixels) -> Pixels {
     y
 }
 
+/// Paints a cell's text alone at `corner`: a drawn base as shapes, its marks over a no-break space.
+fn paint_alone(
+    content: &str,
+    color: Hsla,
+    style: &Style,
+    corner: Point<Pixels>,
+    look: &Look,
+    window: &mut Window,
+) {
+    let mut chars = content.chars();
+    match chars.next() {
+        Some(base) if boxes::drawn(base) => {
+            paint_drawn(base, color, corner, look, window);
+            let marks = chars.as_str();
+            if !marks.is_empty() {
+                let shown = format!("\u{A0}{marks}");
+                text(&shown, color, style, corner, look, window);
+            }
+        }
+        _ => text(content, color, style, corner, look, window),
+    }
+}
+
 /// Paints `ch` as shapes in `color`, clipped to the cell at `corner`, a device pixel corner.
 fn paint_drawn(ch: char, color: Hsla, corner: Point<Pixels>, look: &Look, window: &mut Window) {
     let scale = window.scale_factor();
@@ -240,43 +260,33 @@ fn paint_drawn(ch: char, color: Hsla, corner: Point<Pixels>, look: &Look, window
         device(look.cell.height),
         device(look.rule).max(1),
     );
-    let at = |x: f32, y: f32| corner + point(px(x / scale), px(y / scale));
+    let at = |(x, y): (f32, f32)| corner + point(px(x / scale), px(y / scale));
     let mask = ContentMask {
         bounds: Bounds::new(corner, look.cell),
     };
     window.with_content_mask(Some(mask), |window| {
         for piece in boxes::shapes(ch, w, h, t) {
-            let (builder, steps, close) = match piece {
+            match piece {
                 Shape::Rect { x, y, w, h, alpha } => {
                     let length = |device: u32| px(device as f32 / scale);
-                    let bounds = Bounds::new(at(x as f32, y as f32), size(length(w), length(h)));
+                    let bounds = Bounds::new(at((x as f32, y as f32)), size(length(w), length(h)));
                     window.paint_quad(fill(bounds, color.opacity(alpha)));
-                    continue;
                 }
-                Shape::Fill(steps) => (PathBuilder::fill(), steps, true),
-                Shape::Stroke(steps, width) => {
-                    (PathBuilder::stroke(px(width / scale)), steps, false)
-                }
-            };
-            let mut builder = builder;
-            for step in steps {
-                match step {
-                    Step::Move(x, y) => builder.move_to(at(x, y)),
-                    Step::Line(x, y) => builder.line_to(at(x, y)),
-                    Step::Curve([ax, ay, bx, by, x, y]) => {
-                        builder.cubic_bezier_to(at(x, y), at(ax, ay), at(bx, by))
+                Shape::Fill(points) => {
+                    let mut builder = PathBuilder::fill();
+                    builder.move_to(at(points[0]));
+                    for &corner in &points[1..] {
+                        builder.line_to(at(corner));
+                    }
+                    builder.close();
+                    match builder.build() {
+                        Ok(path) => window.paint_path(path, color),
+                        Err(error) => log::error!(
+                            "terminal: U+{:04X} failed to tessellate: {error:?}",
+                            ch as u32
+                        ),
                     }
                 }
-            }
-            if close {
-                builder.close();
-            }
-            match builder.build() {
-                Ok(path) => window.paint_path(path, color),
-                Err(error) => log::error!(
-                    "terminal: U+{:04X} failed to tessellate: {error:?}",
-                    ch as u32
-                ),
             }
         }
     });
@@ -355,20 +365,14 @@ fn paint_cursor(
     match shape {
         CursorShape::Block => {
             window.paint_quad(fill(whole, look.cursor));
-            let mut chars = cursor.text.chars();
-            match (chars.next(), chars.next()) {
-                (Some(ch), None) if boxes::drawn(ch) => {
-                    paint_drawn(ch, look.cursor_text, corner, look, window)
-                }
-                _ => text(
-                    &cursor.text,
-                    look.cursor_text,
-                    &cursor.style,
-                    corner,
-                    look,
-                    window,
-                ),
-            }
+            paint_alone(
+                &cursor.text,
+                look.cursor_text,
+                &cursor.style,
+                corner,
+                look,
+                window,
+            );
         }
         CursorShape::HollowBlock => {
             window.paint_quad(outline(whole, look.cursor, gpui::BorderStyle::Solid));
@@ -412,8 +416,7 @@ mod tests {
         let row = Row {
             text: "中 ab".into(),
             runs: vec![(4, style), (2, bold)],
-            clusters: Vec::new(),
-            boxes: Vec::new(),
+            alone: Vec::new(),
         };
         let spans: Vec<_> = spans(&row).into_iter().map(|(at, n, _)| (at, n)).collect();
         assert_eq!(spans, [(0, 2), (2, 2)]);

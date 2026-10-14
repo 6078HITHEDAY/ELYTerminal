@@ -1,13 +1,9 @@
-/// One step of a path, in device pixels from the cell's top-left.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Step {
-    Move(f32, f32),
-    Line(f32, f32),
-    /// A cubic curve: two control points, then the end.
-    Curve([f32; 6]),
-}
+mod outline;
 
-/// A piece of a drawn character, in device pixels from the cell's top-left.
+/// A point in device pixels from the cell's top-left.
+pub type Point = (f32, f32);
+
+/// A piece of a drawn character in device pixels from the cell's top-left; pieces never overlap.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     /// A rectangle filled at `alpha` of the text color.
@@ -18,10 +14,8 @@ pub enum Shape {
         h: u32,
         alpha: f32,
     },
-    /// A closed outline, filled.
-    Fill(Vec<Step>),
-    /// An open path, stroked this wide with butt ends.
-    Stroke(Vec<Step>, f32),
+    /// A simple polygon, filled.
+    Fill(Vec<Point>),
 }
 
 /// Whether the terminal draws `ch` as shapes instead of through the font.
@@ -60,28 +54,65 @@ const QUADRANTS: [u8; 10] = [
     0b0010, 0b0001, 0b1000, 0b1011, 0b1001, 0b1110, 0b1101, 0b0100, 0b0110, 0b0111,
 ];
 
+/// A box by its corners: left, top, right, bottom.
+type Corners = [u32; 4];
+
 /// The shapes of a `drawn` char in a `w` by `h` cell whose light lines are `t` thick.
 pub fn shapes(ch: char, w: u32, h: u32, t: u32) -> Vec<Shape> {
     let code = ch as u32;
     match code {
-        0x2504..=0x250B | 0x254C..=0x254F => dashes(code, w, h, t),
-        0x256D..=0x2570 => arc(code, w, h, t),
-        0x2571..=0x2573 => diagonals(code, w, h, t),
-        0x2500..=0x257F => lines(LINES[(code - 0x2500) as usize], w, h, t),
-        0x2580..=0x259F => blocks(code, w, h),
-        0xE0B0..=0xE0B7 => powerline(code, w, h, t),
+        0x2504..=0x250B | 0x254C..=0x254F => rects(dashes(code, w, h, t), 1.),
+        0x256D..=0x2570 => outline::arc(code, w, h, t),
+        0x2571..=0x2573 => outline::diagonals(code, w, h, t),
+        0x2500..=0x257F => rects(lines(LINES[(code - 0x2500) as usize], w, h, t), 1.),
+        0x2591..=0x2593 => rects(vec![[0, 0, w, h]], (code - 0x2590) as f32 / 4.),
+        0x2580..=0x259F => rects(blocks(code, w, h), 1.),
+        0xE0B0..=0xE0B7 => outline::powerline(code, w, h, t),
         _ => panic!("U+{code:04X} is not a drawn character"),
     }
 }
 
-fn rect(x0: u32, y0: u32, x1: u32, y1: u32) -> Shape {
-    Shape::Rect {
-        x: x0,
-        y: y0,
-        w: x1.saturating_sub(x0),
-        h: y1.saturating_sub(y0),
-        alpha: 1.,
+/// Rects from boxes with their overlaps cut away, so each pixel takes the color once.
+fn rects(boxes: Vec<Corners>, alpha: f32) -> Vec<Shape> {
+    let mut kept: Vec<Corners> = Vec::new();
+    for corners in boxes {
+        let mut pieces = vec![corners];
+        for seen in &kept {
+            pieces = pieces
+                .into_iter()
+                .flat_map(|piece| outside(piece, *seen))
+                .collect();
+        }
+        kept.extend(pieces);
     }
+    kept.into_iter()
+        .filter(|[x0, y0, x1, y1]| x1 > x0 && y1 > y0)
+        .map(|[x0, y0, x1, y1]| Shape::Rect {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+            alpha,
+        })
+        .collect()
+}
+
+/// The parts of `piece` outside `cut`.
+fn outside(piece: Corners, cut: Corners) -> Vec<Corners> {
+    let ([x0, y0, x1, y1], [cx0, cy0, cx1, cy1]) = (piece, cut);
+    if cx0 >= x1 || cx1 <= x0 || cy0 >= y1 || cy1 <= y0 {
+        return vec![piece];
+    }
+    let (top, bottom) = (cy0.max(y0), cy1.min(y1));
+    [
+        [x0, y0, x1, top],
+        [x0, bottom, x1, y1],
+        [x0, top, cx0.max(x0), bottom],
+        [cx1.min(x1), top, x1, bottom],
+    ]
+    .into_iter()
+    .filter(|[a, b, c, d]| c > a && d > b)
+    .collect()
 }
 
 /// Where an arm ends at the center, by the arms crossing it: `[heavy, double, light, short]`.
@@ -102,7 +133,7 @@ fn stop((a, b): (u8, u8), straight: bool, [heavy, double, light, short]: [u32; 4
 }
 
 /// Arms from the center to the edges, joined as Ghostty joins them.
-fn lines([up, right, down, left]: [u8; 4], w: u32, h: u32, t: u32) -> Vec<Shape> {
+fn lines([up, right, down, left]: [u8; 4], w: u32, h: u32, t: u32) -> Vec<Corners> {
     let heavy = 2 * t;
     let h_light_top = h.saturating_sub(t) / 2;
     let h_light_bottom = h_light_top + t;
@@ -139,39 +170,34 @@ fn lines([up, right, down, left]: [u8; 4], w: u32, h: u32, t: u32) -> Vec<Shape>
     let (top_double, bottom_double) = (up == DOUBLE, down == DOUBLE);
     let mut out = Vec::new();
     match up {
-        LIGHT => out.push(rect(v_light_left, 0, v_light_right, up_bottom)),
-        HEAVY => out.push(rect(v_heavy_left, 0, v_heavy_right, up_bottom)),
+        LIGHT => out.push([v_light_left, 0, v_light_right, up_bottom]),
+        HEAVY => out.push([v_heavy_left, 0, v_heavy_right, up_bottom]),
         DOUBLE => {
-            let stop = |side| {
+            let end = |side| {
                 if side == DOUBLE {
                     h_light_top
                 } else {
                     up_bottom
                 }
             };
-            out.push(rect(v_double_left, 0, v_light_left, stop(left)));
-            out.push(rect(v_light_right, 0, v_double_right, stop(right)));
+            out.push([v_double_left, 0, v_light_left, end(left)]);
+            out.push([v_light_right, 0, v_double_right, end(right)]);
         }
         _ => {}
     }
     match right {
-        LIGHT => out.push(rect(right_left, h_light_top, w, h_light_bottom)),
-        HEAVY => out.push(rect(right_left, h_heavy_top, w, h_heavy_bottom)),
+        LIGHT => out.push([right_left, h_light_top, w, h_light_bottom]),
+        HEAVY => out.push([right_left, h_heavy_top, w, h_heavy_bottom]),
         DOUBLE => {
             let start = |double| if double { v_light_right } else { right_left };
-            out.push(rect(start(top_double), h_double_top, w, h_light_top));
-            out.push(rect(
-                start(bottom_double),
-                h_light_bottom,
-                w,
-                h_double_bottom,
-            ));
+            out.push([start(top_double), h_double_top, w, h_light_top]);
+            out.push([start(bottom_double), h_light_bottom, w, h_double_bottom]);
         }
         _ => {}
     }
     match down {
-        LIGHT => out.push(rect(v_light_left, down_top, v_light_right, h)),
-        HEAVY => out.push(rect(v_heavy_left, down_top, v_heavy_right, h)),
+        LIGHT => out.push([v_light_left, down_top, v_light_right, h]),
+        HEAVY => out.push([v_heavy_left, down_top, v_heavy_right, h]),
         DOUBLE => {
             let start = |side| {
                 if side == DOUBLE {
@@ -180,18 +206,18 @@ fn lines([up, right, down, left]: [u8; 4], w: u32, h: u32, t: u32) -> Vec<Shape>
                     down_top
                 }
             };
-            out.push(rect(v_double_left, start(left), v_light_left, h));
-            out.push(rect(v_light_right, start(right), v_double_right, h));
+            out.push([v_double_left, start(left), v_light_left, h]);
+            out.push([v_light_right, start(right), v_double_right, h]);
         }
         _ => {}
     }
     match left {
-        LIGHT => out.push(rect(0, h_light_top, left_right, h_light_bottom)),
-        HEAVY => out.push(rect(0, h_heavy_top, left_right, h_heavy_bottom)),
+        LIGHT => out.push([0, h_light_top, left_right, h_light_bottom]),
+        HEAVY => out.push([0, h_heavy_top, left_right, h_heavy_bottom]),
         DOUBLE => {
             let end = |double| if double { v_light_left } else { left_right };
-            out.push(rect(0, h_double_top, end(top_double), h_light_top));
-            out.push(rect(0, h_light_bottom, end(bottom_double), h_double_bottom));
+            out.push([0, h_double_top, end(top_double), h_light_top]);
+            out.push([0, h_light_bottom, end(bottom_double), h_double_bottom]);
         }
         _ => {}
     }
@@ -199,7 +225,7 @@ fn lines([up, right, down, left]: [u8; 4], w: u32, h: u32, t: u32) -> Vec<Shape>
 }
 
 /// Dashes that tile across cells; a cell too small for them takes a solid light line.
-fn dashes(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
+fn dashes(code: u32, w: u32, h: u32, t: u32) -> Vec<Corners> {
     let wide = t.max(4);
     let (count, thick, gap, vertical) = match code {
         0x2504 => (3, t, wide, false),
@@ -218,9 +244,9 @@ fn dashes(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
     let (along, across) = if vertical { (h, w) } else { (w, h) };
     if along < 2 * count {
         let solid = if vertical {
-            [LIGHT, 0, LIGHT, 0]
+            [LIGHT, NONE, LIGHT, NONE]
         } else {
-            [0, LIGHT, 0, LIGHT]
+            [NONE, LIGHT, NONE, LIGHT]
         };
         return lines(solid, w, h, t);
     }
@@ -234,9 +260,9 @@ fn dashes(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
             let end = at + dash + u32::from(extra > 0);
             extra = extra.saturating_sub(1);
             let piece = if vertical {
-                rect(side, at, side + thick, end)
+                [side, at, side + thick, end]
             } else {
-                rect(at, side, end, side + thick)
+                [at, side, end, side + thick]
             };
             at = end + gap;
             piece
@@ -244,129 +270,35 @@ fn dashes(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
         .collect()
 }
 
-/// A rounded corner from the light lines' centers to two edges.
-fn arc(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
-    let (wf, hf, tf) = (w as f32, h as f32, t as f32);
-    let cx = (w.saturating_sub(t) / 2) as f32 + tf / 2.;
-    let cy = (h.saturating_sub(t) / 2) as f32 + tf / 2.;
-    let r = wf.min(hf) / 2.;
-    let s = 0.25;
-    let [dy, dx]: [f32; 2] = [[1., 1.], [1., -1.], [-1., -1.], [-1., 1.]][(code - 0x256D) as usize];
-    let (edge_x, edge_y) = (if dx > 0. { wf } else { 0. }, if dy > 0. { hf } else { 0. });
-    let path = vec![
-        Step::Move(cx, edge_y),
-        Step::Line(cx, cy + dy * r),
-        Step::Curve([cx, cy + dy * s * r, cx + dx * s * r, cy, cx + dx * r, cy]),
-        Step::Line(edge_x, cy),
-    ];
-    vec![Shape::Stroke(path, tf)]
-}
-
-/// Corner-to-corner lines, run half a pixel past so neighbors join once clipped.
-fn diagonals(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
-    let (wf, hf) = (w as f32, h as f32);
-    let (sx, sy) = ((wf / hf).min(1.) / 2., (hf / wf).min(1.) / 2.);
-    let line = |from: (f32, f32), to: (f32, f32)| {
-        Shape::Stroke(
-            vec![Step::Move(from.0, from.1), Step::Line(to.0, to.1)],
-            t as f32,
-        )
-    };
-    let rising = line((wf + sx, -sy), (-sx, hf + sy));
-    let falling = line((-sx, -sy), (wf + sx, hf + sy));
-    match code {
-        0x2571 => vec![rising],
-        0x2572 => vec![falling],
-        _ => vec![rising, falling],
-    }
-}
-
-/// Block elements: eighths, halves, shades and quadrants.
-fn blocks(code: u32, w: u32, h: u32) -> Vec<Shape> {
+/// Block elements but the shades: eighths, halves and quadrants.
+fn blocks(code: u32, w: u32, h: u32) -> Vec<Corners> {
     let part = |share: f32, side: u32| (side as f32 * share).round() as u32;
     let eighths = |n: u32| n as f32 / 8.;
-    let shade = |alpha| Shape::Rect {
-        x: 0,
-        y: 0,
-        w,
-        h,
-        alpha,
-    };
     match code {
-        0x2580 => vec![rect(0, 0, w, part(0.5, h))],
-        0x2581..=0x2587 => vec![rect(0, h - part(eighths(code - 0x2580), h), w, h)],
-        0x2588 => vec![rect(0, 0, w, h)],
-        0x2589..=0x258F => vec![rect(0, 0, part(eighths(0x2590 - code), w), h)],
-        0x2590 => vec![rect(w - part(0.5, w), 0, w, h)],
-        0x2591..=0x2593 => vec![shade((code - 0x2590) as f32 / 4.)],
-        0x2594 => vec![rect(0, 0, w, part(0.125, h))],
-        0x2595 => vec![rect(w - part(0.125, w), 0, w, h)],
+        0x2580 => vec![[0, 0, w, part(0.5, h)]],
+        0x2581..=0x2587 => vec![[0, h - part(eighths(code - 0x2580), h), w, h]],
+        0x2588 => vec![[0, 0, w, h]],
+        0x2589..=0x258F => vec![[0, 0, part(eighths(0x2590 - code), w), h]],
+        0x2590 => vec![[w - part(0.5, w), 0, w, h]],
+        0x2594 => vec![[0, 0, w, part(0.125, h)]],
+        0x2595 => vec![[w - part(0.125, w), 0, w, h]],
         _ => {
             let bits = QUADRANTS[(code - 0x2596) as usize];
             let (mx, my) = (part(0.5, w), part(0.5, h));
             let (nx, ny) = (w - mx, h - my);
             [
-                rect(0, 0, mx, my),
-                rect(nx, 0, w, my),
-                rect(0, ny, mx, h),
-                rect(nx, ny, w, h),
+                [0, 0, mx, my],
+                [nx, 0, w, my],
+                [0, ny, mx, h],
+                [nx, ny, w, h],
             ]
             .into_iter()
             .enumerate()
             .filter(|(index, _)| bits & (0b1000 >> index) != 0)
-            .map(|(_, piece)| piece)
+            .map(|(_, corners)| corners)
             .collect()
         }
     }
-}
-
-/// Powerline's arrows and half circles, filling the cell's height.
-fn powerline(code: u32, w: u32, h: u32, t: u32) -> Vec<Shape> {
-    let (wf, hf, tf) = (w as f32, h as f32, t as f32);
-    let steps = match code {
-        0xE0B0..=0xE0B3 => vec![
-            Step::Move(0., 0.),
-            Step::Line(wf, hf / 2.),
-            Step::Line(0., hf),
-        ],
-        0xE0B4 | 0xE0B6 => half_circle(wf, hf, 0.),
-        _ => half_circle(wf, hf, tf / 2.),
-    };
-    let steps = if matches!(code, 0xE0B2 | 0xE0B3 | 0xE0B6 | 0xE0B7) {
-        mirror(steps, wf)
-    } else {
-        steps
-    };
-    if matches!(code, 0xE0B0 | 0xE0B2 | 0xE0B4 | 0xE0B6) {
-        vec![Shape::Fill(steps)]
-    } else {
-        vec![Shape::Stroke(steps, tf)]
-    }
-}
-
-/// The right half of a circle against the left edge, inset `by` so a stroke stays inside.
-fn half_circle(w: f32, h: f32, by: f32) -> Vec<Step> {
-    let c = (2f32.sqrt() - 1.) * 4. / 3.;
-    let r = w.min(h / 2.) - by;
-    let (top, bottom) = (by, h - by);
-    vec![
-        Step::Move(0., top),
-        Step::Curve([r * c, top, r, top + r - r * c, r, top + r]),
-        Step::Line(r, bottom - r),
-        Step::Curve([r, bottom - r + r * c, r * c, bottom, 0., bottom]),
-    ]
-}
-
-/// The steps flipped left to right within a cell `w` wide.
-fn mirror(steps: Vec<Step>, w: f32) -> Vec<Step> {
-    steps
-        .into_iter()
-        .map(|step| match step {
-            Step::Move(x, y) => Step::Move(w - x, y),
-            Step::Line(x, y) => Step::Line(w - x, y),
-            Step::Curve([ax, ay, bx, by, x, y]) => Step::Curve([w - ax, ay, w - bx, by, w - x, y]),
-        })
-        .collect()
 }
 
 #[cfg(test)]

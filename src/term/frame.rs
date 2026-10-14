@@ -40,10 +40,8 @@ pub struct Style {
 pub struct Row {
     pub text: String,
     pub runs: Vec<(usize, Style)>,
-    /// Cells with combining marks, painted alone at their column.
-    pub clusters: Vec<(usize, String, Style)>,
-    /// Cells the terminal draws as shapes: column, char, style.
-    pub boxes: Vec<(usize, char, Style)>,
+    /// Cells painted on their own at their column: combining clusters and drawn characters.
+    pub alone: Vec<(usize, String, Style)>,
 }
 
 /// The cursor where it shows: its cell, shape, and what the cell holds.
@@ -72,11 +70,8 @@ impl Frame {
             .iter()
             .map(|row| {
                 let mut cells: Vec<String> = row.text.chars().map(String::from).collect();
-                for (column, cluster, _) in &row.clusters {
-                    cells[*column] = cluster.clone();
-                }
-                for (column, ch, _) in &row.boxes {
-                    cells[*column] = ch.to_string();
+                for (column, text, _) in &row.alone {
+                    cells[*column] = text.clone();
                 }
                 cells.concat().trim_end().to_string()
             })
@@ -100,17 +95,13 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
             .flags
             .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER);
         let hidden = cell.flags.contains(Flags::HIDDEN);
-        let cluster = cell
-            .zerowidth()
-            .filter(|_| !hidden)
-            .filter(|marks| !marks.is_empty())
-            .map(|marks| {
-                std::iter::once(cell.c)
-                    .chain(marks.iter().copied())
-                    .collect::<String>()
-            });
-        let drawn = !hidden && cluster.is_none() && boxes::drawn(cell.c);
-        let shown = if spacer || hidden || drawn || cluster.is_some() {
+        let marks = cell.zerowidth().filter(|marks| !marks.is_empty());
+        let alone = (!hidden && (marks.is_some() || boxes::drawn(cell.c))).then(|| {
+            std::iter::once(cell.c)
+                .chain(marks.into_iter().flatten().copied())
+                .collect::<String>()
+        });
+        let shown = if spacer || hidden || alone.is_some() {
             ' '
         } else {
             cell.c
@@ -122,17 +113,12 @@ pub fn frame<T: EventListener>(term: &Term<T>, ink: &Ink) -> Frame {
                 column: point.column.0,
                 shape: content.cursor.shape,
                 wide: cell.flags.contains(Flags::WIDE_CHAR),
-                text: cluster
-                    .clone()
-                    .unwrap_or_else(|| if drawn { cell.c } else { shown }.to_string()),
+                text: alone.clone().unwrap_or_else(|| shown.to_string()),
                 style: look,
             });
         }
-        if let Some(cluster) = cluster {
-            rows[row].clusters.push((point.column.0, cluster, look));
-        }
-        if drawn {
-            rows[row].boxes.push((point.column.0, cell.c, look));
+        if let Some(alone) = alone {
+            rows[row].alone.push((point.column.0, alone, look));
         }
     }
     Frame { rows, cursor }
@@ -231,7 +217,7 @@ mod tests {
         let (frame, _) = shown("e\u{301}x".as_bytes());
         assert_eq!(frame.text(), "e\u{301}x");
         assert_eq!(&frame.rows[0].text[..2], " x");
-        assert_eq!(frame.rows[0].clusters[0].1, "e\u{301}");
+        assert_eq!(frame.rows[0].alone[0].1, "e\u{301}");
     }
 
     #[test]
@@ -271,27 +257,30 @@ mod tests {
     }
 
     #[test]
-    fn drawn_characters_leave_the_font() {
-        let (frame, ink) = shown("a\u{2500}\u{E0B0}\x1b[1D".as_bytes());
-        assert_eq!(&frame.rows[0].text[..3], "a  ");
-        let drawn: Vec<_> = frame.rows[0]
-            .boxes
+    fn drawn_characters_leave_the_font_with_their_marks() {
+        let (frame, ink) = shown("a\u{2500}\u{E0B0}\u{2500}\u{301}\x1b[2D".as_bytes());
+        assert_eq!(&frame.rows[0].text[..4], "a   ");
+        let alone: Vec<_> = frame.rows[0]
+            .alone
             .iter()
-            .map(|(at, ch, _)| (*at, *ch))
+            .map(|(at, text, _)| (*at, text.as_str()))
             .collect();
-        assert_eq!(drawn, [(1, '\u{2500}'), (2, '\u{E0B0}')]);
-        assert_eq!(frame.rows[0].boxes[0].2.fg, ink.fg);
-        assert_eq!(frame.text(), "a\u{2500}\u{E0B0}");
+        assert_eq!(
+            alone,
+            [(1, "\u{2500}"), (2, "\u{E0B0}"), (3, "\u{2500}\u{301}")]
+        );
+        assert_eq!(frame.rows[0].alone[0].2.fg, ink.fg);
+        assert_eq!(frame.text(), "a\u{2500}\u{E0B0}\u{2500}\u{301}");
         assert_eq!(frame.cursor.expect("a cursor").text, "\u{E0B0}");
         let (hidden, _) = shown(b"\x1b[8m\xe2\x94\x80");
-        assert!(hidden.rows[0].boxes.is_empty(), "hidden lines draw nothing");
+        assert!(hidden.rows[0].alone.is_empty(), "hidden lines draw nothing");
     }
 
     #[test]
     fn hidden_cells_show_nothing_but_their_ground() {
         let (frame, _) = shown("\x1b[8;4;9;41mSe\u{301}\x1b[0m\x1b[2D".as_bytes());
         assert_eq!(frame.rows[0].text.trim_end(), "");
-        assert!(frame.rows[0].clusters.is_empty());
+        assert!(frame.rows[0].alone.is_empty());
         let (_, style) = frame.rows[0].runs[0];
         assert_eq!((style.underline, style.strike), (Underline::None, false));
         assert!(style.bg.is_some(), "the ground stays");
