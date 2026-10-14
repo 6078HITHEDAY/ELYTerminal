@@ -51,7 +51,7 @@ pub fn encode(key: &Key, app_cursor: bool, kitty: Kitty) -> Option<Vec<u8>> {
     }
 }
 
-/// Pasted text as the program gets it; bracketed text loses ESC and Ctrl-C, as alacritty's does.
+/// Pasted text for the program; bracketed text loses ESC and Ctrl-C, as in alacritty.
 pub fn paste(text: &str, bracketed: bool) -> Vec<u8> {
     if bracketed {
         let text = text.replace(['\x1b', '\x03'], "");

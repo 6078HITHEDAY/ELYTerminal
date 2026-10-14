@@ -4,7 +4,7 @@ use alacritty_terminal::{
 };
 use ely_gpui_component::terminal::{Target, links};
 
-/// The link at `point`: the program's OSC 8 target, else a URL in its line, wrapped rows joined.
+/// The OSC 8 target at `point`, else a URL in its wrapped line.
 pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
     let grid = term.grid();
     if grid[point].flags.contains(Flags::WIDE_CHAR_SPACER) {
@@ -23,6 +23,7 @@ pub fn link_at<T>(term: &Term<T>, mut point: Point) -> Option<String> {
         let spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         if !grid[cell].flags.intersects(spacer) {
             text.push(grid[cell].c);
+            text.extend(grid[cell].zerowidth().into_iter().flatten());
         }
         if cell == end {
             break;
@@ -68,6 +69,12 @@ mod tests {
         let text = "(http://a.b)";
         assert_eq!(link(text, 0, 4).as_deref(), Some("http://a.b"));
         assert_eq!(link(text, 0, 11), None);
+    }
+
+    #[test]
+    fn a_url_keeps_its_combining_marks() {
+        let text = "https://e.test/cafe\u{301}/x";
+        assert_eq!(link(text, 1, 1).as_deref(), Some(text));
     }
 
     #[test]

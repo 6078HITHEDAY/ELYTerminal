@@ -7,16 +7,16 @@ use alacritty_terminal::{
 use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
-use super::pty::PtyEvent;
+use super::{mouse::MouseMode, pty::PtyEvent};
 
 /// The longest OSC body kept; longer ones are dropped whole.
 const MOST: usize = 4096;
 
-/// A pty whose reader hands each byte to the OSC 7 and mode 9 scanners before the parser sees it.
+/// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
     pub inner: P,
     scanner: Osc7,
-    x10: Mode9,
+    mouse: MouseModes,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -27,7 +27,7 @@ impl<P> Tapped<P> {
         Self {
             inner,
             scanner: Osc7::default(),
-            x10: Mode9::default(),
+            mouse: MouseModes::default(),
             events,
             pid,
             last: None,
@@ -53,12 +53,9 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
                 log::debug!("pty {pid}: a folder report after its session closed");
             }
         });
-        if let Some(on) = self.x10.feed(&buf[..count]) {
-            log::info!(
-                "pty {pid}: X10 mouse reporting {}",
-                if on { "on" } else { "off" }
-            );
-            if events.unbounded_send(PtyEvent::X10(on)).is_err() {
+        if let Some(mode) = self.mouse.feed(&buf[..count]) {
+            log::info!("pty {pid}: mouse {mode:?}");
+            if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
             }
         }
@@ -197,18 +194,18 @@ enum Csi {
     Private,
 }
 
-/// Follows `CSI ? 9 h` and `l`, X10 mouse reporting, across reads: alacritty's parser drops mode 9.
+/// The mouse modes as xterm holds them; alacritty drops 9 and splits the rest.
 #[derive(Default)]
-pub(crate) struct Mode9 {
+pub(crate) struct MouseModes {
     state: Csi,
     params: Vec<u32>,
-    on: bool,
+    mode: MouseMode,
 }
 
-impl Mode9 {
+impl MouseModes {
     /// The mode after `bytes`, when they changed it.
-    pub fn feed(&mut self, bytes: &[u8]) -> Option<bool> {
-        let was = self.on;
+    pub fn feed(&mut self, bytes: &[u8]) -> Option<MouseMode> {
+        let was = self.mode;
         let mut rest = bytes;
         while !rest.is_empty() {
             if self.state == Csi::Ground {
@@ -225,7 +222,7 @@ impl Mode9 {
                 (_, 0x1b) => Csi::Escape,
                 (Csi::Escape, b'[') => Csi::Bracket,
                 (Csi::Escape, b'c') => {
-                    self.on = false;
+                    self.mode = MouseMode::default();
                     Csi::Ground
                 }
                 (Csi::Bracket, b'?') => {
@@ -244,20 +241,15 @@ impl Mode9 {
                     Csi::Private
                 }
                 (Csi::Private, b'h' | b'l') => {
-                    let set = byte == b'h';
-                    for mode in &self.params {
-                        match mode {
-                            9 => self.on = set,
-                            1000 | 1002 | 1003 if set => self.on = false,
-                            _ => {}
-                        }
+                    for &mode in &self.params {
+                        self.mode.apply(mode, byte == b'h');
                     }
                     Csi::Ground
                 }
                 _ => Csi::Ground,
             };
         }
-        (self.on != was).then_some(self.on)
+        (self.mode != was).then_some(self.mode)
     }
 }
 
@@ -359,17 +351,23 @@ mod tests {
     }
 
     #[test]
-    fn mode_9_follows_its_sets_resets_and_the_modes_that_replace_it() {
-        let mut mode = Mode9::default();
-        assert_eq!(mode.feed(b"a\x1b[?"), None);
-        assert_eq!(mode.feed(b"1006;9h"), Some(true));
-        assert_eq!(mode.feed(b"\x1b[9m\x1b[?25l\x1b[?9"), None);
-        assert_eq!(mode.feed(b"l"), Some(false));
-        assert_eq!(mode.feed(b"\x1b[?9h\x1b[?1000h"), None, "1000 replaced it");
-        assert_eq!(mode.feed(b"\x1b[?9h"), Some(true));
-        assert_eq!(mode.feed(b"\x1b[?1000l"), None);
-        assert_eq!(mode.feed(b"\x1bc"), Some(false), "a reset ends it");
-        assert_eq!(mode.feed(b"\x1b[?09;\x1b[?9h"), Some(true));
+    fn mouse_modes_follow_private_modes_in_order_across_reads() {
+        use crate::term::mouse::{Format, Tracking};
+        let mut modes = MouseModes::default();
+        assert_eq!(modes.feed(b"a\x1b[?"), None);
+        assert!(modes.feed(b"1006;9h").is_some());
+        assert_eq!(modes.mode.format, Format::Sgr);
+        assert_eq!(modes.mode.tracking, Tracking::X10);
+        assert_eq!(modes.feed(b"\x1b[9m\x1b[?25l\x1b[?9"), None);
+        assert!(modes.feed(b"l").is_some());
+        assert_eq!(modes.mode.tracking, Tracking::Off);
+        modes.feed(b"\x1b[?1000h\x1b[?9h\x1b[?9l");
+        assert_eq!(modes.mode.tracking, Tracking::Off, "9 replaced 1000");
+        modes.feed(b"\x1b[?1002h");
+        let reset = modes.feed(b"\x1bc");
+        assert_eq!(reset, Some(MouseMode::default()), "a reset ends it");
+        modes.feed(b"\x1b[?09;\x1b[?1003h");
+        assert_eq!(modes.mode.tracking, Tracking::Any);
     }
 
     #[test]

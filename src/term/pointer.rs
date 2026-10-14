@@ -12,7 +12,7 @@ use gpui::{
 use super::{
     keys,
     links::link_at,
-    mouse::{self, Button, Gesture, Report, Tracking},
+    mouse::{self, Button, Gesture, MouseMode, Report, Tracking},
     view::TerminalView,
 };
 use crate::settings::SettingsStore;
@@ -28,8 +28,8 @@ pub struct Pointer {
     pub cell: Size<Pixels>,
     /// The left button is down and drawing a selection.
     selecting: bool,
-    /// The button whose press went to the program.
-    pressed: Option<Button>,
+    /// Buttons whose press went to the program.
+    pressed: Vec<Button>,
     /// The cell of the last report; motion inside it sends nothing.
     last: Option<(usize, usize)>,
     /// Wheel travel short of a line.
@@ -66,9 +66,10 @@ impl TerminalView {
     /// What the program tracks; none while Shift holds the mouse for selecting.
     fn tracking(&self, modifiers: &Modifiers) -> Tracking {
         if modifiers.shift {
-            return Tracking::Off;
+            Tracking::Off
+        } else {
+            self.mouse.tracking
         }
-        Tracking::new(*self.pty.term.lock().mode(), self.x10)
     }
 
     fn report(
@@ -87,8 +88,8 @@ impl TerminalView {
             alt: modifiers.alt,
             ctrl: modifiers.control,
         };
-        let mode = *self.pty.term.lock().mode();
-        let Some(bytes) = mouse::encode(&report, tracking, mode) else {
+        let format = self.mouse.format;
+        let Some(bytes) = mouse::encode(&report, MouseMode { tracking, format }) else {
             return false;
         };
         log::trace!("terminal {}: {report:?} sends {bytes:?}", self.pty.pid);
@@ -129,27 +130,33 @@ impl TerminalView {
                 cell,
                 &event.modifiers,
                 tracking,
-            ) {
-                self.pointer.pressed = Some(pressed);
+            ) && !self.pointer.pressed.contains(&pressed)
+            {
+                self.pointer.pressed.push(pressed);
             }
             return;
         }
         if event.button != MouseButton::Left {
             return;
         }
+        let pid = self.pty.pid;
         let mut term = self.pty.term.lock();
         match (
             term.selection.as_mut(),
             event.modifiers.shift,
             event.click_count,
         ) {
-            (Some(selection), true, 1) => selection.update(point, side),
+            (Some(selection), true, 1) => {
+                log::debug!("terminal {pid}: the selection extends to {point:?}");
+                selection.update(point, side);
+            }
             _ => {
                 let kind = match event.click_count {
                     2 => SelectionType::Semantic,
                     3.. => SelectionType::Lines,
                     _ => SelectionType::Simple,
                 };
+                log::debug!("terminal {pid}: a {kind:?} selection starts at {point:?}");
                 term.selection = Some(Selection::new(kind, point, side));
             }
         }
@@ -167,6 +174,7 @@ impl TerminalView {
         let (cell, point, side) = self.cell_at(event.position);
         if self.pointer.selecting && event.pressed_button == Some(MouseButton::Left) {
             if let Some(selection) = self.pty.term.lock().selection.as_mut() {
+                log::trace!("terminal {}: the selection runs to {point:?}", self.pty.pid);
                 selection.update(point, side);
             }
             cx.notify();
@@ -174,7 +182,9 @@ impl TerminalView {
         }
         let tracking = self.tracking(&event.modifiers);
         if tracking != Tracking::Off && self.pointer.last != Some(cell) {
-            let held = self.pointer.pressed;
+            let held = [Button::Left, Button::Right, Button::Middle]
+                .into_iter()
+                .find(|button| self.pointer.pressed.contains(button));
             self.report(held, Gesture::Motion, cell, &event.modifiers, tracking);
         }
     }
@@ -187,16 +197,29 @@ impl TerminalView {
     ) {
         if event.button == MouseButton::Left && std::mem::take(&mut self.pointer.selecting) {
             let selected = self.selected();
+            let count = selected.as_ref().map_or(0, |text| text.chars().count());
+            log::debug!(
+                "terminal {}: the selection ends on {count} characters",
+                self.pty.pid
+            );
             if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
                 self.copy_text(text, cx);
             }
         }
-        let released = button(event.button);
-        if released.is_some() && self.pointer.pressed == released {
-            self.pointer.pressed = None;
+        let Some(released) = button(event.button) else {
+            return;
+        };
+        if self.pointer.pressed.contains(&released) {
+            self.pointer.pressed.retain(|held| *held != released);
             let (cell, ..) = self.cell_at(event.position);
-            let tracking = Tracking::new(*self.pty.term.lock().mode(), self.x10);
-            self.report(released, Gesture::Release, cell, &event.modifiers, tracking);
+            let tracking = self.mouse.tracking;
+            self.report(
+                Some(released),
+                Gesture::Release,
+                cell,
+                &event.modifiers,
+                tracking,
+            );
         }
     }
 
@@ -247,7 +270,7 @@ impl TerminalView {
         }
     }
 
-    /// The selected text, without the newline alacritty ends a whole line with, as Ghostty copies it.
+    /// The selected text without alacritty's final newline, as Ghostty copies it.
     fn selected(&self) -> Option<String> {
         let mut text = self.pty.term.lock().selection_to_string()?;
         if text.ends_with('\n') {

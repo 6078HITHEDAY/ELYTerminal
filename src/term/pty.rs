@@ -11,16 +11,15 @@ use alacritty_terminal::{
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use super::tap::Tapped;
+use super::{mouse::MouseMode, tap::Tapped};
 use crate::settings::{CursorStyle, Settings};
 
-/// What a session hears from its pty: the grid's events, the folder the shell reports, and mode 9.
+/// What a session hears from its pty.
 #[derive(Debug)]
 pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
-    /// X10 mouse reporting turned on or off.
-    X10(bool),
+    Mouse(MouseMode),
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.
@@ -250,7 +249,7 @@ mod tests {
                     PtyEvent::Folder(folder) => folders.push(folder),
                     PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                     PtyEvent::Term(Event::Exit) => break,
-                    PtyEvent::Term(_) | PtyEvent::X10(_) => {}
+                    PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
                 }
             }
             (folders, success)

@@ -1,5 +1,3 @@
-use alacritty_terminal::term::TermMode;
-
 /// A button as reports name it; the wheel's two turns count as buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Button {
@@ -32,8 +30,9 @@ pub struct Report {
 }
 
 /// The mouse events a program asked for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tracking {
+    #[default]
     Off,
     /// Mode 9: presses alone, no modifiers.
     X10,
@@ -45,30 +44,51 @@ pub enum Tracking {
     Any,
 }
 
-impl Tracking {
-    /// The tracking `mode` sets; `x10` is mode 9, which the tap follows.
-    pub fn new(mode: TermMode, x10: bool) -> Self {
-        if x10 {
-            Self::X10
-        } else if mode.contains(TermMode::MOUSE_MOTION) {
-            Self::Any
-        } else if mode.contains(TermMode::MOUSE_DRAG) {
-            Self::Button
-        } else if mode.contains(TermMode::MOUSE_REPORT_CLICK) {
-            Self::Normal
-        } else {
-            Self::Off
-        }
+/// The bytes reports go in: xterm's default, mode 1005 or mode 1006.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Format {
+    #[default]
+    X10,
+    Utf8,
+    Sgr,
+}
+
+/// How a program asked for the mouse.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MouseMode {
+    pub tracking: Tracking,
+    pub format: Format,
+}
+
+impl MouseMode {
+    /// Follows `CSI ? mode h` or `l`; as in xterm, a reset ends the tracking or format.
+    pub fn apply(&mut self, mode: u32, set: bool) {
+        let tracking = match mode {
+            9 => Tracking::X10,
+            1000 => Tracking::Normal,
+            1002 => Tracking::Button,
+            1003 => Tracking::Any,
+            1005 | 1006 => {
+                self.format = match (set, mode) {
+                    (false, _) => Format::X10,
+                    (true, 1005) => Format::Utf8,
+                    (true, _) => Format::Sgr,
+                };
+                return;
+            }
+            _ => return,
+        };
+        self.tracking = if set { tracking } else { Tracking::Off };
     }
 }
 
-/// The bytes `report` sends; none when the program did not ask for it or its format cannot hold the cell.
-pub fn encode(report: &Report, tracking: Tracking, mode: TermMode) -> Option<Vec<u8>> {
+/// The bytes `report` sends; none when unasked for or past what the format holds.
+pub fn encode(report: &Report, mode: MouseMode) -> Option<Vec<u8>> {
     let clicked = matches!(
         report.button,
         Some(Button::Left | Button::Middle | Button::Right)
     );
-    let wanted = match tracking {
+    let wanted = match mode.tracking {
         Tracking::Off => false,
         Tracking::X10 => report.gesture == Gesture::Press && clicked,
         Tracking::Normal => report.gesture != Gesture::Motion,
@@ -78,7 +98,7 @@ pub fn encode(report: &Report, tracking: Tracking, mode: TermMode) -> Option<Vec
     if !wanted {
         return None;
     }
-    let sgr = mode.contains(TermMode::SGR_MOUSE);
+    let sgr = mode.format == Format::Sgr;
     let mut code = match report.button {
         None => 3,
         Some(_) if report.gesture == Gesture::Release && !sgr => 3,
@@ -88,7 +108,7 @@ pub fn encode(report: &Report, tracking: Tracking, mode: TermMode) -> Option<Vec
         Some(Button::WheelUp) => 64,
         Some(Button::WheelDown) => 65,
     };
-    if tracking != Tracking::X10 {
+    if mode.tracking != Tracking::X10 {
         code +=
             4 * u32::from(report.shift) + 8 * u32::from(report.alt) + 16 * u32::from(report.ctrl);
     }
@@ -104,7 +124,7 @@ pub fn encode(report: &Report, tracking: Tracking, mode: TermMode) -> Option<Vec
         };
         return Some(format!("\x1b[<{code};{column};{row}{end}").into_bytes());
     }
-    let utf8 = mode.contains(TermMode::UTF8_MOUSE);
+    let utf8 = mode.format == Format::Utf8;
     let most = if utf8 { 0x7FF - 32 } else { 0xFF - 32 };
     if column > most || row > most {
         log::debug!("mouse: cell {column},{row} is past what the format holds");
@@ -139,102 +159,104 @@ mod tests {
         }
     }
 
-    fn sent(report: Report, tracking: Tracking, mode: TermMode) -> Option<Vec<u8>> {
-        encode(&report, tracking, mode)
+    fn mode(tracking: Tracking, format: Format) -> MouseMode {
+        MouseMode { tracking, format }
     }
 
     const LEFT: Option<Button> = Some(Button::Left);
 
     #[test]
+    fn one_tracking_and_one_format_hold_and_a_reset_ends_them() {
+        let mut held = MouseMode::default();
+        for (code, set) in [(1000, true), (9, true), (9, false), (1006, true)] {
+            held.apply(code, set);
+        }
+        assert_eq!(held, mode(Tracking::Off, Format::Sgr), "9 replaced 1000");
+        held.apply(1002, true);
+        held.apply(1003, false);
+        assert_eq!(held.tracking, Tracking::Off, "any reset ends tracking");
+        held.apply(1003, true);
+        held.apply(1005, true);
+        assert_eq!(
+            held,
+            mode(Tracking::Any, Format::Utf8),
+            "the last format holds"
+        );
+        held.apply(1006, false);
+        held.apply(25, true);
+        assert_eq!(held, mode(Tracking::Any, Format::X10));
+    }
+
+    #[test]
     fn normal_tracking_sends_presses_and_releases_as_x10_bytes() {
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-        let tracking = Tracking::new(mode, false);
-        assert_eq!(tracking, Tracking::Normal);
+        let normal = mode(Tracking::Normal, Format::X10);
         let press = report(LEFT, Gesture::Press, (0, 0));
-        assert_eq!(sent(press, tracking, mode), Some(b"\x1b[M !!".to_vec()));
+        assert_eq!(encode(&press, normal), Some(b"\x1b[M !!".to_vec()));
         let release = report(LEFT, Gesture::Release, (3, 2));
-        assert_eq!(sent(release, tracking, mode), Some(b"\x1b[M#$#".to_vec()));
+        assert_eq!(encode(&release, normal), Some(b"\x1b[M#$#".to_vec()));
         let motion = report(LEFT, Gesture::Motion, (1, 1));
-        assert_eq!(sent(motion, tracking, mode), None);
+        assert_eq!(encode(&motion, normal), None);
     }
 
     #[test]
     fn sgr_names_the_released_button_and_the_modifiers() {
-        let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        let sgr = mode(Tracking::Normal, Format::Sgr);
         let press = Report {
             shift: true,
             ctrl: true,
             ..report(Some(Button::Right), Gesture::Press, (4, 2))
         };
-        assert_eq!(
-            sent(press, Tracking::Normal, mode),
-            Some(b"\x1b[<22;5;3M".to_vec())
-        );
+        assert_eq!(encode(&press, sgr), Some(b"\x1b[<22;5;3M".to_vec()));
         let release = report(Some(Button::Middle), Gesture::Release, (300, 9));
-        assert_eq!(
-            sent(release, Tracking::Normal, mode),
-            Some(b"\x1b[<1;301;10m".to_vec())
-        );
+        assert_eq!(encode(&release, sgr), Some(b"\x1b[<1;301;10m".to_vec()));
         let alt = Report {
             alt: true,
             ..report(Some(Button::WheelDown), Gesture::Press, (0, 0))
         };
-        assert_eq!(
-            sent(alt, Tracking::Normal, mode),
-            Some(b"\x1b[<73;1;1M".to_vec())
-        );
+        assert_eq!(encode(&alt, sgr), Some(b"\x1b[<73;1;1M".to_vec()));
     }
 
     #[test]
     fn motion_needs_button_or_any_tracking() {
-        let mode = TermMode::SGR_MOUSE;
         let held = report(LEFT, Gesture::Motion, (1, 0));
         let free = report(None, Gesture::Motion, (1, 0));
-        assert_eq!(Tracking::new(TermMode::MOUSE_DRAG, false), Tracking::Button);
-        assert_eq!(
-            sent(held, Tracking::Button, mode),
-            Some(b"\x1b[<32;2;1M".to_vec())
-        );
-        assert_eq!(sent(free, Tracking::Button, mode), None);
-        assert_eq!(Tracking::new(TermMode::MOUSE_MOTION, false), Tracking::Any);
-        assert_eq!(
-            sent(free, Tracking::Any, mode),
-            Some(b"\x1b[<35;2;1M".to_vec())
-        );
+        let button = mode(Tracking::Button, Format::Sgr);
+        assert_eq!(encode(&held, button), Some(b"\x1b[<32;2;1M".to_vec()));
+        assert_eq!(encode(&free, button), None);
+        let any = mode(Tracking::Any, Format::Sgr);
+        assert_eq!(encode(&free, any), Some(b"\x1b[<35;2;1M".to_vec()));
     }
 
     #[test]
     fn x10_tracking_sends_presses_alone_without_modifiers() {
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-        let tracking = Tracking::new(mode, true);
-        assert_eq!(tracking, Tracking::X10);
+        let x10 = mode(Tracking::X10, Format::X10);
         let press = Report {
             shift: true,
             ..report(LEFT, Gesture::Press, (0, 0))
         };
-        assert_eq!(sent(press, tracking, mode), Some(b"\x1b[M !!".to_vec()));
+        assert_eq!(encode(&press, x10), Some(b"\x1b[M !!".to_vec()));
         let release = report(LEFT, Gesture::Release, (0, 0));
-        assert_eq!(sent(release, tracking, mode), None);
+        assert_eq!(encode(&release, x10), None);
         let wheel = report(Some(Button::WheelUp), Gesture::Press, (0, 0));
-        assert_eq!(sent(wheel, tracking, mode), None);
-        assert_eq!(Tracking::new(TermMode::empty(), false), Tracking::Off);
+        assert_eq!(encode(&wheel, x10), None);
+        assert_eq!(encode(&press, MouseMode::default()), None);
     }
 
     #[test]
     fn cells_past_the_format_go_utf8_or_nowhere() {
-        let mode = TermMode::MOUSE_REPORT_CLICK;
+        let normal = mode(Tracking::Normal, Format::X10);
         let edge = report(LEFT, Gesture::Press, (222, 0));
         assert_eq!(
-            sent(edge, Tracking::Normal, mode),
+            encode(&edge, normal),
             Some(vec![0x1b, b'[', b'M', 32, 255, 33])
         );
         let past = report(LEFT, Gesture::Press, (223, 0));
-        assert_eq!(sent(past, Tracking::Normal, mode), None);
-        let utf8 = mode | TermMode::UTF8_MOUSE;
+        assert_eq!(encode(&past, normal), None);
+        let utf8 = mode(Tracking::Normal, Format::Utf8);
         let mut wide = b"\x1b[M ".to_vec();
         wide.extend("\u{100}!".as_bytes());
-        assert_eq!(sent(past, Tracking::Normal, utf8), Some(wide));
+        assert_eq!(encode(&past, utf8), Some(wide));
         let far = report(LEFT, Gesture::Press, (2015, 0));
-        assert_eq!(sent(far, Tracking::Normal, utf8), None);
+        assert_eq!(encode(&far, utf8), None);
     }
 }

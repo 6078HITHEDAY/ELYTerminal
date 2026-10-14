@@ -38,7 +38,9 @@ impl TerminalView {
     pub(super) fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
         let mut term = self.pty.term.lock();
         term.scroll_display(Scroll::Bottom);
-        term.selection = None;
+        if term.selection.take().is_some() {
+            log::debug!("terminal {}: input clears the selection", self.pty.pid);
+        }
         drop(term);
         self.pty.write(bytes);
         cx.notify();

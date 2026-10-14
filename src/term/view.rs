@@ -12,6 +12,7 @@ use super::{
     frame::frame,
     ink::Ink,
     input::{self, Copy, Paste},
+    mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
@@ -48,8 +49,8 @@ pub struct TerminalView {
     /// The cursor's cell in the window, from the last layout.
     pub(super) caret: Bounds<Pixels>,
     pub(super) pointer: Pointer,
-    /// X10 mouse reporting, mode 9, as the tap follows it.
-    pub(super) x10: bool,
+    /// The mouse mode, as the tap follows it.
+    pub(super) mouse: MouseMode,
     /// Keys whose press this terminal saw, so their releases may go out.
     pub(super) held: HashSet<String>,
     pub(super) size: (usize, usize),
@@ -83,7 +84,7 @@ impl TerminalView {
             marked: None,
             caret: Bounds::default(),
             pointer: Pointer::default(),
-            x10: false,
+            mouse: MouseMode::default(),
             held: HashSet::new(),
             size,
             cell: (8, 16),
@@ -155,7 +156,7 @@ impl TerminalView {
             match event {
                 PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
                 PtyEvent::Term(event) => self.term_event(event, cx),
-                PtyEvent::X10(on) => self.x10 = on,
+                PtyEvent::Mouse(mode) => self.mouse = mode,
             }
         }
         cx.notify();
