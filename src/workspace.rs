@@ -118,22 +118,22 @@ impl Render for Workspace {
         if settings.show_panel {
             shell = shell.column(ShellColumn::new("panel").width(width));
         }
-        ResizeBorder::new().child(
-            FocusScope::new(&self.focus).root().size_full().child(
-                div()
-                    .size_full()
-                    .key_context(CONTEXT)
-                    .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
-                        this.toggle(
-                            |settings| settings.show_sessions = !settings.show_sessions,
-                            cx,
-                        )
-                    }))
-                    .on_action(cx.listener(|this, _: &TogglePanel, _, cx| {
-                        this.toggle(|settings| settings.show_panel = !settings.show_panel, cx)
-                    }))
-                    .child(shell),
-            ),
-        )
+        // The context sits above the focus root, so its keys work wherever focus is.
+        div()
+            .size_full()
+            .key_context(CONTEXT)
+            .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
+                this.toggle(
+                    |settings| settings.show_sessions = !settings.show_sessions,
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &TogglePanel, _, cx| {
+                this.toggle(|settings| settings.show_panel = !settings.show_panel, cx)
+            }))
+            .child(
+                ResizeBorder::new()
+                    .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
+            )
     }
 }
