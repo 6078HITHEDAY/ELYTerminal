@@ -1,23 +1,23 @@
-use std::path::PathBuf;
-
 use ely_gpui_component::{
-    buttons::{ButtonVariant, IconButton},
+    buttons::{ButtonVariant, IconButton, SegmentedControl},
     lists::List,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
     theme::{ActiveTheme, ControlSize},
+    typography::Caption,
 };
 use gpui::{
-    Action, App, AppContext, Context, EntityId, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, ParentElement, Render, StatefulInteractiveElement, Styled,
-    Subscription, Window, actions, div,
+    Action, App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
 };
 
 use crate::{
+    files::Files,
     sessions::{self, Session},
-    settings::{Settings, SettingsStore, StartIn},
+    settings::{PanelTab, Settings, SettingsStore, StartIn},
     term::{
-        Events, Pty, TerminalEvent, TerminalView, config,
+        Events, Launch, Pty, TerminalEvent, TerminalView, config,
         shell::{ShellIntegration, launch},
         spawn,
     },
@@ -81,15 +81,16 @@ pub struct Workspace {
     sessions: Vec<Session>,
     /// The session shown.
     active: usize,
+    files: Entity<Files>,
     _settings: Subscription,
 }
 
 impl Workspace {
-    /// The window's content with its first session, `pty` started in `folder`.
+    /// The window's content with its first session, `pty` started from `launch`.
     pub fn new(
         pty: Pty,
         events: Events,
-        folder: PathBuf,
+        launch: Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -97,9 +98,10 @@ impl Workspace {
             focus: cx.focus_handle(),
             sessions: Vec::new(),
             active: 0,
+            files: cx.new(|_| Files::new(launch.cwd.clone())),
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
         };
-        workspace.add(pty, events, folder, window, cx);
+        workspace.add(pty, events, launch, window, cx);
         workspace.select(0, window, cx);
         workspace
     }
@@ -108,7 +110,7 @@ impl Workspace {
         &mut self,
         pty: Pty,
         events: Events,
-        folder: PathBuf,
+        launch: Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -118,11 +120,12 @@ impl Workspace {
             this.session_event(id, event, window, cx)
         });
         let pid = terminal.read(cx).pid();
-        log::info!("app: session {pid} opens in {}", folder.display());
+        log::info!("app: session {pid} opens in {}", launch.cwd.display());
         self.sessions.push(Session {
             terminal,
             title: String::new(),
-            folder,
+            folder: launch.cwd,
+            reports: launch.reports,
             bell: false,
             _events: events,
         });
@@ -142,15 +145,11 @@ impl Workspace {
                 .get(self.active)
                 .map_or(home, |session| session.folder.clone()),
         };
-        let started = launch(
-            &settings.shell,
-            folder.clone(),
-            &cx.global::<ShellIntegration>().0,
-        )
-        .and_then(|launch| spawn(&launch, (80, 24), (8, 16), config(settings)));
+        let started = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0)
+            .and_then(|launch| Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch)));
         match started {
-            Ok((pty, events)) => {
-                self.add(pty, events, folder, window, cx);
+            Ok(((pty, events), launch)) => {
+                self.add(pty, events, launch, window, cx);
                 self.select(self.sessions.len() - 1, window, cx);
             }
             Err(error) => log::error!("app: no new session: {error:#}"),
@@ -170,6 +169,8 @@ impl Workspace {
         let session = &mut self.sessions[index];
         session.bell = false;
         window.focus(&session.terminal.focus_handle(cx), cx);
+        let folder = session.folder.clone();
+        self.files.update(cx, |files, cx| files.show(&folder, cx));
         self.active = index;
         log::debug!("app: session {} shown", index + 1);
         self.retitle(window);
@@ -231,7 +232,13 @@ impl Workspace {
         let session = &mut self.sessions[index];
         match event {
             TerminalEvent::Title(title) => session.title.clone_from(title),
-            TerminalEvent::Folder(folder) => session.folder.clone_from(folder),
+            TerminalEvent::Folder(folder) => {
+                session.folder.clone_from(folder);
+                session.reports = true;
+                if index == self.active {
+                    self.files.update(cx, |files, cx| files.show(folder, cx));
+                }
+            }
             TerminalEvent::Bell if index != self.active => {
                 if !session.bell {
                     log::debug!("app: a bell in hidden session {}", index + 1);
@@ -276,6 +283,22 @@ impl Workspace {
     }
 }
 
+/// Shows Git or Files in the right column, as the settings keep it.
+fn show_tab(value: &SharedString, cx: &mut App) {
+    let panel = match value.as_ref() {
+        "git" => PanelTab::Git,
+        "files" => PanelTab::Files,
+        other => unreachable!("app: no {other} tab"),
+    };
+    if SettingsStore::get(cx).panel == panel {
+        return;
+    }
+    match SettingsStore::update(cx, |settings| settings.panel = panel) {
+        Ok(()) => log::info!("app: the right column shows {panel:?}"),
+        Err(error) => log::error!("app: the right column stays: {error:#}"),
+    }
+}
+
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = SettingsStore::get(cx);
@@ -293,6 +316,7 @@ impl Render for Workspace {
                 .size(ControlSize::Sm)
                 .tooltip("New session")
                 .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
             shell = shell.column(
@@ -316,7 +340,41 @@ impl Render for Workspace {
                 .children(shown),
         );
         if settings.show_panel {
-            shell = shell.column(ShellColumn::new("panel").width(width));
+            let tab = settings.panel;
+            let chosen = match tab {
+                PanelTab::Git => "git",
+                PanelTab::Files => "files",
+            };
+            let switch = SegmentedControl::new("panel-tab", chosen)
+                .segment("git", "Git", None)
+                .segment("files", "Files", None)
+                .size(ControlSize::Sm)
+                .on_change(|value, _, cx| show_tab(value, cx));
+            // Its presses stay off the header, whose double press zooms.
+            let switch = div()
+                .id("panel-switch")
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .child(switch);
+            let quiet = self
+                .sessions
+                .get(self.active)
+                .is_some_and(|session| !session.reports);
+            let caption = || Caption::new("This shell reports no folder.").px_3().pt_2();
+            shell = shell.column(
+                ShellColumn::new("panel")
+                    .width(width)
+                    .leading(switch)
+                    .children(quiet.then(caption))
+                    // Hidden, not dropped, so the tree keeps its open folders.
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .p_2()
+                            .when(tab != PanelTab::Files, |body| body.hidden())
+                            .child(self.files.clone()),
+                    ),
+            );
         }
         // The context sits above the focus root, so its keys work wherever focus is.
         div()

@@ -47,6 +47,8 @@ pub struct Launch {
     pub program: Option<(String, Vec<String>)>,
     pub cwd: PathBuf,
     pub env: Vec<(String, String)>,
+    /// Shell integration makes it report its folder.
+    pub reports: bool,
 }
 
 /// A running program on a pseudo-terminal and the grid it draws into.
@@ -239,6 +241,7 @@ mod tests {
             program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
             cwd: std::env::temp_dir(),
             env: vec![("ELY".into(), "ok".into())],
+            reports: false,
         };
         let (pty, mut events) =
             spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
@@ -298,6 +301,7 @@ mod tests {
             program: Some(("/bin/sh".into(), vec!["-c".into(), script.into()])),
             cwd: std::env::temp_dir(),
             env: Vec::new(),
+            reports: false,
         };
         let (pty, mut events) =
             spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
@@ -342,6 +346,7 @@ mod tests {
             program: None,
             cwd: "/nonexistent/ely".into(),
             env: Vec::new(),
+            reports: false,
         };
         let error = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()))
             .err()
@@ -359,6 +364,7 @@ mod tests {
             program: Some(("/bin/sh".into(), vec!["-c".into(), "true".into()])),
             cwd: folder.clone(),
             env: Vec::new(),
+            reports: false,
         };
         let started = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()));
         std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");

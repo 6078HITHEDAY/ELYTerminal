@@ -20,6 +20,8 @@ pub struct Session {
     pub title: String,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
+    /// Its shell has integration, or it reported a folder anyway.
+    pub reports: bool,
     /// A bell rang while it was hidden.
     pub bell: bool,
     pub _events: Subscription,

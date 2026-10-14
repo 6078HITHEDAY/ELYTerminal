@@ -87,6 +87,7 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         program: (!shell.is_empty()).then(|| (path.clone(), Vec::new())),
         cwd,
         env: Vec::new(),
+        reports: true,
     };
     let script = |name: &str| dir.join(name).display().to_string();
     match name.as_str() {
@@ -130,7 +131,10 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
                 ],
             ));
         }
-        _ => log::info!("shell integration: none for {path}; its folder goes unreported"),
+        _ => {
+            launch.reports = false;
+            log::info!("shell integration: none for {path}; its folder goes unreported")
+        }
     }
     log::info!("shell integration: {path} as {name}");
     Ok(launch)

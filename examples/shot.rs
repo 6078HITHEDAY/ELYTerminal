@@ -23,6 +23,7 @@ fn main() {
         program: Some((program, args.collect())),
         cwd: std::env::current_dir().expect("a current folder"),
         env: Vec::new(),
+        reports: false,
     };
     gpui_platform::application()
         .with_assets(Assets)

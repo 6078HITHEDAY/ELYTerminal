@@ -81,7 +81,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
-        cx.new(|cx| Workspace::new(pty, events, launch.cwd, window, cx))
+        cx.new(|cx| Workspace::new(pty, events, launch, window, cx))
     })?;
     log::info!("app: main window open");
     Ok(window)
