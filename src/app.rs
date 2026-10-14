@@ -3,15 +3,15 @@ use std::borrow::Cow;
 use anyhow::Context as _;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    App, AppContext, Bounds, Focusable, TitlebarOptions, WindowBounds, WindowDecorations,
-    WindowHandle, WindowOptions, px, size,
+    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowDecorations, WindowHandle,
+    WindowOptions, px, size,
 };
 
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
     settings::SettingsStore,
-    term::{ICONS, Launch, MONO, TerminalView, config, input, shell::ShellIntegration, spawn},
+    term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes,
     workspace::{self, TITLE, Workspace},
 };
@@ -41,6 +41,13 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
     workspace::bind_keys(cx);
+    cx.on_window_closed(|cx, _| {
+        if cx.windows().is_empty() {
+            log::info!("app: no window left; quitting");
+            cx.quit();
+        }
+    })
+    .detach();
     #[cfg(target_os = "macos")]
     {
         mac::repeat_held_keys();
@@ -74,9 +81,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
-        let terminal = cx.new(|cx| TerminalView::new(pty, events, window, cx));
-        window.focus(&terminal.focus_handle(cx), cx);
-        cx.new(|cx| Workspace::new(terminal, window, cx))
+        cx.new(|cx| Workspace::new(pty, events, launch.cwd, window, cx))
     })?;
     log::info!("app: main window open");
     Ok(window)

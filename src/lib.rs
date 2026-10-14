@@ -1,4 +1,5 @@
 pub mod app;
+pub mod sessions;
 pub mod settings;
 pub mod term;
 #[cfg(test)]
