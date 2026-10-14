@@ -1,0 +1,269 @@
+use std::{path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
+
+use alacritty_terminal::{event::Event, grid::Dimensions, vte::ansi::CursorShape};
+use futures::StreamExt;
+use gpui::{
+    ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontStyle,
+    FontWeight, IntoElement, ParentElement, Pixels, Render, Styled, Subscription, Task, Window,
+    div, prelude::*, px, size,
+};
+
+use super::{
+    frame::frame,
+    ink::Ink,
+    paint::{self, Look},
+    pty::{Events, Pty, PtyEvent, config, fit},
+};
+use crate::{
+    settings::{Settings, SettingsStore},
+    themes,
+};
+
+/// The bundled Nerd Font that draws icons any font lacks; gpui loads no font without an `m`.
+pub const ICONS: &str = "JetBrainsMono Nerd Font Mono";
+
+/// The bundled code font, the default.
+pub const MONO: &str = "JetBrains Mono";
+
+/// How long the cursor shows, then hides, while it blinks.
+const BLINK: Duration = Duration::from_millis(600);
+
+/// What a terminal tells its owner.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TerminalEvent {
+    Title(String),
+    Folder(PathBuf),
+    Bell,
+    Exited(ExitStatus),
+}
+
+/// A program on a pseudo-terminal, drawn cell by cell in the theme and font the settings choose.
+pub struct TerminalView {
+    pty: Pty,
+    focus: FocusHandle,
+    size: (usize, usize),
+    cell: (u16, u16),
+    blinking: bool,
+    shown: bool,
+    _events: Task<()>,
+    _blink: Task<()>,
+    _settings: Subscription,
+}
+
+impl EventEmitter<TerminalEvent> for TerminalView {}
+
+impl Focusable for TerminalView {
+    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl TerminalView {
+    /// Draws `pty`; the first layout fits its grid to the box.
+    pub fn new(pty: Pty, events: Events, cx: &mut Context<Self>) -> Self {
+        let size = {
+            let term = pty.term.lock();
+            (term.columns(), term.screen_lines())
+        };
+        Self {
+            pty,
+            focus: cx.focus_handle().tab_stop(true),
+            size,
+            cell: (8, 16),
+            blinking: false,
+            shown: true,
+            _events: Self::pump(events, cx),
+            _blink: Self::blink(cx),
+            _settings: cx.observe_global::<SettingsStore>(|view, cx| {
+                view.pty
+                    .term
+                    .lock()
+                    .set_options(config(SettingsStore::get(cx)));
+                cx.notify();
+            }),
+        }
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pty.pid
+    }
+
+    fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |view, cx| {
+            while let Some(first) = events.next().await {
+                let mut batch = vec![first];
+                while let Ok(more) = events.try_recv() {
+                    batch.push(more);
+                }
+                if view.update(cx, |view, cx| view.handle(batch, cx)).is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    fn blink(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor().timer(BLINK).await;
+                let ticked = view.update(cx, |view, cx| {
+                    if view.blinking {
+                        view.shown = !view.shown;
+                        cx.notify();
+                    }
+                });
+                if ticked.is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    /// Fits the grid to `columns` by `lines`; true when the size changed.
+    pub(super) fn fit(&mut self, columns: usize, lines: usize) -> bool {
+        let fitted = fit(columns, lines, self.cell);
+        let size = (usize::from(fitted.num_cols), usize::from(fitted.num_lines));
+        if size == self.size {
+            return false;
+        }
+        self.size = size;
+        self.pty.resize(size, self.cell);
+        log::debug!("terminal {}: {} by {}", self.pty.pid, size.0, size.1);
+        true
+    }
+
+    fn handle(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
+        for event in events {
+            match event {
+                PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
+                PtyEvent::Term(event) => self.term_event(event, cx),
+            }
+        }
+        cx.notify();
+    }
+
+    fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
+        match event {
+            Event::Wakeup => self.shown = true,
+            Event::MouseCursorDirty | Event::CursorBlinkingChange => {}
+            Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
+            Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
+            Event::Bell => cx.emit(TerminalEvent::Bell),
+            Event::ClipboardStore(_, text) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(text))
+            }
+            Event::ClipboardLoad(..) => log::error!(
+                "terminal {}: a clipboard read arrived though OSC 52 reads are off",
+                self.pty.pid
+            ),
+            Event::ColorRequest(index, reply) => {
+                let theme = themes::active(SettingsStore::get(cx), cx.window_appearance());
+                let term = self.pty.term.lock();
+                let rgb = Ink::new(theme, term.colors()).query(index, term.colors());
+                drop(term);
+                self.pty.write(reply(rgb).into_bytes());
+            }
+            Event::TextAreaSizeRequest(reply) => {
+                let size = fit(self.size.0, self.size.1, self.cell);
+                self.pty.write(reply(size).into_bytes());
+            }
+            Event::PtyWrite(text) => self.pty.write(text.into_bytes()),
+            Event::ChildExit(status) => cx.emit(TerminalEvent::Exited(status)),
+            Event::Exit => log::debug!("terminal {}: the grid closed", self.pty.pid),
+        }
+    }
+}
+
+/// The font, cell and metrics the settings give at this window's scale.
+fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
+    let font = Font {
+        family: settings.font_family.clone().into(),
+        features: if settings.ligatures {
+            FontFeatures::default()
+        } else {
+            FontFeatures::disable_ligatures()
+        },
+        fallbacks: None,
+        weight: FontWeight::NORMAL,
+        style: FontStyle::Normal,
+    };
+    let text = px(settings.font_size);
+    let system = window.text_system();
+    let id = system.resolve_font(&font);
+    let advance = system
+        .advance(id, text, 'M')
+        .map_err(|error| anyhow::anyhow!("{} cannot measure M: {error}", settings.font_family))?;
+    let scale = window.scale_factor();
+    let snap = |length: Pixels| px((f32::from(length) * scale).round() / scale);
+    let cell = size(
+        snap(advance.width).max(px(1.)),
+        snap(text * settings.line_height),
+    );
+    let (ascent, descent) = (system.ascent(id, text), system.descent(id, text).abs());
+    let icons = Font {
+        family: ICONS.into(),
+        features: FontFeatures::default(),
+        ..font.clone()
+    };
+    Ok(Look {
+        font_id: id,
+        icons,
+        baseline: (cell.height - ascent - descent) / 2. + ascent,
+        descent,
+        rule: snap((text / 14.).max(px(1.))),
+        size: text,
+        cell,
+        font,
+        cursor: ink.cursor,
+        cursor_text: ink.cursor_text,
+    })
+}
+
+impl Render for TerminalView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let settings = SettingsStore::get(cx).clone();
+        let theme = themes::active(&settings, window.appearance());
+        let term = self.pty.term.lock();
+        let ink = Ink::new(theme, term.colors());
+        let shown = frame(&term, &ink);
+        let blinks = term.cursor_style().blinking;
+        drop(term);
+        let focused = self.focus.is_focused(window);
+        self.blinking = focused && blinks;
+        if !self.blinking {
+            self.shown = true;
+        }
+        let cursor = shown
+            .cursor
+            .clone()
+            .and_then(|cursor| match (focused, self.shown) {
+                (false, _) => Some((cursor, CursorShape::HollowBlock)),
+                (true, false) => None,
+                (true, true) => {
+                    let shape = cursor.shape;
+                    Some((cursor, shape))
+                }
+            });
+        let root = div()
+            .id(("terminal", cx.entity_id()))
+            .key_context("Terminal")
+            .track_focus(&self.focus)
+            .size_full()
+            .px(px(settings.padding_x))
+            .py(px(settings.padding_y))
+            .bg(ink.bg.alpha(settings.background_opacity));
+        match look(&settings, &ink, window) {
+            Ok(look) => {
+                self.cell = (
+                    f32::from(look.cell.width).round() as u16,
+                    f32::from(look.cell.height).round() as u16,
+                );
+                root.child(paint::grid(cx.entity(), Rc::new(shown), cursor, look))
+            }
+            Err(error) => {
+                log::error!("terminal {}: {error:#}", self.pty.pid);
+                root.text_color(ink.fg).child(format!("{error:#}"))
+            }
+        }
+    }
+}

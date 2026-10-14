@@ -19,7 +19,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 - [x] T04 PTY: spawn through alacritty's event loop, OSC 7 tap on the reader, child id, events to the app; tests.
 - [x] T05 Shell integration for zsh, bash, fish, PowerShell, injected at launch; tests that zsh and bash report their folder.
 - [ ] T06 Terminal view: frame from the grid, colors and styles, wide and combining cells, cursor shapes and blink, font, line height, padding, resize.
-- [ ] T07 Box drawing and block elements painted as geometry; tests.
+- [ ] T07 Box drawing, block elements and powerline shapes (U+E0B0–E0B7) painted as geometry; tests.
 - [ ] T08 Keys: xterm encoding, modes, Option as Alt, kitty keyboard protocol, IME; tests.
 - [ ] T09 Mouse: selection, mouse reporting, wheel and scrollback, clipboard, copy on select, OSC 52, links; tests.
 - [ ] T10 Focus reporting, title, silent bell, scrollback limit, find.

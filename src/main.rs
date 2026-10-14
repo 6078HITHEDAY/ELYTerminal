@@ -1,22 +1,10 @@
-use ely_gpui_component::{Assets, primitives::FocusScope, theme::ActiveTheme};
-use elyterminal::{settings::SettingsStore, term::shell::ShellIntegration, themes};
-use gpui::{
-    App, AppContext, Bounds, Context, FocusHandle, IntoElement, Render, Styled, TitlebarOptions,
-    Window, WindowBounds, WindowOptions, px, size,
+use ely_gpui_component::Assets;
+use elyterminal::{
+    app,
+    settings::SettingsStore,
+    term::shell::{ShellIntegration, launch},
 };
-
-struct Workspace {
-    focus: FocusHandle,
-}
-
-impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        FocusScope::new(&self.focus)
-            .root()
-            .size_full()
-            .bg(cx.theme().colors.bg)
-    }
-}
+use gpui::App;
 
 /// A Linux app with no display server fails at start instead of running headless.
 #[cfg(target_os = "linux")]
@@ -29,37 +17,27 @@ fn application() -> gpui::Application {
     gpui_platform::application()
 }
 
+fn run(cx: &mut App) -> anyhow::Result<()> {
+    app::start(cx)?;
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("app: no home folder"))?;
+    let launch = launch(
+        &SettingsStore::get(cx).shell,
+        home,
+        &cx.global::<ShellIntegration>().0,
+    )?;
+    app::open(launch, cx)?;
+    cx.activate(true);
+    Ok(())
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
         .init();
     application().with_assets(Assets).run(|cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
-        if let Err(error) = SettingsStore::init(cx).and_then(|()| ShellIntegration::init(cx)) {
+        if let Err(error) = run(cx) {
             log::error!("{error:#}");
             std::process::exit(1);
         }
-        themes::apply(cx);
-        let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some("ELYTerminal".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        cx.open_window(options, |window, cx| {
-            cx.new(|cx| {
-                window
-                    .observe_window_appearance(|_, cx| themes::apply(cx))
-                    .detach();
-                let focus = cx.focus_handle();
-                window.focus(&focus, cx);
-                Workspace { focus }
-            })
-        })
-        .expect("the main window failed to open");
-        log::info!("app: main window open");
-        cx.activate(true);
     });
 }

@@ -4,7 +4,10 @@ use alacritty_terminal::{event::Event, grid::Dimensions, index::Line};
 use futures::channel::mpsc::TryRecvError;
 
 use super::*;
-use crate::term::{Pty, PtyEvent, spawn};
+use crate::{
+    settings::Settings,
+    term::{Events, Pty, PtyEvent, config, spawn},
+};
 
 /// A folder name with a space, a percent, a bell and a newline.
 const INNER: &str = "in ner%\u{7}x\ny";
@@ -35,6 +38,7 @@ fn installed(shell: &str) -> String {
 struct Run {
     shell: String,
     pty: Pty,
+    events: Events,
     root: PathBuf,
     start: PathBuf,
     folders: Vec<PathBuf>,
@@ -65,10 +69,12 @@ impl Run {
         install(&dir).expect("scripts install");
         let mut launch = launch(shell, start.clone(), &dir).expect("a launch");
         launch.env.push(("HOME".into(), home.display().to_string()));
-        let pty = spawn(&launch, (100, 30), (8, 16), 100).expect("the shell starts");
+        let (pty, events) = spawn(&launch, (100, 30), (8, 16), config(&Settings::default()))
+            .expect("the shell starts");
         Self {
             shell: shell.into(),
             pty,
+            events,
             root,
             start,
             folders: Vec::new(),
@@ -88,7 +94,7 @@ impl Run {
                 self.titles,
                 self.screen()
             );
-            match self.pty.events.try_recv() {
+            match self.events.try_recv() {
                 Ok(PtyEvent::Folder(folder)) => self.folders.push(folder),
                 Ok(PtyEvent::Term(Event::Title(title))) => self.titles.push(title),
                 Ok(PtyEvent::Term(Event::PtyWrite(reply))) => self.pty.write(reply.into_bytes()),
@@ -142,7 +148,7 @@ impl Run {
                 "{} did not exit",
                 self.shell
             );
-            match self.pty.events.try_recv() {
+            match self.events.try_recv() {
                 Ok(PtyEvent::Term(Event::ChildExit(_))) | Err(TryRecvError::Closed) => break,
                 Ok(PtyEvent::Term(Event::PtyWrite(reply))) => self.pty.write(reply.into_bytes()),
                 Ok(_) => {}

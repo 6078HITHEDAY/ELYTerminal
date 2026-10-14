@@ -7,10 +7,12 @@ use alacritty_terminal::{
     event_loop::{EventLoop, Msg, Notifier},
     sync::FairMutex,
     term::{Config, Term, test::TermSize},
+    vte::ansi::CursorShape,
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
 use super::tap::Tapped;
+use crate::settings::{CursorStyle, Settings};
 
 /// What a session hears from its pty: the grid's events and the folder the shell reports.
 #[derive(Debug)]
@@ -49,23 +51,44 @@ pub struct Launch {
 /// A running program on a pseudo-terminal and the grid it draws into.
 pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
-    pub events: UnboundedReceiver<PtyEvent>,
     pub pid: u32,
     notifier: Notifier,
 }
+
+/// What a pty reports, in order.
+pub type Events = UnboundedReceiver<PtyEvent>;
 
 #[cfg(unix)]
 type Raw = super::unix::Pty;
 #[cfg(windows)]
 type Raw = tty::Pty;
 
-/// Starts `launch` on a pty of `columns` by `lines` cells, each `cell` pixels, keeping `scrollback` lines.
+/// The grid's options from the settings: scrollback, the cursor programs start from, kitty keys.
+pub fn config(settings: &Settings) -> Config {
+    let shape = match settings.cursor_style {
+        CursorStyle::Block => CursorShape::Block,
+        CursorStyle::Bar => CursorShape::Beam,
+        CursorStyle::Underline => CursorShape::Underline,
+        CursorStyle::Hollow => CursorShape::HollowBlock,
+    };
+    Config {
+        scrolling_history: settings.scrollback as usize,
+        default_cursor_style: alacritty_terminal::vte::ansi::CursorStyle {
+            shape,
+            blinking: settings.cursor_blink,
+        },
+        kitty_keyboard: true,
+        ..Config::default()
+    }
+}
+
+/// Starts `launch` on a pty of `columns` by `lines` cells, each `cell` pixels.
 pub fn spawn(
     launch: &Launch,
     (columns, lines): (usize, usize),
     cell: (u16, u16),
-    scrollback: usize,
-) -> anyhow::Result<Pty> {
+    config: Config,
+) -> anyhow::Result<(Pty, Events)> {
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -93,11 +116,6 @@ pub fn spawn(
         sender: sender.clone(),
         pid,
     };
-    let config = Config {
-        scrolling_history: scrollback,
-        kitty_keyboard: true,
-        ..Config::default()
-    };
     let grid = TermSize::new(size.num_cols.into(), size.num_lines.into());
     let term = Arc::new(FairMutex::new(Term::new(config, &grid, listener.clone())));
     let event_loop = EventLoop::new(
@@ -109,12 +127,14 @@ pub fn spawn(
     )?;
     let notifier = Notifier(event_loop.channel());
     event_loop.spawn();
-    Ok(Pty {
-        term,
+    Ok((
+        Pty {
+            term,
+            pid,
+            notifier,
+        },
         events,
-        pid,
-        notifier,
-    })
+    ))
 }
 
 #[cfg(unix)]
@@ -219,10 +239,11 @@ mod tests {
             cwd: std::env::temp_dir(),
             env: vec![("ELY".into(), "ok".into())],
         };
-        let mut pty = spawn(&launch, size, (8, 16), 100).expect("sh starts");
+        let (pty, mut events) =
+            spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
         let (folders, success) = futures::executor::block_on(async {
             let (mut folders, mut success) = (Vec::new(), false);
-            while let Some(event) = pty.events.next().await {
+            while let Some(event) = events.next().await {
                 match event {
                     PtyEvent::Folder(folder) => folders.push(folder),
                     PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
@@ -277,9 +298,10 @@ mod tests {
             cwd: std::env::temp_dir(),
             env: Vec::new(),
         };
-        let mut pty = spawn(&launch, (20, 4), (8, 16), 100).expect("sh starts");
+        let (pty, mut events) =
+            spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
         futures::executor::block_on(async {
-            while let Some(event) = pty.events.next().await {
+            while let Some(event) = events.next().await {
                 let term = pty.term.lock();
                 let text: String = (0..5)
                     .map(|column| term.grid()[Line(0)][Column(column)].c)
@@ -320,7 +342,7 @@ mod tests {
             cwd: "/nonexistent/ely".into(),
             env: Vec::new(),
         };
-        let error = spawn(&launch, (20, 4), (8, 16), 100)
+        let error = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()))
             .err()
             .expect("a missing folder is an error");
         assert!(error.to_string().contains("/nonexistent/ely"));
@@ -337,7 +359,7 @@ mod tests {
             cwd: folder.clone(),
             env: Vec::new(),
         };
-        let started = spawn(&launch, (20, 4), (8, 16), 100);
+        let started = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()));
         std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");
         std::fs::remove_dir(&folder).expect("the temp folder goes");
         let error = started.err().expect("a folder it cannot enter is an error");

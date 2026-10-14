@@ -44,7 +44,8 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC 7 scanner. The scanner reports the working directory.
 - Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. A shell without integration reports nothing, and the panels say so.
 - Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks.
-- Box drawing (U+2500–U+257F) and block elements (U+2580–U+259F) painted as geometry, so lines join across cells.
+- Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
+- Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
 - Keys: xterm encoding with modifiers, application cursor and keypad modes, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags.
 - IME: marked text drawn at the cursor; committed text sent to the program.
