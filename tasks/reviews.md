@@ -15,3 +15,10 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T03
 
 - Round 1, 7d4d535: PASS. Theme files match upstream 21f281d byte for byte.
+
+## T04
+
+- Round 1, 62e50fe: FAIL. A folder without enter permission started the shell elsewhere; no pid for the app; folder and exit unlogged; grid and pty sizes split past the kernel's cap. Fixed in 96ae85b.
+- Round 2, 96ae85b: FAIL. The permission check raced alacritty's chdir, whose result alacritty ignores; closing a live pty logged nothing. Fixed in fff436c: ELYTerminal's own Unix pty, a checked chdir in pre_exec that fails the spawn, closing and hung-up logs with a test.
+- Round 3, fff436c: FAIL. Drop waited on the program while holding the master, so a program ignoring SIGHUP never ended. Fixed in 0e7f309: the master closes before the wait; a test that traps HUP went red, then green.
+- The review cap of three rounds is reached. The round-3 fix stands on its red-green test, not a fourth round.

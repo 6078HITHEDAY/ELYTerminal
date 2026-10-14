@@ -16,7 +16,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 5. Terminal engine
 
-- [ ] T04 PTY: spawn through alacritty's event loop, OSC 7 tap on the reader, child id, events to the app; tests.
+- [x] T04 PTY: spawn through alacritty's event loop, OSC 7 tap on the reader, child id, events to the app; tests.
 - [ ] T05 Shell integration for zsh, bash, fish, PowerShell, injected at launch; tests that zsh and bash report their folder.
 - [ ] T06 Terminal view: frame from the grid, colors and styles, wide and combining cells, cursor shapes and blink, font, line height, padding, resize.
 - [ ] T07 Box drawing and block elements painted as geometry; tests.
