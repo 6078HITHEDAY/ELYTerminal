@@ -4,7 +4,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 2. Foundation
 
-- [ ] T01 Repo, crate, window: git, `.gitignore`, `Cargo.toml` with Ely pinned, `main.rs` opens one window through Ely, logging, `scripts/check.sh`, CI workflow, private Gitea repo, first push.
+- [x] T01 Repo, crate, window: git, `.gitignore`, `Cargo.toml` with Ely pinned, `main.rs` opens one window through Ely, logging, `scripts/check.sh`, CI workflow, private Gitea repo, first push.
 
 ## 3. Settings model and storage
 
