@@ -59,3 +59,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 34ce046: FAIL. A press on a blank column or a header gave focus to the focus root, below which the Workspace key context and its toggle actions sat, so Cmd-B and Cmd-Alt-B did nothing. Fixed in 0de9e15: the context and its actions sit on the outermost element, above ResizeBorder and the focus root; the four press-then-toggle cases hide both columns and save both flags.
 - Round 2, 0de9e15: PASS.
+
+## T12
+
+- Round 1, 5fd674e: FAIL. A session switched while a mouse button was down left the hidden terminal's pressed button set: its release landed on the other session, and back on the first one plain moves went out as drags. Fixed in dcf9f7b: a terminal about to be hidden ends its mouse gesture as releases would, the selection drag ending and each heard press reported coming up at the last cell in the current protocol; the reviewer's repro now gives the program a press and its release, as the single-session control does.
+- Round 2, dcf9f7b: PASS.

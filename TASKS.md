@@ -30,7 +30,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 7. Sessions panel
 
-- [ ] T12 Sessions: new, close, select, keys, titles and folders, ended programs, bell marks.
+- [x] T12 Sessions: new, close, select, keys, titles and folders, ended programs, bell marks.
 
 ## 8. Right panel: Files
 
