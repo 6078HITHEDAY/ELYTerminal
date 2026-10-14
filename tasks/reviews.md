@@ -27,3 +27,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, dfaf378: FAIL. fish searched <dir>/fish/fish, so its script never loaded (fish 4 sends OSC 7 itself and hid it); PowerShell's Restricted policy would block the script; control bytes in a folder name broke OSC 7; bash and PowerShell prompts reset $?; install swallowed read errors. Fixed in c2da9dd, each break shown red in a scratch copy.
 - Round 2, c2da9dd: PASS.
+
+## T06
+
+- Round 1, ae1d8ce: FAIL. SGR 8 text showed under the block cursor, in emoji and in underlines; an inactive window kept a solid cursor; combining marks dropped below their base (gpui adds CoreText's upward y offsets to downward screen y). Fixed in 3c8f746: hidden cells blank in the frame; window activation counts as focus; every glyph painted from the shaped layout on one baseline, CoreText's y flipped on macOS.
+- Round 2, 3c8f746: PASS.
