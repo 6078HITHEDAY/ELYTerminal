@@ -26,7 +26,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 6. Main window and layout
 
-- [ ] T11 `ColumnShell` with sessions, terminal and right columns; toggles kept in settings; window title; a transparent title bar over the window's background, as Ghostty's.
+- [x] T11 `ColumnShell` with sessions, terminal and right columns; toggles kept in settings; window title; a transparent title bar over the window's background, as Ghostty's.
 
 ## 7. Sessions panel
 
