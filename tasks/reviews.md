@@ -86,3 +86,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 - Round 1, 3e1535e: FAIL. The shell check asked only for an execute bit, so a file the running user may not run, as 0641 or an execute-deny ACL, saved and then failed every new session; a bare name counted relative PATH folders, which hang on each session's own folder, so the check and the start could find different programs. Fixed in 3c51b01: the check asks access(X_OK), and a bare name looks only in PATH's full folders; a session runs the full path the check found.
 - Round 2, 3c51b01: FAIL. On Windows the .exe candidate replaced an explicit extension, so review.com saved and review.exe ran; a program found at a path not in UTF-8 saved, though the start takes UTF-8 and refused it. Fixed in 9e69288: .exe joins only a name without an extension; the shared resolver returns the program as UTF-8 text and refuses a match that is not, before the save.
 - Round 3, 9e69288: PASS.
+
+## T17
+
+- Round 1, f2cc16f: FAIL. The font picker saved a family gpui cannot load, such as Apple Color Emoji, which has no m, and the terminal drew with a fallback without a word; after a refused save a number field kept the refused draft, so once a later save cleared the message the field and the settings disagreed. Fixed in ee37018: a font saves, and a settings file starts, only when gpui loads it as the terminal draws it, and the terminal draws with no other font; numbers save on commit; a refusal resets the number fields and the font picker to the settings.
+- Round 2, ee37018: PASS.
