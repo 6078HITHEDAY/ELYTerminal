@@ -116,7 +116,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 ## 12. Menus and shortcuts
 
 - macOS menu bar: ELYTerminal (Settings, Quit), Shell (New Session, Close Session), Edit (Copy, Paste, Select All, Find), View (Toggle Sessions, Toggle Right Panel, Bigger, Smaller, Reset Size), Window.
-- The same shortcuts on Windows and Linux with Ctrl-Shift for terminal-colliding keys.
+- The same shortcuts on Windows and Linux with Ctrl-Shift for terminal-colliding keys. On Windows Ctrl-V pastes too, as in Windows Terminal.
 
 ## 13. Acceptance
 

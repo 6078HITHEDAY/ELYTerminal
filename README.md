@@ -60,7 +60,7 @@ The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `tra
 | Next, previous session | Ctrl-Tab, Ctrl-Shift-Tab | Ctrl-Tab, Ctrl-Shift-Tab |
 | Sessions column | Cmd-B | Ctrl-Shift-B |
 | Right column | Cmd-Alt-B | Ctrl-Shift-Alt-B |
-| Copy, paste | Cmd-C, Cmd-V | Ctrl-Shift-C, Ctrl-Shift-V |
+| Copy, paste | Cmd-C, Cmd-V | Ctrl-Shift-C, Ctrl-Shift-V; on Windows Ctrl-V pastes too |
 | Select all | Cmd-A | Ctrl-Shift-A |
 | Find | Cmd-F | Ctrl-Shift-F |
 | Bigger, smaller, reset size | Cmd-=, Cmd-minus, Cmd-0 | Ctrl-=, Ctrl-minus, Ctrl-0 |

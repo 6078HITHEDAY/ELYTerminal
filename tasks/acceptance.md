@@ -127,6 +127,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|---|
 | The macOS menu bar | T22 | `shot` lists every item with its key | Pass |
 | The same shortcuts off macOS, Ctrl-Shift where they collide | T22 | xdotool on a real X11 window: select all, size, toggle, find, quit | Pass |
+| On Windows Ctrl-V pastes too, as in Windows Terminal | T26 | the binding is Windows' alone; on a real X11 window, with a command on the clipboard through xclip, Ctrl-Shift-V pasted its 33 characters and the shell ran it, and Ctrl-V pasted nothing, as Linux keeps it for programs; the owner has not yet pressed Ctrl-V on Windows | Partial |
 
 ## 13. Acceptance
 

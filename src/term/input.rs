@@ -47,6 +47,10 @@ pub fn bind_keys(cx: &mut App) {
         ["tab", "shift-tab", "f6", "shift-f6"]
             .map(|key| KeyBinding::new(key, NoAction, Some(CONTEXT))),
     );
+    // Windows pastes on Ctrl-V too, as Windows Terminal does.
+    if cfg!(windows) {
+        cx.bind_keys([KeyBinding::new("ctrl-v", Paste, Some(CONTEXT))]);
+    }
 }
 
 impl TerminalView {
