@@ -74,3 +74,9 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, e296668: FAIL. A staged copy kept its source as an old path, so unstaging or diffing the copy took the source's own staged change along; paths went through lossy text before git saw them, so a name not in UTF-8 could unstage another file that showed alike; diffs still ran text converters, which can hide a real change; a CRLF warning on stderr failed a valid untracked diff; a conflict where our side deleted the file diffed as empty. Fixed in 911500c: paths stay git's bytes until shown, Files' keys and listings too, which shared the cause; a copy is a new file; diffs pass --no-textconv; an untracked diff stands when git printed one, its warning logged; a conflict diffs against HEAD.
 - Round 2, 911500c: PASS.
+
+## T15
+
+- Round 1, a8a30d3: FAIL. After a folder change the old view stayed until the new read landed, so an action pressed in between reached the repository left behind; a diff still loading from the old folder popped up over the new one; a slow commit's success emptied a draft typed while it ran. Fixed in 27270ae: no action runs until the shown folder has read, and the view blanks on a folder outside the shown work tree; a folder change drops a diff still loading; a commit empties only the fields that still hold what it committed; actions chain, each after the one asked before it, a race of the same kind found while fixing.
+- Round 2, 27270ae: FAIL. Entering a nested repository kept the outer view while it read, and a commit finishing then emptied a retyped draft: its completion checked the view, not the read. Fixed in fcd0792: the completion passes the same gate as every action.
+- Round 3, fcd0792: PASS.
