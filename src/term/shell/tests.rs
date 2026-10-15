@@ -108,7 +108,7 @@ impl Run {
         }
     }
 
-    /// Types `line` at a prompt, once its line editor reads raw keys.
+    /// Types `line` once the line editor reads raw keys.
     fn send(&mut self, line: &str) {
         self.until("line editor", |run| run.pty.reads_keys());
         self.pty.write(format!("{line}\r").into_bytes());

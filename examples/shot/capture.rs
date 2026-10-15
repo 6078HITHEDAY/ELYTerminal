@@ -1,7 +1,11 @@
 use std::path::Path;
 
 use anyhow::{Context as _, bail};
-use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+use objc::{
+    class, msg_send,
+    runtime::{BOOL, Object, YES},
+    sel, sel_impl,
+};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 /// A gpui window's number, as CoreGraphics knows it.
@@ -29,7 +33,7 @@ pub fn front(number: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// AppKit's class of each view under the content.
+/// Each view's AppKit class; an effect view adds its blur.
 pub fn views(number: u32) -> anyhow::Result<Vec<String>> {
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
@@ -40,24 +44,63 @@ pub fn views(number: u32) -> anyhow::Result<Vec<String>> {
         let count: u64 = msg_send![views, count];
         let named = (0..count).map(|ix| {
             let view: *mut Object = msg_send![views, objectAtIndex: ix];
-            let class: *mut Object = msg_send![view, className];
-            let text: *const std::ffi::c_char = msg_send![class, UTF8String];
-            std::ffi::CStr::from_ptr(text)
-                .to_string_lossy()
-                .into_owned()
+            let name = text(msg_send![view, className]);
+            let effect: BOOL = msg_send![view, isKindOfClass: class!(NSVisualEffectView)];
+            if effect == YES {
+                let radius = blur(msg_send![view, layer]).unwrap_or_else(|| "none".into());
+                format!("{name}, blur {radius}")
+            } else {
+                name
+            }
         });
         Ok(named.collect())
     }
 }
 
+/// The first gaussian blur's radius at or under `layer`.
+unsafe fn blur(layer: *mut Object) -> Option<String> {
+    if layer.is_null() {
+        return None;
+    }
+    unsafe {
+        let filters: *mut Object = msg_send![layer, filters];
+        let count: u64 = if filters.is_null() {
+            0
+        } else {
+            msg_send![filters, count]
+        };
+        for ix in 0..count {
+            let filter: *mut Object = msg_send![filters, objectAtIndex: ix];
+            if text(msg_send![filter, name]) == "gaussianBlur" {
+                let key: *mut Object =
+                    msg_send![class!(NSString), stringWithUTF8String: c"inputRadius".as_ptr()];
+                let radius: *mut Object = msg_send![filter, valueForKey: key];
+                return Some(text(msg_send![radius, description]));
+            }
+        }
+        let sublayers: *mut Object = msg_send![layer, sublayers];
+        let count: u64 = if sublayers.is_null() {
+            0
+        } else {
+            msg_send![sublayers, count]
+        };
+        (0..count).find_map(|ix| blur(msg_send![sublayers, objectAtIndex: ix]))
+    }
+}
+
+/// An NSString's text, `nil` for none.
+fn text(string: *mut Object) -> String {
+    if string.is_null() {
+        return "nil".into();
+    }
+    let bytes: *const std::ffi::c_char = unsafe { msg_send![string, UTF8String] };
+    unsafe { std::ffi::CStr::from_ptr(bytes) }
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// Each menu item with its key and modifier mask.
 pub fn menus() -> Vec<String> {
-    let text = |string: *mut Object| -> String {
-        let bytes: *const std::ffi::c_char = unsafe { msg_send![string, UTF8String] };
-        unsafe { std::ffi::CStr::from_ptr(bytes) }
-            .to_string_lossy()
-            .into_owned()
-    };
     let mut lines = Vec::new();
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];

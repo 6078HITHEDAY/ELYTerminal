@@ -45,7 +45,7 @@ impl Pty {
         self.child.id()
     }
 
-    /// A copy of the master, for tests to read its modes.
+    /// A copy of the master; tests read its modes.
     #[cfg(test)]
     pub fn master(&self) -> io::Result<File> {
         self.file.try_clone()

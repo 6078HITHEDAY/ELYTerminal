@@ -58,8 +58,8 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 ## 6. Main window and layout
 
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
-- The sessions column and the right column toggle and keep their state in settings.
-- The title shows the active session's title. Nothing else in the title bar.
+- The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
+- The title shows the active session's title, and no other text.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
 
 ## 7. Sessions panel

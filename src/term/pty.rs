@@ -186,7 +186,7 @@ impl Pty {
 
 #[cfg(all(test, unix))]
 impl Pty {
-    /// Whether the program reads keys one by one, as a line editor does.
+    /// Whether the program reads raw keys, canonical mode off.
     pub(crate) fn reads_keys(&self) -> bool {
         use rustix_openpty::rustix::termios::{LocalModes, tcgetattr};
         let modes = tcgetattr(&self.master).expect("the pty's modes");

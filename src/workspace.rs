@@ -320,14 +320,55 @@ fn show_tab(value: &SharedString, cx: &mut App) {
     }
 }
 
+/// A header button that hides or shows a column, saved.
+fn column_toggle(
+    workspace: &Entity<Workspace>,
+    (id, icon): (&'static str, IconName),
+    tip: String,
+    flip: fn(&mut Settings),
+) -> IconButton {
+    let workspace = workspace.clone();
+    IconButton::new(id, icon)
+        .variant(ButtonVariant::Ghost)
+        .size(ControlSize::Sm)
+        .tooltip(tip)
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            workspace.update(cx, |this, cx| this.toggle(flip, cx));
+        })
+}
+
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
         let settings = SettingsStore::get(cx);
         let width = cx.theme().sidebar_width(false);
+        let workspace = cx.entity();
+        let tip =
+            |shown: bool, what: &str| format!("{} {what}", if shown { "Hide" } else { "Show" });
+        // It leads the first column or ends the last.
+        let left = column_toggle(
+            &workspace,
+            ("toggle-sessions", IconName::PanelLeft),
+            tip(settings.show_sessions, "sessions"),
+            |settings| settings.show_sessions = !settings.show_sessions,
+        );
+        let right = column_toggle(
+            &workspace,
+            ("toggle-panel", IconName::PanelRight),
+            tip(settings.show_panel, "Git and Files"),
+            |settings| settings.show_panel = !settings.show_panel,
+        );
         let mut shell = ColumnShell::new("workspace").glass();
+        let shown = self
+            .sessions
+            .get(self.active)
+            .map(|session| session.terminal.clone());
+        let mut terminal = ShellColumn::new("terminal")
+            .title(self.title().to_string())
+            .children(shown);
         if settings.show_sessions {
-            let (workspace, home) = (cx.entity(), dirs::home_dir());
+            let home = dirs::home_dir();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
                 let active = index == self.active;
                 sessions::row(&workspace, index, session, active, home.as_deref(), cx)
@@ -342,25 +383,22 @@ impl Render for Workspace {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
             shell = shell.column(
-                ShellColumn::new("sessions").width(width).action(new).child(
-                    div()
-                        .id("sessions")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .p_2()
-                        .child(list),
-                ),
+                ShellColumn::new("sessions")
+                    .width(width)
+                    .leading(left)
+                    .action(new)
+                    .child(
+                        div()
+                            .id("sessions")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .p_2()
+                            .child(list),
+                    ),
             );
+        } else {
+            terminal = terminal.leading(left);
         }
-        let shown = self
-            .sessions
-            .get(self.active)
-            .map(|session| session.terminal.clone());
-        shell = shell.column(
-            ShellColumn::new("terminal")
-                .title(self.title().to_string())
-                .children(shown),
-        );
         if settings.show_panel {
             let tab = settings.panel;
             let chosen = match tab {
@@ -392,14 +430,17 @@ impl Render for Workspace {
             };
             // Git's list draws every row, so terminal output must not redraw it.
             let fill = || StyleRefinement::default().size_full();
-            shell = shell.column(
+            shell = shell.column(terminal).column(
                 ShellColumn::new("panel")
                     .width(width)
                     .leading(switch)
+                    .action(right)
                     .children(quiet.then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
                     .child(body(tab == PanelTab::Files).child(self.files.clone())),
             );
+        } else {
+            shell = shell.column(terminal.action(right));
         }
         // The context sits above the focus root, so its keys work wherever focus is.
         div()

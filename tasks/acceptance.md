@@ -2,7 +2,7 @@
 
 `PRD.md` line by line, as of T23. Status: **Pass** when a test, a run or a review shows it; **Partial** when part of it was shown; **Open** when nothing has shown it yet. Reviews are in `tasks/reviews.md`; tests are named by module (`cargo test -- MODULE`).
 
-What no check reached: no build has run on Windows; no real KWin or Wayland desktop drew the blur. On 2026-10-15 macOS gave `shot` blank pictures for old and new builds alike, so that day's macOS checks read the app's log.
+What no check reached: no one has looked at the window on Windows, which CI builds and tests; no real KWin or Wayland desktop drew the blur. On 2026-10-15 macOS gave `shot` the window's ground alone, for old and new builds alike, while the terminal it ran under lacked Screen Recording (`CGPreflightScreenCaptureAccess` false); that day's macOS checks read the app's log.
 
 ## 1. Product
 
@@ -23,8 +23,8 @@ What no check reached: no build has run on Windows; no real KWin or Wayland desk
 | Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01 | `Cargo.toml`: Ely `a2cb531`, `gpui-pre` `=0.3.8` | Pass |
 | `alacritty_terminal` 0.26 | T04 | `=0.26.0` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
-| CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; see §13 | Open |
-| Private repo; no credential in any file or commit | T01 | each review scans the tree and every reachable object: 0 hits (T22: 398 objects) | Pass |
+| CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 910 on `be8d0e2`, see the CI notes | Pass |
+| Private repo; no credential in any file or commit | T01 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits | Pass |
 
 ## 3. Settings model and storage
 
@@ -67,7 +67,7 @@ What no check reached: no build has run on Windows; no real KWin or Wayland desk
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | `ColumnShell` with three columns; blur when the setting is on | T11, T19 | `shot` names a `BlurredView` under the window | Pass |
-| Columns toggle and keep their state | T11 | Cmd-B, the app active, saved `show_sessions` false; Ctrl-Shift-B hid the sessions on a real X11 window | Pass |
+| Columns toggle and keep their state | T11, T23 | a click on each title bar button hid its column and saved it, and a restart opened the window with both hidden (147 columns against 87); Cmd-B with the app active; Ctrl-Shift-B on a real X11 window | Pass |
 | The title shows the session's title, nothing else | T11 | log: "the title is", per session shown | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |
 
@@ -113,8 +113,8 @@ What no check reached: no build has run on Windows; no real KWin or Wayland desk
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| macOS: `Blurred` (NSVisualEffectView) | T19 | `BlurredView` comes and goes with the settings | Pass |
-| Windows: `Blurred` (acrylic) | T19 | the same gpui call; no Windows build has run | Open |
+| macOS: `Blurred` (NSVisualEffectView) | T19, T23 | `shot` reads `BlurredView, blur 30` off the view's backdrop layer; the owner saw the desktop blur | Pass |
+| Windows: `Blurred` (acrylic) | T19 | the same gpui call; CI builds and tests on Windows, but no one has seen the window | Partial |
 | Wayland: `ext_background_effect_v1` beside gpui's `org_kde_kwin_blur` | T20 | `blur::wayland` tests on a `wayland-server` compositor; no real compositor | Partial |
 | X11: `_KDE_NET_WM_BLUR_BEHIND_REGION`, removed when blur turns off | T21 | `blur::x11` test on Xvfb; the property on a real xfwm4 window; KWin not run | Partial |
 | Neither protocol: transparency without blur; the log names the path | T20, T21 | the log lines in `src/blur` | Pass |
@@ -130,14 +130,28 @@ What no check reached: no build has run on Windows; no real KWin or Wayland desk
 
 | PRD line | Evidence | Status |
 |---|---|---|
-| Each task ticked with a passing review | T01–T22 ticked; T04 and T10 reached the three-round cap without a passing round; T23 open | Partial |
+| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
 | `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux in Colima: 138 tests, clippy | Pass |
-| CI green on macOS, Ubuntu and Windows | see the CI notes below | Open |
+| CI green on macOS, Ubuntu and Windows | run 910 on `be8d0e2`: all three jobs pass; see the CI notes below | Pass |
 
 ## CI notes
 
-As probed on 2026-10-15, each job fails on its runner, not on the code:
+On 2026-10-15 every job first failed on its runner, not on the code. With the owner's leave, each runner was put right:
 
-- macOS, on the Mac mini runner: Homebrew is on the PATH, but fish and PowerShell are not installed, so `fish_loads_its_script_and_restores_its_data_dirs` and `powershell_reports_its_folder_byte_for_byte_and_keeps_the_status` fail, as they should without their shells.
-- Windows, on its runner: `C:\Users\zhang\.cargo\bin` holds `rustup.exe` alone, without the `cargo.exe` and `rustc.exe` proxies, so the toolchain step stops at `rustc: command not found`. `cargo clippy --target x86_64-pc-windows-msvc --all-targets -D warnings` passes on macOS, with a stand-in for the MSVC assembler and `llvm-rc`; no Windows test has run.
-- Ubuntu: no runner carries the `ubuntu-24.04` label, so the job never starts. The tests pass in a Linux container (`scripts/linux.sh test --locked`).
+- macOS: fish and PowerShell were missing, so the two shell tests failed, as they should without their shells. Homebrew installed both.
+- Windows: rustup's `.cargo\bin` held `rustup.exe` alone, without the `cargo.exe` and `rustc.exe` proxies, so the toolchain step stopped at `rustc: command not found`. rustup's installer, run again, put them back.
+- Ubuntu: no runner carried `ubuntu-24.04`, so 71 runs waited; they were cancelled, and a runner for this repository alone runs the job in Docker, in a VM of its own. Its first build was killed linking gpui's test binaries with debuginfo in 8 GB, so the Linux and Windows jobs build without debuginfo, as `scripts/linux.sh` does.
+
+A clippy run for `x86_64-pc-windows-msvc` on macOS, with stand-ins for the MSVC assembler and `llvm-rc`, found `testlog` unused on Windows; it now builds only beside the Unix tests that use it.
+
+Run 907 then failed the PowerShell test on macOS: it typed its probe right after the first folder report, which pwsh 7.6.6 sends before PSReadLine reads its first key, and the line was echoed, never run. The shell tests now type a line only once the line editor reads raw keys.
+
+Run 910, on `be8d0e2`, passed all three jobs: macOS ran `scripts/check.sh` (135 tests, the fonts check, clippy, fmt, the 500-line rule) and the build; Ubuntu ran 138 tests and the build; Windows ran 113 tests and the build, without the Unix-only pty and shell tests.
+
+## The owner's checks
+
+On 2026-10-15 the owner ran the app on macOS and found three faults, now fixed:
+
+- The desktop showed through sharp: on macOS 27 gpui's `Selection` material builds no blur; the window's view now takes `underWindowBackground`, radius 30.
+- The debug build lagged; the release build does not.
+- No button hid the side columns; each now has one at its end of the title bar, its state saved.

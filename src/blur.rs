@@ -4,6 +4,8 @@ use gpui::{Window, WindowBackgroundAppearance};
 
 use crate::settings::Settings;
 
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(target_os = "linux")]
 mod wayland;
 #[cfg(target_os = "linux")]
@@ -32,10 +34,15 @@ pub struct Blur {
 impl Blur {
     /// The window as `WindowOptions` opened it from these settings.
     pub fn new(window: &Window, settings: &Settings) -> Self {
-        #[cfg(not(target_os = "linux"))]
+        let shown = appearance(settings);
+        #[cfg(target_os = "macos")]
+        if shown == WindowBackgroundAppearance::Blurred {
+            macos::blur(window);
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let _ = window;
         Self {
-            shown: appearance(settings),
+            shown,
             #[cfg(target_os = "linux")]
             wayland: wayland::Effect::on(window),
             #[cfg(target_os = "linux")]
@@ -57,6 +64,10 @@ impl Blur {
         self.shown = wanted;
         window.set_background_appearance(wanted);
         log::info!("blur: the window is {wanted:?} on {}", std::env::consts::OS);
+        #[cfg(target_os = "macos")]
+        if wanted == WindowBackgroundAppearance::Blurred {
+            macos::blur(window);
+        }
     }
 
     /// Keeps a Linux compositor's blur on the window's pane while Blurred; each frame, sending only a change.
