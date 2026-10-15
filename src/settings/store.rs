@@ -24,6 +24,8 @@ impl SettingsStore {
         let folder = dirs::config_dir().context("settings: the platform names no config folder")?;
         let path = folder.join("ELYTerminal").join("settings.json");
         let settings = load(&path)?;
+        loads(&settings.font_family, cx)
+            .with_context(|| format!("settings: {} holds a bad value", path.display()))?;
         cx.set_global(Self { settings, path });
         Ok(())
     }
@@ -41,10 +43,18 @@ impl SettingsStore {
             return Ok(());
         }
         next.validate()?;
+        if next.font_family != store.settings.font_family {
+            loads(&next.font_family, cx)?;
+        }
         save(&store.path, &next)?;
         cx.global_mut::<Self>().settings = next;
         Ok(())
     }
+}
+
+/// Checks the terminal can load `family`.
+fn loads(family: &str, cx: &App) -> anyhow::Result<()> {
+    crate::term::load_font(&gpui::font(family.to_string()), cx.text_system()).map(|_| ())
 }
 
 /// The file's settings; defaults when there is no file. A file that fails to read or check is an error.

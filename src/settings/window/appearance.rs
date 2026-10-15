@@ -42,7 +42,7 @@ impl SettingsWindow {
                     format!("separate dark theme is {on}"),
                     cx,
                     |settings| settings.dark_theme = on.then_some(theme),
-                )
+                );
             }
         });
         let light = separate.then_some("Light");
@@ -56,33 +56,40 @@ impl SettingsWindow {
             .selected(settings.font_family.clone())
             .on_change({
                 let this = this.clone();
-                move |family, _, cx| {
+                move |family, window, cx| {
                     let family = family.to_string();
-                    set(
+                    let saved = set(
                         &this,
                         format!("font_family is {family:?}"),
                         cx,
                         |settings| settings.font_family = family,
-                    )
+                    );
+                    // A refused pick shows the saved family again, the list closed.
+                    if !saved {
+                        let saved = SettingsStore::get(cx).font_family.clone();
+                        let input = this.read(cx).font.clone();
+                        input.update(cx, |input, cx| input.set_text(saved, cx));
+                        window.blur(cx);
+                    }
                 }
             });
         let font = SettingsSection::new("Font")
             .row(SettingsRow::new("Family").control(div().w(theme.prose_width()).child(family)))
-            .row(SettingsRow::new("Size").control(number(
-                &this,
+            .row(SettingsRow::new("Size").control(self.number(
                 "font_size",
                 settings.font_size,
                 &FONT_SIZE,
                 (1.0, 1),
                 |settings, size| settings.font_size = size,
+                cx,
             )))
-            .row(SettingsRow::new("Line height").control(number(
-                &this,
+            .row(SettingsRow::new("Line height").control(self.number(
                 "line_height",
                 settings.line_height,
                 &LINE_HEIGHT,
                 (0.05, 2),
                 |settings, height| settings.line_height = height,
+                cx,
             )))
             .row(SettingsRow::new("Ligatures").control(switch(
                 &this,
@@ -114,7 +121,7 @@ impl SettingsWindow {
                         format!("cursor_style is {style:?}"),
                         cx,
                         |settings| settings.cursor_style = style,
-                    )
+                    );
                 }
             });
         let active = themes::active(settings, window.appearance());
@@ -140,7 +147,7 @@ impl SettingsWindow {
                         format!("background_opacity is {value}"),
                         cx,
                         |settings| settings.background_opacity = value,
-                    )
+                    );
                 }
             });
         let opacity = div()
@@ -161,21 +168,21 @@ impl SettingsWindow {
                 settings.background_blur,
                 |settings, on| settings.background_blur = on,
             )))
-            .row(SettingsRow::new("Horizontal padding").control(number(
-                &this,
+            .row(SettingsRow::new("Horizontal padding").control(self.number(
                 "padding_x",
                 settings.padding_x,
                 &PADDING,
                 (1.0, 0),
                 |settings, padding| settings.padding_x = padding,
+                cx,
             )))
-            .row(SettingsRow::new("Vertical padding").control(number(
-                &this,
+            .row(SettingsRow::new("Vertical padding").control(self.number(
                 "padding_y",
                 settings.padding_y,
                 &PADDING,
                 (1.0, 0),
                 |settings, padding| settings.padding_y = padding,
+                cx,
             )));
         div()
             .flex()
@@ -185,6 +192,30 @@ impl SettingsWindow {
             .child(font)
             .child(cursor)
             .child(background)
+    }
+
+    /// A field over `range`, by `step` to `places`, that saves each committed number through `put`; a refusal starts it again from the settings.
+    fn number(
+        &self,
+        field: &'static str,
+        value: f32,
+        range: &RangeInclusive<f32>,
+        (step, places): (f64, usize),
+        put: fn(&mut Settings, f32),
+        cx: &Context<Self>,
+    ) -> NumberInput {
+        let this = cx.entity();
+        NumberInput::new((field, self.drafts), f64::from(value))
+            .range(f64::from(*range.start()), f64::from(*range.end()))
+            .step(step)
+            .precision(places)
+            .size(ControlSize::Sm)
+            .on_commit(move |value, _, cx| {
+                let value = value as f32;
+                set(&this, format!("{field} is {value}"), cx, |settings| {
+                    put(settings, value)
+                });
+            })
     }
 }
 
@@ -197,31 +228,6 @@ fn fraction(percent: f64) -> f32 {
     (percent / 100.) as f32
 }
 
-/// A field over `range`, by `step` to `places`, that saves each settled number through `put`.
-fn number(
-    this: &Entity<SettingsWindow>,
-    field: &'static str,
-    value: f32,
-    range: &RangeInclusive<f32>,
-    (step, places): (f64, usize),
-    put: fn(&mut Settings, f32),
-) -> NumberInput {
-    NumberInput::new(field, f64::from(value))
-        .range(f64::from(*range.start()), f64::from(*range.end()))
-        .step(step)
-        .precision(places)
-        .size(ControlSize::Sm)
-        .on_change({
-            let this = this.clone();
-            move |value, _, cx| {
-                let value = value as f32;
-                set(&this, format!("{field} is {value}"), cx, |settings| {
-                    put(settings, value)
-                })
-            }
-        })
-}
-
 fn switch(
     this: &Entity<SettingsWindow>,
     field: &'static str,
@@ -232,7 +238,7 @@ fn switch(
     Switch::new(field, on).on_change(move |on, _, cx| {
         set(&this, format!("{field} is {on}"), cx, |settings| {
             put(settings, on)
-        })
+        });
     })
 }
 
@@ -263,7 +269,7 @@ fn grid(
                     } else {
                         settings.theme = id.into();
                     }
-                })
+                });
             })
     });
     let rem = window.rem_size();

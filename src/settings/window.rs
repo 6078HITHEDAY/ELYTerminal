@@ -87,6 +87,8 @@ pub struct SettingsWindow {
     refused: Option<SharedString>,
     /// Why the last change did not save.
     failed: Option<SharedString>,
+    /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
+    drafts: usize,
     font: Entity<TextInput>,
     /// Whether the cursor preview shows, as it blinks.
     lit: bool,
@@ -118,6 +120,7 @@ impl SettingsWindow {
             shell,
             refused: None,
             failed: None,
+            drafts: 0,
             font,
             lit: true,
             _typed: typed,
@@ -146,9 +149,10 @@ impl SettingsWindow {
 
     /// Saves `shell` when it names a program; else says why and keeps the saved one.
     fn save_shell(&mut self, shell: String, cx: &mut Context<Self>) {
-        let refused = match SettingsStore::update(cx, |settings| settings.shell = shell.clone()) {
+        self.refused = match SettingsStore::update(cx, |settings| settings.shell = shell.clone()) {
             Ok(()) => {
                 log::info!("settings: new sessions run {shell:?}");
+                self.failed = None;
                 None
             }
             Err(error) => {
@@ -156,10 +160,7 @@ impl SettingsWindow {
                 Some(format!("{error:#}").into())
             }
         };
-        if refused != self.refused {
-            self.refused = refused;
-            cx.notify();
-        }
+        cx.notify();
     }
 
     fn general(&self, cx: &Context<Self>) -> SettingsSection {
@@ -203,17 +204,17 @@ fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
     );
 }
 
-/// Saves one change and logs it; a refused one changes nothing, and the window says why.
+/// Saves one change and logs it, telling whether the settings hold it; a refused one changes nothing, and the window says why.
 fn set(
     this: &Entity<SettingsWindow>,
     change: String,
     cx: &mut App,
     edit: impl FnOnce(&mut Settings),
-) {
+) -> bool {
     let mut next = SettingsStore::get(cx).clone();
     edit(&mut next);
     if next == *SettingsStore::get(cx) {
-        return;
+        return true;
     }
     let failed = match SettingsStore::update(cx, |settings| *settings = next) {
         Ok(()) => {
@@ -225,10 +226,13 @@ fn set(
             Some(format!("{error:#}").into())
         }
     };
+    let saved = failed.is_none();
     this.update(cx, |this, cx| {
+        this.drafts += usize::from(!saved);
         this.failed = failed;
         cx.notify();
     });
+    saved
 }
 
 impl Render for SettingsWindow {

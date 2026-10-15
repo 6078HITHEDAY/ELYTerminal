@@ -9,9 +9,9 @@ use alacritty_terminal::{
 use ely_gpui_component::theme::ActiveTheme;
 use futures::StreamExt;
 use gpui::{
-    Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontStyle,
+    Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontId, FontStyle,
     FontWeight, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled, Subscription,
-    Task, Window, div, prelude::*, px, size,
+    Task, TextSystem, Window, div, prelude::*, px, size,
 };
 
 use super::{
@@ -254,6 +254,18 @@ impl TerminalView {
     }
 }
 
+/// `font` as gpui loads it; gpui falls back to another font without a word, and loads none without an `m`.
+pub fn load_font(font: &Font, system: &TextSystem) -> anyhow::Result<FontId> {
+    let id = system.resolve_font(font);
+    let loaded = system.get_font_for_id(id);
+    anyhow::ensure!(
+        loaded.is_some_and(|loaded| loaded.family == font.family),
+        "font_family is {:?}, which the terminal cannot load",
+        font.family
+    );
+    Ok(id)
+}
+
 /// The font, cell and metrics the settings give at this window's scale.
 fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
     let font = Font {
@@ -269,7 +281,7 @@ fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look>
     };
     let text = px(settings.font_size);
     let system = window.text_system();
-    let id = system.resolve_font(&font);
+    let id = load_font(&font, system)?;
     let advance = system
         .advance(id, text, 'M')
         .map_err(|error| anyhow::anyhow!("{} cannot measure M: {error}", settings.font_family))?;

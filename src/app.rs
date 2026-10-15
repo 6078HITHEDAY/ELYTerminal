@@ -59,11 +59,6 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         mac::repeat_held_keys();
         mac::deliver_command_key_ups()?;
     }
-    let family = &SettingsStore::get(cx).font_family;
-    anyhow::ensure!(
-        cx.text_system().all_font_names().contains(family),
-        "settings: font_family is {family:?}, which is not installed"
-    );
     themes::apply(cx);
     let chosen =
         |settings: &settings::Settings| (settings.theme.clone(), settings.dark_theme.clone());
