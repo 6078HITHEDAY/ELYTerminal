@@ -116,3 +116,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T23
 
 - Round 1, e3b5cfb..82bdbaf: PASS. The owner's checks on the release build found three faults, fixed in 09930c2 before the review: on macOS 27 gpui's Selection material drew no blur, the debug build lagged, and no button hid the side columns. CI went green once the owner let the runners be put right: fish and PowerShell on the macOS runner, rustup's proxies on the Windows runner, a Linux runner of the repository's own; on the way, run 907 caught the PowerShell test typing before the line editor read keys.
+
+## T24
+
+- Round 1, c0a9eb3..65bb4d3: PASS. Before the review, 65bb4d3 named the icon's parts as SVG groups instead of comments, drawing the same pixels, and made mac-app.sh read the version in a clone named elyterminal. CI run 926 on 65bb4d3 passed on macOS, Ubuntu and Windows.
