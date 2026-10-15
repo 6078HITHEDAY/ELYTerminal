@@ -1,17 +1,17 @@
 #!/bin/sh
-# mac-app.sh: target/release/ELYTerminal.app, signed ad hoc, and its disk image.
+# mac-app.sh: ELYTerminal.app in target/release, signed ad hoc, and its disk image.
 set -eu
 cd "$(dirname "$0")/.."
 cargo build --release --locked
 version=$(cargo pkgid)
 version=${version##*[#@]}
 case $version in [0-9]*) ;; *) echo "mac-app: cargo pkgid names no version" >&2; exit 1 ;; esac
-out=target/release
+out=${CARGO_TARGET_DIR:-target}/release
 app=$out/ELYTerminal.app
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cargo run --release --locked --quiet --example icons -- \
-  assets/icons/elyterminal-macos.svg "$work/ELYTerminal.iconset"
+  iconset assets/icons/elyterminal-macos.svg "$work/ELYTerminal.iconset"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$out/elyterminal" "$app/Contents/MacOS/"

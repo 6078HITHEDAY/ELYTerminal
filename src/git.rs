@@ -25,10 +25,17 @@ fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
     args.join(" ")
 }
 
+/// Keeps Windows from opening a console window for git.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Runs git in `folder`: English messages, literal paths, no lock the user's own git could meet; `input` feeds stdin.
 fn git<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Result<Output> {
     let named = || format!("git: `git {}` in {}", line(args), folder.display());
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, CREATE_NO_WINDOW);
+    let mut child = command
         .arg("-C")
         .arg(folder)
         .args(["--no-optional-locks", "--literal-pathspecs"])

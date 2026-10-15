@@ -1755,6 +1755,7 @@ dependencies = [
  "core-graphics 0.24.0",
  "dirs 7.0.0",
  "ely-gpui-component",
+ "embed-resource",
  "env_logger",
  "foreign-types",
  "futures",

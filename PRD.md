@@ -129,6 +129,12 @@ Cmd-, opens it. Categories on the left, rows on the right, Ely's settings compon
 - macOS: the icon on the rounded square macOS gives app icons. Windows and Linux: the figure alone, no ground, flat, as Papirus draws.
 - `scripts/mac-app.sh` builds `ELYTerminal.app` from a release build with its icon, signed ad hoc, and a disk image holding it beside a link to Applications.
 
+## 15. Release
+
+- A release on Gitea, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon), a Windows zip (x86_64) and a Linux tarball (x86_64).
+- The Windows executable carries the icon. The Linux tarball carries the icon and a desktop entry, and the window names itself after it, `com.zacharyzhang.elyterminal`, as the macOS bundle does.
+- Each build comes from its platform's script: `scripts/mac-app.sh`, `scripts/windows-zip.ps1`, `scripts/linux-tar.sh`.
+
 ## Deferred
 
 Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, quick terminal.

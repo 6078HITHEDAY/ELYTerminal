@@ -64,3 +64,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 14. Icon and the macOS app
 
 - [x] T24 Icon: Ely holding a terminal, on macOS's rounded square and alone for Windows and Linux; `scripts/mac-app.sh` builds `ELYTerminal.app` and its disk image.
+
+## 15. Release
+
+- [ ] T25 Windows zip with the icon in the executable, Linux tarball with the icon and a desktop entry, the app id on Linux windows, their scripts; release v0.1.0 on Gitea with the three builds.

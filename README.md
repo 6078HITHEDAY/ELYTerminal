@@ -2,15 +2,33 @@
 
 A terminal for macOS, Windows and Linux, in Rust on GPUI and Ely components. Sessions sit on the left, the terminal in the middle, Git or Files on the right. Every setting has a control in the settings window.
 
+## Install
+
+A release on Gitea carries three builds.
+
+- macOS 11 or later, Apple silicon: open `ELYTerminal-VERSION.dmg` and drag ELYTerminal into Applications. The app is signed ad hoc, not notarized, so macOS stops its first open: in System Settings, Privacy & Security, press Open Anyway.
+- Windows 10 or later, x86_64: unzip `ELYTerminal-VERSION-windows-x86_64.zip` and run `elyterminal.exe`. It is unsigned; if SmartScreen stops it, press More info, then Run anyway.
+- Linux, x86_64, glibc 2.35 or later, with libxkbcommon, libxkbcommon-x11 and libxcb:
+
+```sh
+tar -xzf ELYTerminal-VERSION-linux-x86_64.tar.gz
+cd ELYTerminal-VERSION-linux-x86_64
+install -Dm755 elyterminal -t ~/.local/bin
+install -Dm644 com.zacharyzhang.elyterminal.desktop -t ~/.local/share/applications
+install -Dm644 com.zacharyzhang.elyterminal.svg -t ~/.local/share/icons/hicolor/scalable/apps
+```
+
+The desktop entry runs `elyterminal`, so `~/.local/bin` must be on `PATH`.
+
 ## Build and run
 
-Rust 1.95.
+Rust 1.95.0, which `rust-toolchain.toml` pins; rustup installs it on the first build.
 
 ```sh
 cargo run --release
 ```
 
-On macOS, `scripts/mac-app.sh` builds `ELYTerminal.app`, with its icon, and a disk image of it in `target/release`.
+Each platform's script builds its release in `target/release`: on macOS, `scripts/mac-app.sh` builds `ELYTerminal.app`, with its icon, and a disk image of it; on Windows, `scripts/windows-zip.ps1` zips `elyterminal.exe`, its icon inside; on Linux, `scripts/linux-tar.sh` builds in Docker and packs the binary with its desktop entry and icon.
 
 On Linux, install the libraries gpui links first. On Debian and Ubuntu:
 
@@ -19,7 +37,7 @@ sudo apt-get install pkg-config libwayland-dev libxkbcommon-dev libxkbcommon-x11
   libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev
 ```
 
-The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `trace` logs each paint.
+The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `trace` logs each paint. A Windows release build opens no console: `elyterminal.exe 2> log.txt` keeps its log.
 
 ## What it does
 

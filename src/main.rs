@@ -1,3 +1,6 @@
+// A release build on Windows opens no console window.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use ely_gpui_component::Assets;
 use elyterminal::{
     app,

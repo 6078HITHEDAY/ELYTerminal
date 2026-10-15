@@ -131,7 +131,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Evidence | Status |
 |---|---|---|
 | Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
-| `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux in Colima: 138 tests, clippy | Pass |
+| `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux through `scripts/linux.sh`: 138 tests, clippy, on aarch64 in Colima and on x86_64 in WSL's Docker | Pass |
 | CI green on macOS, Ubuntu and Windows | run 926 on `65bb4d3`: all three jobs pass; see the CI notes below | Pass |
 
 ## 14. Icon and the macOS app
@@ -139,8 +139,17 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | The icon: Ely, a girl with long pink hair, holding a terminal | T24 | `assets/icons`, drawn at 16 to 1024 px and legible at 32; the owner saw it | Pass |
-| macOS: the rounded square; Windows and Linux: the figure alone, flat | T24 | `elyterminal-macos.svg` on Apple's grid; `elyterminal.svg`, which no Windows or Linux build carries yet | Pass |
+| macOS: the rounded square; Windows and Linux: the figure alone, flat | T24 | `elyterminal-macos.svg` on Apple's grid; `elyterminal.svg`, which the Linux tarball carries and the Windows `.ico` renders | Pass |
 | `scripts/mac-app.sh` builds the app, signed ad hoc, and its disk image | T24 | its run: `codesign --verify --strict` passes on the app and on its copy in the image; the `.icns` holds 16 to 1024 px; the image verifies and mounts with the app beside Applications; LaunchServices opens the app as `com.zacharyzhang.elyterminal` | Pass |
+
+## 15. Release
+
+| PRD line | Task | Evidence | Status |
+|---|---|---|---|
+| A Gitea release, `vVERSION`, with the macOS disk image, a Windows zip and a Linux tarball | T25 | published after T25's review | Open |
+| The Windows executable carries the icon | T25 | its resources: icon group 1 with the seven images of `elyterminal.ico`, 16 to 256 px, and gpui's manifest (PerMonitorV2); a GUI program, importing no C runtime DLL; not yet seen on a Windows screen | Pass |
+| The Linux tarball carries the icon and a desktop entry; the window names itself `com.zacharyzhang.elyterminal` | T25 | on Ubuntu 22.04: `desktop-file-validate` reports nothing, every library resolves, glibc 2.35; under Xvfb `WM_CLASS` reads `com.zacharyzhang.elyterminal` twice, and under headless sway the window's `app_id` reads the same | Pass |
+| Each build comes from its script | T25 | `scripts/mac-app.sh` on macOS, `scripts/windows-zip.ps1` on the owner's Windows PC, `scripts/linux-tar.sh` in the owner's WSL | Pass |
 
 ## CI notes
 

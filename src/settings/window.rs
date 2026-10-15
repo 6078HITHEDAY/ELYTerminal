@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use super::{Settings, SettingsStore, StartIn};
-use crate::{menus, term::BLINK};
+use crate::{app::APP_ID, menus, term::BLINK};
 
 mod appearance;
 mod terminal;
@@ -75,6 +75,7 @@ fn open_window(cx: &mut App) {
         ..Default::default()
     };
     match cx.open_window(options, |window, cx| {
+        window.set_app_id(APP_ID);
         cx.new(|cx| SettingsWindow::new(window, cx))
     }) {
         Ok(_) => log::info!("settings: the window opens"),

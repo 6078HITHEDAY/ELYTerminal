@@ -10,10 +10,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.95"
-          components: clippy, rustfmt
+      # The runner's PATH lacks the host's rustup.
+      - run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: rustup toolchain install --no-self-update
       - run: scripts/check.sh
       - run: cargo build --locked
 
@@ -28,9 +27,12 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.95"
+      # The job container comes without rustup.
+      - if: runner.os == 'Linux'
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: rustup toolchain install --no-self-update
       # On a host runner its post step deletes the host's rustup.
       - if: runner.os == 'Linux'
         uses: Swatinem/rust-cache@v2

@@ -17,6 +17,9 @@ use crate::{
     workspace::{self, TITLE, Workspace},
 };
 
+/// The id the macOS bundle and Linux desktop entry share.
+pub const APP_ID: &str = "com.zacharyzhang.elyterminal";
+
 /// Fonts, settings, integration scripts and the chosen font, each checked before a window opens.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
     cx.text_system()
@@ -96,6 +99,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
     };
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
     let window = cx.open_window(options, |window, cx| {
+        window.set_app_id(APP_ID);
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
