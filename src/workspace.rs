@@ -9,11 +9,12 @@ use ely_gpui_component::{
 use gpui::{
     Action, App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
+    StyleRefinement, Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
 };
 
 use crate::{
     files::Files,
+    git::panel::{Acted, GitPanel},
     sessions::{self, Session},
     settings::{PanelTab, Settings, SettingsStore, StartIn},
     term::{
@@ -82,7 +83,9 @@ pub struct Workspace {
     /// The session shown.
     active: usize,
     files: Entity<Files>,
+    git: Entity<GitPanel>,
     _settings: Subscription,
+    _acted: Subscription,
 }
 
 impl Workspace {
@@ -94,12 +97,20 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let git = cx.new(|cx| GitPanel::new(launch.cwd.clone(), window, cx));
+        // A change the Git panel made shows in Files' marks too.
+        let acted = cx.subscribe(&git, |this, _, _: &Acted, cx| {
+            let folder = this.sessions[this.active].folder.clone();
+            this.files.update(cx, |files, cx| files.show(&folder, cx));
+        });
         let mut workspace = Self {
             focus: cx.focus_handle(),
             sessions: Vec::new(),
             active: 0,
             files: cx.new(|_| Files::new(launch.cwd.clone())),
+            git,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            _acted: acted,
         };
         workspace.add(pty, events, launch, window, cx);
         workspace.select(0, window, cx);
@@ -171,6 +182,7 @@ impl Workspace {
         window.focus(&session.terminal.focus_handle(cx), cx);
         let folder = session.folder.clone();
         self.files.update(cx, |files, cx| files.show(&folder, cx));
+        self.git.update(cx, |git, cx| git.show(&folder, cx));
         self.active = index;
         log::debug!("app: session {} shown", index + 1);
         self.retitle(window);
@@ -237,6 +249,7 @@ impl Workspace {
                 session.reports = true;
                 if index == self.active {
                     self.files.update(cx, |files, cx| files.show(folder, cx));
+                    self.git.update(cx, |git, cx| git.show(folder, cx));
                 }
             }
             TerminalEvent::Bell if index != self.active => {
@@ -360,20 +373,23 @@ impl Render for Workspace {
                 .get(self.active)
                 .is_some_and(|session| !session.reports);
             let caption = || Caption::new("This shell reports no folder.").px_3().pt_2();
+            // Hidden, not dropped, so each keeps its state.
+            let body = |on: bool| {
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .p_2()
+                    .when(!on, |body| body.hidden())
+            };
+            // Git's list draws every row, so terminal output must not redraw it.
+            let fill = || StyleRefinement::default().size_full();
             shell = shell.column(
                 ShellColumn::new("panel")
                     .width(width)
                     .leading(switch)
                     .children(quiet.then(caption))
-                    // Hidden, not dropped, so the tree keeps its open folders.
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .p_2()
-                            .when(tab != PanelTab::Files, |body| body.hidden())
-                            .child(self.files.clone()),
-                    ),
+                    .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
+                    .child(body(tab == PanelTab::Files).child(self.files.clone())),
             );
         }
         // The context sits above the focus root, so its keys work wherever focus is.

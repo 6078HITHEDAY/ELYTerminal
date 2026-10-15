@@ -1,5 +1,6 @@
 use std::{env, fs};
 
+use ely_gpui_component::git::{LineKind, Stretch};
 use gpui::SharedString;
 
 use super::*;
@@ -257,7 +258,7 @@ fn files_stage_and_unstage_by_their_literal_paths() {
     assert_eq!(state.untracked.len(), 2);
 
     stage(&root, &state.untracked).expect("a stage");
-    commit(&root, "first").expect("a commit");
+    commit(&root, "first", false).expect("a commit");
     prepare(&root, &["mv", "star1.txt", "moved.txt"]);
     unstage(&root, &read(&root).staged).expect("an unstaged rename");
     let state = read(&root);
@@ -290,10 +291,10 @@ fn a_commit_takes_the_staged_files_and_heads_the_log() {
     let root = repository("git-commit");
     write(&root, "a.txt", "a\n");
     stage(&root, &[change("a.txt", GitStatus::Untracked)]).expect("a stage");
-    commit(&root, "first subject\n\nIts body.").expect("a commit");
+    commit(&root, "first subject\n\nIts body.", false).expect("a commit");
     write(&root, "b.txt", "b\n");
     stage(&root, &[change("b.txt", GitStatus::Untracked)]).expect("a stage");
-    commit(&root, "second").expect("a commit");
+    commit(&root, "second", false).expect("a commit");
 
     let commits = log(&root, 10).expect("a log");
     let [newest, first] = commits.as_slice() else {
@@ -309,7 +310,7 @@ fn a_commit_takes_the_staged_files_and_heads_the_log() {
     assert_eq!(newest.refs, [SharedString::from("HEAD -> main")]);
     assert!(first.refs.is_empty());
     assert_eq!(log(&root, 1).expect("a log").len(), 1);
-    let error = commit(&root, "nothing").expect_err("nothing is staged");
+    let error = commit(&root, "nothing", false).expect_err("nothing is staged");
     assert!(format!("{error:#}").contains("nothing"), "{error:#}");
 }
 
@@ -371,6 +372,76 @@ fn names_that_show_alike_stay_apart() {
     unstage(&root, &[bytes]).expect("an unstage");
     let left = [change("bad\u{FFFD}.txt", GitStatus::Added)];
     assert_eq!(read(&root).staged, left, "the other name stays staged");
+}
+
+#[test]
+fn an_amend_rewrites_the_last_commit() {
+    let root = repository("git-amend");
+    assert!(
+        commit(&root, "nothing yet", true).is_err(),
+        "no commit to amend"
+    );
+    write(&root, "a.txt", "a\n");
+    stage(&root, &[change("a.txt", GitStatus::Untracked)]).expect("a stage");
+    commit(&root, "first", false).expect("a commit");
+    commit(&root, "first, reworded", true).expect("an amend with nothing staged");
+    let commits = log(&root, 10).expect("a log");
+    let subjects: Vec<&str> = commits
+        .iter()
+        .map(|commit| commit.subject.as_ref())
+        .collect();
+    assert_eq!(subjects, ["first, reworded"]);
+}
+
+#[test]
+fn a_discard_restores_edits_and_deletes_new_files() {
+    let root = repository("git-discard");
+    for path in ["edited.txt", "both.txt", "gone.txt"] {
+        write(&root, path, "base\n");
+    }
+    prepare(&root, &["add", "."]);
+    prepare(&root, &["commit", "-qm", "base"]);
+    write(&root, "edited.txt", "edit\n");
+    write(&root, "both.txt", "staged\n");
+    prepare(&root, &["add", "both.txt"]);
+    write(&root, "both.txt", "staged, then edited\n");
+    fs::remove_file(root.join("gone.txt")).expect("a removal");
+    write(&root, "intended.txt", "intended\n");
+    prepare(&root, &["add", "-N", "intended.txt"]);
+    write(&root, "loose.txt", "loose\n");
+    write(&root, "notes/todo.txt", "todo\n");
+    write(&root, "nested/inner.txt", "inner\n");
+    prepare(&root.join("nested"), &["init", "-q"]);
+
+    let state = read(&root);
+    for change in &state.unstaged {
+        discard(&root, change, ChangeSection::Unstaged).expect("a discarded edit");
+    }
+    let (nested, loose): (Vec<_>, Vec<_>) =
+        (state.untracked.iter()).partition(|change| change.path == Path::new("nested/"));
+    for change in loose {
+        discard(&root, change, ChangeSection::Untracked).expect("a deleted file");
+    }
+    let error = discard(&root, nested[0], ChangeSection::Untracked).expect_err("git skips it");
+    assert!(
+        format!("{error:#}").contains("removed nothing"),
+        "{error:#}"
+    );
+    let staged = read(&root).staged;
+    let kept = discard(&root, &staged[0], ChangeSection::Staged);
+    assert!(kept.is_err(), "a staged change is not discarded");
+
+    let text = |path| fs::read_to_string(root.join(path)).expect("a file");
+    assert_eq!(text("edited.txt"), "base\n");
+    assert_eq!(text("both.txt"), "staged\n", "the staged part stays");
+    assert_eq!(text("gone.txt"), "base\n", "a deletion is undone");
+    for path in ["intended.txt", "loose.txt", "notes"] {
+        assert!(!root.join(path).exists(), "{path} goes");
+    }
+    let state = read(&root);
+    assert_eq!(state.staged, [change("both.txt", GitStatus::Modified)]);
+    assert!(state.unstaged.is_empty(), "{:?}", state.unstaged);
+    assert_eq!(state.untracked, [change("nested/", GitStatus::Untracked)]);
 }
 
 mod diffs;

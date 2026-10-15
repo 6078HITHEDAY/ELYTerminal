@@ -1,6 +1,9 @@
 use std::ops::Range;
 
+use ely_gpui_component::git::DiffLine;
+
 use super::*;
+use crate::git::diff::hunks;
 
 fn line(kind: LineKind, at: (Option<usize>, Option<usize>), text: &str) -> DiffLine {
     lined(kind, at, text, Vec::new())

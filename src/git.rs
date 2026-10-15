@@ -7,9 +7,14 @@ use std::{
 
 use anyhow::{Context as _, anyhow, bail, ensure};
 use ely_gpui_component::{
-    git::{ChangeSection, Commit, DiffLine, LineKind, Stretch, mark_words},
+    git::{ChangeSection, Commit},
     lists::GitStatus,
 };
+
+mod diff;
+pub mod panel;
+
+pub use diff::diff;
 
 /// Git's arguments on one line, for messages.
 fn line<A: AsRef<OsStr>>(args: &[A]) -> String {
@@ -70,9 +75,9 @@ fn warnings<A: AsRef<OsStr>>(folder: &Path, args: &[A], output: &Output) {
 }
 
 /// Runs git and gives what it printed; a failure is an error carrying what git said.
-fn run(folder: &Path, args: &[&str], input: &[u8]) -> anyhow::Result<Vec<u8>> {
+fn run<A: AsRef<OsStr>>(folder: &Path, args: &[A], input: &[u8]) -> anyhow::Result<Vec<u8>> {
     let output = git(folder, args, input)?;
-    let (command, place) = (args.join(" "), folder.display());
+    let (command, place) = (line(args), folder.display());
     ensure!(
         output.status.success(),
         "git: `git {command}` failed in {place}: {}",
@@ -326,11 +331,16 @@ fn pathspecs(changes: &[Change]) -> anyhow::Result<Vec<u8>> {
     Ok(out)
 }
 
+/// The first few changes by name, for a log line, and how many more.
 fn names(changes: &[Change]) -> String {
-    let names: Vec<String> = changes
+    let mut names: Vec<String> = changes
         .iter()
+        .take(5)
         .map(|change| change.path.display().to_string())
         .collect();
+    if changes.len() > names.len() {
+        names.push(format!("{} more", changes.len() - names.len()));
+    }
     names.join(", ")
 }
 
@@ -356,9 +366,51 @@ pub fn unstage(top: &Path, changes: &[Change]) -> anyhow::Result<()> {
 }
 
 /// Commits what is staged with `message`.
-pub fn commit(top: &Path, message: &str) -> anyhow::Result<()> {
-    run(top, &["commit", "-q", "-F", "-"], message.as_bytes())?;
-    log::info!("git: committed in {}", top.display());
+pub fn commit(top: &Path, message: &str, amend: bool) -> anyhow::Result<()> {
+    let args: &[&str] = match amend {
+        true => &["commit", "-q", "--amend", "-F", "-"],
+        false => &["commit", "-q", "-F", "-"],
+    };
+    run(top, args, message.as_bytes())?;
+    let amended = if amend { ", amending HEAD" } else { "" };
+    log::info!("git: committed in {}{amended}", top.display());
+    Ok(())
+}
+
+/// Discards `change` from the work tree: an edit goes back to the index; a new file, untracked or only intended to be added, goes.
+pub fn discard(top: &Path, change: &Change, section: ChangeSection) -> anyhow::Result<()> {
+    let shown = change.path.display();
+    let one = || pathspecs(std::slice::from_ref(change));
+    match (section, change.status) {
+        (ChangeSection::Untracked, _) => {
+            let flags = ["clean", "-f", "-d", "--"].map(OsStr::new);
+            let args: Vec<&OsStr> = flags.into_iter().chain([change.path.as_os_str()]).collect();
+            // Git passes over a repository of its own without a word.
+            let removed = run(top, &args, &[])?;
+            ensure!(!removed.is_empty(), "git: clean removed nothing at {shown}");
+        }
+        (ChangeSection::Unstaged, GitStatus::Added | GitStatus::Renamed) => {
+            let args = [
+                "rm",
+                "-f",
+                "-q",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+            ];
+            run(top, &args, &one()?)?;
+        }
+        (ChangeSection::Unstaged, _) => {
+            let args = [
+                "restore",
+                "--worktree",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+            ];
+            run(top, &args, &one()?)?;
+        }
+        _ => bail!("git: {shown} has nothing to discard in {section:?}"),
+    }
+    log::info!("git: discarded {shown} in {}", top.display());
     Ok(())
 }
 
@@ -389,107 +441,6 @@ pub fn log(top: &Path, count: usize) -> anyhow::Result<Vec<Commit>> {
         refs: listed(commit[5], ", "),
     });
     Ok(commits.collect())
-}
-
-/// `change`'s diff as `section` holds it, in Ely's stretches; none for a binary file.
-pub fn diff(
-    top: &Path,
-    change: &Change,
-    section: ChangeSection,
-) -> anyhow::Result<Option<Vec<Stretch>>> {
-    let (path, shown) = (change.path.as_os_str(), change.path.display());
-    let flags: &[&str] = match section {
-        ChangeSection::Staged => &["--cached", "-M", "--"],
-        ChangeSection::Unstaged => &["--"],
-        // HEAD is our side: a file we deleted reads as new.
-        ChangeSection::Conflicted => &["HEAD", "--"],
-        ChangeSection::Untracked if path.as_encoded_bytes().ends_with(b"/") => {
-            bail!("git: {shown} is a folder")
-        }
-        ChangeSection::Untracked => &["--no-index", "--", "/dev/null"],
-        ChangeSection::Ignored => bail!("git: {shown} is ignored"),
-    };
-    let mut args: Vec<&OsStr> = ["diff", "--no-color", "--no-ext-diff", "--no-textconv"]
-        .into_iter()
-        .chain(flags.iter().copied())
-        .map(OsStr::new)
-        .collect();
-    args.push(path);
-    args.extend(change.from.as_deref().map(Path::as_os_str));
-    let output = git(top, &args, &[])?;
-    // Without an index git exits 1 for a difference and a failure alike; only a difference prints.
-    let differ = section == ChangeSection::Untracked
-        && output.status.code() == Some(1)
-        && !output.stdout.is_empty();
-    ensure!(
-        output.status.success() || differ,
-        "git: `git {}` failed in {}: {}",
-        line(&args),
-        top.display(),
-        said(&output)
-    );
-    warnings(top, &args, &output);
-    hunks(&String::from_utf8_lossy(&output.stdout))
-}
-
-/// A hunk header's first old and new line numbers.
-fn starts(header: &str) -> Option<(usize, usize)> {
-    let mut ranges = header.strip_prefix("@@ -")?.split(' ');
-    let first = |range: &str| range.split(',').next()?.parse().ok();
-    let old = first(ranges.next()?)?;
-    let new = first(ranges.next()?.strip_prefix('+')?)?;
-    Some((old, new))
-}
-
-/// Git's unified diff as Ely's stretches, changed words marked; none for a binary file.
-fn hunks(text: &str) -> anyhow::Result<Option<Vec<Stretch>>> {
-    let (mut stretches, mut at, mut inside) = (Vec::new(), (0, 0), false);
-    for line in text.lines() {
-        if line.starts_with("diff ") {
-            inside = false;
-        } else if line.starts_with("@@") {
-            at = starts(line).with_context(|| format!("git: hunk header {line:?}"))?;
-            let header = line.to_string().into();
-            stretches.push(Stretch::Hunk {
-                header,
-                lines: Vec::new(),
-            });
-            inside = true;
-        } else if !inside {
-            if line.starts_with("Binary files ") {
-                return Ok(None);
-            }
-        } else if let Some(Stretch::Hunk { lines, .. }) = stretches.last_mut() {
-            let (kind, text) = match line.as_bytes().first() {
-                // `diff.suppressBlankEmpty` drops a blank line's space.
-                None => (LineKind::Same, ""),
-                Some(b' ') => (LineKind::Same, &line[1..]),
-                Some(b'-') => (LineKind::Removed, &line[1..]),
-                Some(b'+') => (LineKind::Added, &line[1..]),
-                Some(b'\\') => continue,
-                Some(_) => bail!("git: diff line {line:?} is malformed"),
-            };
-            let old = (kind != LineKind::Added).then_some(at.0);
-            let new = (kind != LineKind::Removed).then_some(at.1);
-            at = (
-                at.0 + usize::from(old.is_some()),
-                at.1 + usize::from(new.is_some()),
-            );
-            lines.push(DiffLine {
-                kind,
-                old,
-                new,
-                text: text.to_string().into(),
-                words: Vec::new(),
-            });
-        }
-    }
-    for stretch in &mut stretches {
-        if let Stretch::Hunk { lines, .. } = stretch {
-            mark_words(lines);
-        }
-    }
-    Ok(Some(stretches))
 }
 
 #[cfg(test)]
