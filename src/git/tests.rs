@@ -1,4 +1,4 @@
-use std::{env, fs, ops::Range};
+use std::{env, fs};
 
 use gpui::SharedString;
 
@@ -313,170 +313,64 @@ fn a_commit_takes_the_staged_files_and_heads_the_log() {
     assert!(format!("{error:#}").contains("nothing"), "{error:#}");
 }
 
-fn line(kind: LineKind, at: (Option<usize>, Option<usize>), text: &str) -> DiffLine {
-    lined(kind, at, text, Vec::new())
-}
-
-fn lined(
-    kind: LineKind,
-    (old, new): (Option<usize>, Option<usize>),
-    text: &str,
-    words: Vec<Range<usize>>,
-) -> DiffLine {
-    DiffLine {
-        kind,
-        old,
-        new,
-        text: text.to_string().into(),
-        words,
-    }
-}
-
-fn hunk(header: &str, lines: Vec<DiffLine>) -> Stretch {
-    Stretch::Hunk {
-        header: header.to_string().into(),
-        lines,
-    }
-}
-
 #[test]
-fn diffs_read_as_ely_stretches() {
-    use LineKind::*;
-    let root = repository("git-diff");
-    write(&root, "a.txt", "one\nthe old line\nthree\n");
-    write(&root, "old.txt", "kept\n");
-    fs::write(root.join("bin.dat"), b"x\0y").expect("a binary file");
+fn a_copy_keeps_no_source_to_unstage_or_diff() {
+    let root = repository("git-copy");
+    prepare(&root, &["config", "status.renames", "copies"]);
+    prepare(&root, &["config", "diff.renames", "copies"]);
+    let text: String = (1..=50).map(|n| format!("line {n}\n")).collect();
+    write(&root, "source.txt", &text);
     prepare(&root, &["add", "."]);
     prepare(&root, &["commit", "-qm", "first"]);
-    write(&root, "a.txt", "one\nthe new line\nthree\n");
-    prepare(&root, &["add", "a.txt"]);
-    write(&root, "a.txt", "one\nthe new line\nthree\nfour");
-    fs::write(root.join("bin.dat"), b"x\0z").expect("a binary edit");
-    prepare(&root, &["mv", "old.txt", "new.txt"]);
-    write(&root, "fresh.txt", "fresh\nlines\n");
-    write(&root, "notes/todo.txt", "todo\n");
-
-    let a = change("a.txt", GitStatus::Modified);
-    let staged = diff(&root, &a, ChangeSection::Staged).expect("a diff");
-    let words = |kind, at, text| lined(kind, at, text, vec![Range { start: 4, end: 7 }]);
-    let expected = hunk(
-        "@@ -1,3 +1,3 @@",
-        vec![
-            line(Same, (Some(1), Some(1)), "one"),
-            words(Removed, (Some(2), None), "the old line"),
-            words(Added, (None, Some(2)), "the new line"),
-            line(Same, (Some(3), Some(3)), "three"),
-        ],
-    );
-    assert_eq!(staged, Some(vec![expected]));
-    let unstaged = diff(&root, &a, ChangeSection::Unstaged).expect("a diff");
-    let expected = hunk(
-        "@@ -1,3 +1,4 @@",
-        vec![
-            line(Same, (Some(1), Some(1)), "one"),
-            line(Same, (Some(2), Some(2)), "the new line"),
-            line(Same, (Some(3), Some(3)), "three"),
-            line(Added, (None, Some(4)), "four"),
-        ],
-    );
-    assert_eq!(unstaged, Some(vec![expected]));
-    let fresh = change("fresh.txt", GitStatus::Untracked);
-    let untracked = diff(&root, &fresh, ChangeSection::Untracked).expect("a diff");
-    let expected = hunk(
-        "@@ -0,0 +1,2 @@",
-        vec![
-            line(Added, (None, Some(1)), "fresh"),
-            line(Added, (None, Some(2)), "lines"),
-        ],
-    );
-    assert_eq!(untracked, Some(vec![expected]));
-    let binary = change("bin.dat", GitStatus::Modified);
-    let binary = diff(&root, &binary, ChangeSection::Unstaged).expect("a diff");
-    assert_eq!(binary, None, "a binary file has no lines");
-    let moved = read(&root)
-        .staged
-        .into_iter()
-        .find(|change| change.from.is_some());
-    let moved = moved.expect("a staged rename");
-    let renamed = diff(&root, &moved, ChangeSection::Staged).expect("a diff");
-    assert_eq!(renamed, Some(Vec::new()), "a pure rename changes no line");
-    let notes = change("notes/", GitStatus::Untracked);
-    assert!(diff(&root, &notes, ChangeSection::Untracked).is_err());
-}
-
-#[test]
-fn a_conflict_diffs_against_our_side() {
-    use LineKind::*;
-    let root = repository("git-conflict");
-    write(&root, "c.txt", "base\n");
+    write(&root, "copy.txt", &text);
+    write(&root, "source.txt", &format!("{text}more\n"));
     prepare(&root, &["add", "."]);
-    prepare(&root, &["commit", "-qm", "base"]);
-    prepare(&root, &["checkout", "-qb", "other"]);
-    write(&root, "c.txt", "theirs\n");
-    prepare(&root, &["commit", "-qam", "theirs"]);
-    prepare(&root, &["checkout", "-q", "main"]);
-    write(&root, "c.txt", "ours\n");
-    prepare(&root, &["commit", "-qam", "ours"]);
-    let merged = Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args(["merge", "-q", "other"])
-        .output()
-        .expect("git runs");
-    assert!(!merged.status.success(), "the merge stops");
 
-    let state = read(&root);
-    assert_eq!(state.conflicted, [change("c.txt", GitStatus::Conflicted)]);
-    let ours = diff(&root, &state.conflicted[0], ChangeSection::Conflicted).expect("a diff");
-    let Some([Stretch::Hunk { lines, .. }]) = ours.as_deref() else {
-        panic!("one hunk: {ours:?}");
+    let source = change("source.txt", GitStatus::Modified);
+    let copy = change("copy.txt", GitStatus::Added);
+    assert_eq!(read(&root).staged, [copy.clone(), source.clone()]);
+    let stretches = diff(&root, &copy, ChangeSection::Staged).expect("a diff");
+    let Some([Stretch::Hunk { lines, .. }]) = stretches.as_deref() else {
+        panic!("one hunk: {stretches:?}");
     };
-    let shown: Vec<_> = lines
-        .iter()
-        .map(|line| (line.kind, line.text.as_ref()))
-        .collect();
-    let expected = [
-        (Added, "<<<<<<< HEAD"),
-        (Same, "ours"),
-        (Added, "======="),
-        (Added, "theirs"),
-        (Added, ">>>>>>> other"),
-    ];
-    assert_eq!(shown, expected);
+    let added = lines.iter().all(|line| line.kind == LineKind::Added);
+    assert!(
+        added && lines.len() == 50,
+        "the copy's lines alone: {lines:?}"
+    );
+    unstage(&root, &[copy]).expect("an unstaged copy");
+    assert_eq!(read(&root).staged, [source], "the source stays staged");
 }
 
+#[cfg(unix)]
 #[test]
-fn hunks_number_lines_skip_markers_and_stop_at_the_next_file() {
-    use LineKind::*;
-    let text = "* Unmerged path a\ndiff --git a/a b/a\n--- a/a\n+++ b/a\n\
-        @@ -3 +3,2 @@ fn main\n-x\r\n+y\n+z\n\\ No newline at end of file\n\
-        diff --git a/b b/b\nnew file mode 100644\n--- /dev/null\n+++ b/b\n@@ -0,0 +1 @@\n+b\n";
-    let first = hunk(
-        "@@ -3 +3,2 @@ fn main",
-        vec![
-            line(Removed, (Some(3), None), "x"),
-            line(Added, (None, Some(3)), "y"),
-            line(Added, (None, Some(4)), "z"),
-        ],
+fn names_that_show_alike_stay_apart() {
+    let root = repository("git-bytes");
+    write(&root, "bad\u{FFFD}.txt", "text\n");
+    prepare(&root, &["add", "."]);
+    let blob = run(&root, &["hash-object", "-w", "--stdin"], b"text\n").expect("a blob");
+    // A name not in UTF-8, which macOS refuses on disk, goes straight into the index.
+    let mut entry = b"100644 ".to_vec();
+    entry.extend(blob.trim_ascii());
+    entry.extend(b"\tbad\xff.txt\0");
+    run(&root, &["update-index", "-z", "--index-info"], &entry).expect("an index entry");
+
+    let raw = <OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(b"bad\xff.txt");
+    let staged = read(&root).staged;
+    let shown: Vec<_> = staged
+        .iter()
+        .map(|change| change.path.to_string_lossy())
+        .collect();
+    assert_eq!(
+        shown,
+        ["bad\u{FFFD}.txt", "bad\u{FFFD}.txt"],
+        "two names show alike"
     );
-    let second = hunk("@@ -0,0 +1 @@", vec![line(Added, (None, Some(1)), "b")]);
-    assert_eq!(hunks(text).expect("hunks"), Some(vec![first, second]));
-    let blank = hunk(
-        "@@ -1,3 +1,3 @@",
-        vec![
-            line(Same, (Some(1), Some(1)), "a"),
-            line(Same, (Some(2), Some(2)), ""),
-            line(Removed, (Some(3), None), "b"),
-            line(Added, (None, Some(3)), "c"),
-        ],
-    );
-    let suppressed = "@@ -1,3 +1,3 @@\n a\n\n-b\n+c\n";
-    assert_eq!(hunks(suppressed).expect("hunks"), Some(vec![blank]));
-    let binary = "diff --git a/x b/x\nBinary files a/x and b/x differ\n";
-    assert_eq!(hunks(binary).expect("a diff"), None);
-    assert!(hunks("@@ -a +b @@\n").is_err(), "a header without numbers");
-    assert!(
-        hunks("@@ -1 +1 @@\n?x\n").is_err(),
-        "a line git never writes"
-    );
+    let bytes = staged.iter().find(|change| change.path == raw);
+    let bytes = bytes.expect("the name in bytes").clone();
+    unstage(&root, &[bytes]).expect("an unstage");
+    let left = [change("bad\u{FFFD}.txt", GitStatus::Added)];
+    assert_eq!(read(&root).staged, left, "the other name stays staged");
 }
+
+mod diffs;

@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    ffi::OsString,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -17,7 +18,7 @@ use crate::{git, sessions};
 /// A folder's entry: its name, and whether it is a folder, links followed.
 #[derive(Debug, PartialEq)]
 struct Entry {
-    name: String,
+    name: OsString,
     folder: bool,
 }
 
@@ -33,14 +34,16 @@ fn list(folder: &Path) -> Listing {
                 let kind = entry.file_type()?;
                 Ok(Entry {
                     folder: kind.is_dir() || (kind.is_symlink() && entry.path().is_dir()),
-                    name: entry.file_name().to_string_lossy().into_owned(),
+                    name: entry.file_name(),
                 })
             })
             .collect()
     };
     let mut entries = read().map_err(|error| error.to_string())?;
-    entries
-        .sort_by_cached_key(|entry| (!entry.folder, entry.name.to_lowercase(), entry.name.clone()));
+    entries.sort_by_cached_key(|entry| {
+        let name = entry.name.to_string_lossy().to_lowercase();
+        (!entry.folder, name, entry.name.clone())
+    });
     Ok(entries)
 }
 
@@ -92,8 +95,16 @@ fn badge(node: TreeNode, mark: Option<GitStatus>, dirty: bool) -> TreeNode {
     node.note(note).tone(tone)
 }
 
+/// `path`'s tree key, one to a path: a path not in UTF-8 adds its bytes after a NUL, which no path holds.
 fn key(path: &Path) -> SharedString {
-    path.to_string_lossy().into_owned().into()
+    match path.to_str() {
+        Some(text) => text.to_string().into(),
+        None => {
+            let bytes = path.as_os_str().as_encoded_bytes();
+            let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+            format!("{}\0{hex}", path.to_string_lossy()).into()
+        }
+    }
 }
 
 /// The Files panel: the shown session's folder as a tree, Git's marks on names.
@@ -207,6 +218,19 @@ impl Files {
         }
     }
 
+    /// The path a tree key stands for: the root, or an entry read.
+    fn path(&self, of: &str) -> Option<PathBuf> {
+        let entries = self.listings.iter().flat_map(|(folder, listing)| {
+            listing
+                .iter()
+                .flatten()
+                .map(|entry| folder.join(&entry.name))
+        });
+        std::iter::once(self.root.clone())
+            .chain(entries)
+            .find(|path| key(path).as_ref() == of)
+    }
+
     /// Folder `path`'s node, its entries once read; `untracked` when an untracked folder holds it.
     fn folder(&self, path: &Path, label: String, untracked: bool) -> TreeNode {
         let own = |path: &Path| self.marks.get(mark_key(path).as_ref()).copied();
@@ -217,7 +241,8 @@ impl Files {
             None => node.pending(),
             Some(Err(_)) => return node.children([]).note("unreadable").tone(Tone::Danger),
             Some(Ok(entries)) => node.children(entries.iter().map(|entry| {
-                let (path, label) = (path.join(&entry.name), sessions::one_line(&entry.name));
+                let path = path.join(&entry.name);
+                let label = sessions::one_line(&entry.name.to_string_lossy());
                 if entry.folder {
                     return self.folder(&path, label, inside);
                 }
@@ -242,19 +267,24 @@ impl Render for Files {
             }
             _ => sessions::shown(&self.root, home.as_deref()),
         };
-        let files = cx.entity();
+        let (load, open) = (cx.entity(), cx.entity());
         Tree::new(
             ("files", self.generation),
             [self.folder(&self.root, label, false)],
         )
         .open([key(&self.root)])
         .on_load(move |key, _, cx| {
-            let folder = PathBuf::from(key.as_ref());
-            files.update(cx, |files, cx| files.load(folder, cx))
+            load.update(cx, |files, cx| match files.path(key) {
+                Some(folder) => files.load(folder, cx),
+                None => log::warn!("files: {key} to read is gone"),
+            })
         })
-        .on_activate(|key, _, cx| {
-            log::info!("files: opening {key}");
-            cx.open_with_system(Path::new(key.as_ref()))
+        .on_activate(move |key, _, cx| match open.read(cx).path(key) {
+            Some(path) => {
+                log::info!("files: opening {}", path.display());
+                cx.open_with_system(&path)
+            }
+            None => log::warn!("files: {key} to open is gone"),
         })
         .size_full()
     }

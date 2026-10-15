@@ -49,7 +49,7 @@ fn folders_come_first_then_files_by_name_ignoring_case() {
     let listed: Vec<_> = list(&root).expect("a listing");
     let listed: Vec<_> = listed
         .iter()
-        .map(|entry| (entry.name.as_str(), entry.folder))
+        .map(|entry| (entry.name.to_str().expect("a UTF-8 name"), entry.folder))
         .collect();
     assert_eq!(listed, expected);
     assert!(list(&root.join("missing")).is_err());
@@ -159,6 +159,35 @@ fn names_with_newlines_label_on_one_line_and_keep_their_paths() {
             TreeNode::new(key(&file), "report␊2026.txt").icon(IconName::File),
         ]);
     assert_eq!(files.folder(&root, "r".into(), false), expected);
+}
+
+#[cfg(unix)]
+#[test]
+fn names_that_show_alike_keep_their_own_keys_and_paths() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+    let root = PathBuf::from("/r");
+    let raw = OsStr::from_bytes(b"bad\xff.txt");
+    let (text, bytes) = (root.join("bad\u{FFFD}.txt"), root.join(raw));
+    let mut files = Files::new(root.clone());
+    let entry = |name: &OsStr| Entry {
+        name: name.into(),
+        folder: false,
+    };
+    let entries = vec![entry(OsStr::new("bad\u{FFFD}.txt")), entry(raw)];
+    files.listings.insert(root.clone(), Ok(entries));
+    assert_ne!(key(&text), key(&bytes), "two paths, two keys");
+    let expected = TreeNode::new(key(&root), "r")
+        .icon(IconName::Folder)
+        .children([
+            TreeNode::new(key(&text), "bad\u{FFFD}.txt").icon(IconName::File),
+            TreeNode::new(key(&bytes), "bad\u{FFFD}.txt").icon(IconName::File),
+        ]);
+    assert_eq!(files.folder(&root, "r".into(), false), expected);
+    for path in [&root, &text, &bytes] {
+        let found = files.path(&key(path));
+        assert_eq!(found.as_ref(), Some(path), "{}", path.display());
+    }
+    assert_eq!(files.path("/r/gone"), None);
 }
 
 /// Runs git in `root` as a fixed author, unsigned.
