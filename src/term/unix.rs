@@ -44,6 +44,12 @@ impl Pty {
     pub fn id(&self) -> u32 {
         self.child.id()
     }
+
+    /// A copy of the master, for tests to read its modes.
+    #[cfg(test)]
+    pub fn master(&self) -> io::Result<File> {
+        self.file.try_clone()
+    }
 }
 
 /// Starts `program`, or the login shell, in `cwd` on a new pty of `size`.

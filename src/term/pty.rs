@@ -56,6 +56,8 @@ pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub pid: u32,
     notifier: Notifier,
+    #[cfg(all(test, unix))]
+    master: std::fs::File,
 }
 
 /// What a pty reports, in order.
@@ -109,6 +111,10 @@ pub fn spawn(
         )
     })?;
     let pid = child_id(&raw)?;
+    #[cfg(all(test, unix))]
+    let master = raw
+        .master()
+        .map_err(|error| anyhow::anyhow!("pty {pid}: no copy of the master: {error}"))?;
     log::info!(
         "pty {pid}: started {:?} in {}",
         launch.program,
@@ -135,6 +141,8 @@ pub fn spawn(
             term,
             pid,
             notifier,
+            #[cfg(all(test, unix))]
+            master,
         },
         events,
     ))
@@ -173,6 +181,16 @@ impl Pty {
         self.term
             .lock()
             .resize(TermSize::new(size.num_cols.into(), size.num_lines.into()));
+    }
+}
+
+#[cfg(all(test, unix))]
+impl Pty {
+    /// Whether the program reads keys one by one, as a line editor does.
+    pub(crate) fn reads_keys(&self) -> bool {
+        use rustix_openpty::rustix::termios::{LocalModes, tcgetattr};
+        let modes = tcgetattr(&self.master).expect("the pty's modes");
+        !modes.local_modes.contains(LocalModes::ICANON)
     }
 }
 

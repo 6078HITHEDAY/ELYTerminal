@@ -83,9 +83,15 @@ pub fn menus() -> Vec<String> {
 /// Writes window `number` as a PNG.
 pub fn snapshot(number: u32, path: &Path) -> anyhow::Result<()> {
     use core_graphics::{
+        access::ScreenCaptureAccess,
         geometry::{CGPoint, CGRect, CGSize},
         window,
     };
+    if !ScreenCaptureAccess.preflight() {
+        log::warn!(
+            "shot: the app shot runs under lacks Screen Recording, so the picture may hold the window's ground alone"
+        );
+    }
     let image = window::create_image(
         CGRect::new(&CGPoint::new(0.0, 0.0), &CGSize::new(0.0, 0.0)),
         window::kCGWindowListOptionIncludingWindow,

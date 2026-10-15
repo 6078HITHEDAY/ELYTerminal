@@ -108,7 +108,9 @@ impl Run {
         }
     }
 
-    fn send(&self, line: &str) {
+    /// Types `line` at a prompt, once its line editor reads raw keys.
+    fn send(&mut self, line: &str) {
+        self.until("line editor", |run| run.pty.reads_keys());
         self.pty.write(format!("{line}\r").into_bytes());
     }
 
@@ -131,9 +133,9 @@ impl Run {
     /// The prompt's folder, the script loaded by `probe`, then a cd into the inner folder.
     fn walk(&mut self, probe: &str) {
         let start = self.start.clone();
+        self.send(probe);
         self.until("first folder", |run| run.folders.contains(&start));
         assert_eq!(self.folders[0], start);
-        self.send(probe);
         self.until("loaded script", |run| run.shows("ELY-LOADED"));
         self.send("cd in*");
         let inner = start.join(INNER);
