@@ -251,6 +251,7 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
 fn a_shell_named_bare_runs_from_its_full_path() {
     let started = launch("sh", PathBuf::from("/"), Path::new("/nonexistent")).expect("a launch");
     let (program, _) = started.program.expect("a program");
+    assert_eq!(program, crate::settings::program_path("sh").expect("sh"));
     assert!(Path::new(&program).is_absolute(), "{program}");
     assert!(launch("no-such-shell", PathBuf::from("/"), Path::new("/")).is_err());
 }

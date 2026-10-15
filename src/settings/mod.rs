@@ -1,13 +1,9 @@
 mod store;
 pub mod window;
 
-use std::{
-    env,
-    ffi::OsStr,
-    ops::RangeInclusive,
-    path::{Path, PathBuf},
-};
+use std::{env, ffi::OsStr, ops::RangeInclusive, path::Path};
 
+use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use crate::themes;
@@ -135,38 +131,46 @@ impl Settings {
             }
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
-        anyhow::ensure!(
-            self.shell.is_empty() || program_path(&self.shell).is_some(),
-            "shell is {:?}, which names no program",
-            self.shell
-        );
+        if !self.shell.is_empty() {
+            program_path(&self.shell)?;
+        }
         Ok(())
     }
 }
 
 /// The program `shell` names, as a session starts it: a file at a full path, or the first in `PATH`'s full folders.
-pub fn program_path(shell: &str) -> Option<PathBuf> {
-    find(shell, &env::var_os("PATH").unwrap_or_default())
+pub fn program_path(shell: &str) -> anyhow::Result<String> {
+    let folders = env::var_os("PATH").unwrap_or_default();
+    find(shell, &folders, cfg!(windows))
 }
 
-/// `shell`'s program, or the first one named so in `folders`, listed as `PATH` lists them.
-fn find(shell: &str, folders: &OsStr) -> Option<PathBuf> {
+/// `shell`'s program, or the first one named so in `folders`, listed as `PATH` lists them; with `exe`, as on Windows, a name without an extension means name.exe.
+fn find(shell: &str, folders: &OsStr, exe: bool) -> anyhow::Result<String> {
     let path = Path::new(shell);
-    if path.is_absolute() {
-        return program(path).then(|| path.to_path_buf());
-    }
     // A relative path, or a relative folder, would hang on each session's own folder.
-    if path.components().count() != 1 {
-        return None;
-    }
-    let files = env::split_paths(folders)
-        .filter(|folder| folder.is_absolute())
-        .flat_map(|folder| {
-            let file = folder.join(path);
-            let exe = cfg!(windows).then(|| file.with_extension("exe"));
-            [Some(file), exe]
-        });
-    files.flatten().find(|file| program(file))
+    let found = if path.is_absolute() {
+        program(path).then(|| path.to_path_buf())
+    } else if path.components().count() == 1 {
+        let name = if exe && !shell.contains('.') {
+            format!("{shell}.exe")
+        } else {
+            shell.to_string()
+        };
+        env::split_paths(folders)
+            .filter(|folder| folder.is_absolute())
+            .map(|folder| folder.join(&name))
+            .find(|file| program(file))
+    } else {
+        None
+    };
+    let found = found.with_context(|| format!("shell is {shell:?}, which names no program"))?;
+    let text = found.to_str().with_context(|| {
+        format!(
+            "shell is {shell:?}, found at {}, which is not UTF-8",
+            found.display()
+        )
+    })?;
+    Ok(text.to_string())
 }
 
 /// Whether `path` is a file the running user may run, as the system answers, ACLs too.
@@ -241,12 +245,11 @@ mod tests {
         assert!(shell("bin/sh").validate().is_err(), "a relative path");
         #[cfg(unix)]
         {
-            let sh = Some(PathBuf::from("/bin/sh"));
-            assert_eq!(find("sh", OsStr::new("/bin")), sh);
+            let sh = find("sh", OsStr::new("/bin"), false).expect("sh");
+            assert_eq!(sh, "/bin/sh");
             let root = OsStr::new("/");
-            assert_eq!(
-                find("bin/sh", root),
-                None,
+            assert!(
+                find("bin/sh", root, false).is_err(),
                 "a relative path, though / holds bin/sh"
             );
             assert!(shell("/bin/sh").validate().is_ok());
@@ -272,7 +275,59 @@ mod tests {
             fs::set_permissions(&file, fs::Permissions::from_mode(mode)).expect("a mode");
             assert_eq!(program(&file), runs, "mode {mode:o}");
         }
-        assert_eq!(find("review-shell", folder.as_os_str()), Some(file.clone()));
+        let found = find("review-shell", folder.as_os_str(), false).expect("a program");
+        assert_eq!(Path::new(&found), file);
+    }
+
+    #[test]
+    fn exe_joins_only_a_name_without_an_extension() {
+        use std::fs;
+        let folder = env::temp_dir().join(format!("elyterminal-exe-{}", std::process::id()));
+        fs::create_dir_all(&folder).expect("a test folder");
+        let file = folder.join("review.exe");
+        fs::write(&file, "").expect("a program");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("755");
+        }
+        let folders = folder.as_os_str();
+        for name in ["review", "review.exe"] {
+            let found = find(name, folders, true).expect("review.exe");
+            assert_eq!(Path::new(&found), file, "{name}");
+        }
+        assert!(
+            find("review.com", folders, true).is_err(),
+            "its own extension"
+        );
+        assert!(
+            find("review", folders, false).is_err(),
+            "no .exe off Windows"
+        );
+        fs::remove_dir_all(&folder).expect("cleanup");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_program_at_a_path_not_in_utf_8_counts_for_none() {
+        use std::{
+            ffi::OsString,
+            fs,
+            os::unix::{ffi::OsStringExt, fs::PermissionsExt},
+            path::PathBuf,
+        };
+        let folder = env::temp_dir().join(format!("elyterminal-bytes-{}-", std::process::id()));
+        let mut name = folder.into_os_string().into_vec();
+        name.push(0xff);
+        let folder = PathBuf::from(OsString::from_vec(name));
+        fs::create_dir_all(&folder).expect("a folder named in raw bytes");
+        let file = folder.join("review-shell");
+        fs::write(&file, "#!/bin/sh\n").expect("a script");
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("755");
+        assert!(program(&file), "the file runs");
+        let error = find("review-shell", folder.as_os_str(), false).expect_err("not UTF-8");
+        assert!(error.to_string().ends_with("which is not UTF-8"), "{error}");
+        fs::remove_dir_all(&folder).expect("cleanup");
     }
 
     #[test]
@@ -280,7 +335,7 @@ mod tests {
         // Tests run in the crate, whose scripts folder holds a program.
         let scripts = OsStr::new("scripts");
         assert!(program(Path::new("scripts/check.sh")));
-        assert_eq!(find("check.sh", scripts), None);
+        assert!(find("check.sh", scripts, false).is_err());
     }
 
     #[test]
