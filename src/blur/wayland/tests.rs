@@ -233,17 +233,19 @@ fn heard(offered: bool, ask: impl FnOnce(Option<Effect>)) -> (Vec<String>, u32) 
 #[test]
 fn the_window_s_surface_blurs_while_asked() {
     let (notes, surface) = heard(true, |effect| {
-        let effect = effect.expect("the compositor offers the protocol");
-        effect.blur(true);
-        effect.blur(false);
+        let mut effect = effect.expect("the compositor offers the protocol");
+        effect.blur(Some([10, 10, 300, 200]));
+        effect.blur(Some([10, 10, 300, 200]));
+        effect.blur(Some([0, 0, 320, 220]));
+        effect.blur(None);
     });
-    let all = format!("blur [[0, 0, {ALL}, {ALL}]]");
     let expected = [
         format!("effect on surface {surface}"),
-        all,
+        "blur [[10, 10, 300, 200]]".into(),
+        "blur [[0, 0, 320, 220]]".into(),
         "blur nothing".into(),
     ];
-    assert_eq!(notes, expected);
+    assert_eq!(notes, expected, "a repeat sends nothing");
     assert!(crate::testlog::logged(
         "blur: ext_background_effect_v1 on the window's surface; the compositor blurs: true, org_kde_kwin_blur too: false"
     ));

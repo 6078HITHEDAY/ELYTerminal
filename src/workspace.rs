@@ -320,7 +320,8 @@ fn show_tab(value: &SharedString, cx: &mut App) {
 }
 
 impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.background.fit(window);
         let settings = SettingsStore::get(cx);
         let width = cx.theme().sidebar_width(false);
         let mut shell = ColumnShell::new("workspace").glass();
@@ -434,6 +435,7 @@ impl Render for Workspace {
             }))
             .child(
                 ResizeBorder::new()
+                    .when(self.background.see_through(), ResizeBorder::glass)
                     .child(FocusScope::new(&self.focus).root().size_full().child(shell)),
             )
     }

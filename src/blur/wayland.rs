@@ -17,15 +17,15 @@ use wayland_protocols::ext::background_effect::v1::client::{
     ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
 };
 
-/// Wider and taller than any window: the compositor clips the region to the surface.
-const ALL: i32 = 1 << 20;
-
 /// The compositor's blur behind a window's surface, through `ext_background_effect_v1`.
 pub struct Effect {
     // Never dropped: gpui may close the display first, and a drop touches it.
     connection: ManuallyDrop<Connection>,
+    queue: QueueHandle<Offers>,
+    compositor: WlCompositor,
     effect: ExtBackgroundEffectSurfaceV1,
-    region: WlRegion,
+    /// The rect the compositor blurs behind, as last sent.
+    blurs: Option<[i32; 4]>,
 }
 
 /// What the compositor offers, as its events say.
@@ -35,8 +35,8 @@ struct Offers {
 }
 
 impl Effect {
-    /// The effect on `window`'s surface, blurring when `blurred`; none off Wayland or where the compositor lacks it.
-    pub fn on(window: &Window, blurred: bool) -> Option<Self> {
+    /// The effect on `window`'s surface, blurring nothing yet; none off Wayland or where the compositor lacks it.
+    pub fn on(window: &Window) -> Option<Self> {
         let handles = (
             HasWindowHandle::window_handle(window),
             window.display_handle(),
@@ -53,12 +53,7 @@ impl Effect {
         };
         // SAFETY: gpui's live display, and the window's live surface on it.
         match unsafe { Self::new(display.display, surface.surface) } {
-            Ok(effect) => {
-                if blurred && let Some(effect) = &effect {
-                    effect.blur(true);
-                }
-                effect
-            }
+            Ok(effect) => effect,
             Err(error) => {
                 log::error!("blur: ext_background_effect_v1 failed: {error:#}");
                 None
@@ -109,28 +104,43 @@ impl Effect {
         let surface =
             WlSurface::from_id(&connection, id).context("blur: the window's surface is gone")?;
         let effect = manager.get_background_effect(&surface, &qh, ());
-        let region = compositor.create_region(&qh, ());
-        region.add(0, 0, ALL, ALL);
         log::info!(
             "blur: ext_background_effect_v1 on the window's surface; the compositor blurs: {}, org_kde_kwin_blur too: {kde}",
             offers.blur
         );
         Ok(Some(Self {
             connection: ManuallyDrop::new(connection),
+            queue: qh,
+            compositor,
             effect,
-            region,
+            blurs: None,
         }))
     }
 
-    /// Blurs behind the whole surface, or nothing, from the surface's next commit.
-    pub fn blur(&self, on: bool) {
-        self.effect.set_blur_region(on.then_some(&self.region));
-        match self.connection.flush() {
-            Ok(()) if on => log::info!("blur: ext_background_effect_v1 blurs behind the window"),
-            Ok(()) => log::info!("blur: ext_background_effect_v1 blurs nothing"),
-            Err(error) => {
-                log::error!("blur: ext_background_effect_v1 did not reach the compositor: {error}")
-            }
+    /// Blurs behind `rect`, in surface pixels, or nothing, from the surface's next commit; sends only a change.
+    pub fn blur(&mut self, rect: Option<[i32; 4]>) {
+        if rect == self.blurs {
+            return;
+        }
+        let turned = rect.is_some() != self.blurs.is_some();
+        self.blurs = rect;
+        let region = rect.map(|[x, y, width, height]| {
+            let region = self.compositor.create_region(&self.queue, ());
+            region.add(x, y, width, height);
+            region
+        });
+        self.effect.set_blur_region(region.as_ref());
+        // The effect copies the region.
+        if let Some(region) = region {
+            region.destroy();
+        }
+        let what = rect.map_or("nothing".into(), |rect| format!("{rect:?}"));
+        if let Err(error) = self.connection.flush() {
+            log::error!("blur: ext_background_effect_v1 did not reach the compositor: {error}");
+        } else if turned {
+            log::info!("blur: ext_background_effect_v1 blurs {what}");
+        } else {
+            log::debug!("blur: ext_background_effect_v1 blurs {what}");
         }
     }
 }

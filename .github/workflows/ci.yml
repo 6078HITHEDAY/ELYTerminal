@@ -35,7 +35,7 @@ jobs:
       # The Linux job container runs as root, which ignores the file permissions the tests check.
       - if: runner.os == 'Linux'
         run: |
-          apt-get update && apt-get install -y zsh fish
+          apt-get update && apt-get install -y zsh fish xvfb
           useradd --create-home ci
           chmod o+x "$HOME"
           chown -R ci "$GITHUB_WORKSPACE" "$HOME/.cargo" "$HOME/.rustup"

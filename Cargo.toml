@@ -12,7 +12,7 @@ publish = false
 alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
 dirs = "7"
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "991ca7b548e0417146ec082dc89ccb8b8d0e09d6" }
+ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "5dc4dd1805550b8697130dce2c8eda903ce33f54" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
@@ -34,6 +34,7 @@ raw-window-handle = "0.6"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+x11rb = "0.13"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 wayland-protocols = { version = "0.32", features = ["server", "staging"] }
