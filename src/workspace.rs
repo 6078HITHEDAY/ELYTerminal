@@ -9,12 +9,11 @@ use ely_gpui_component::{
 use gpui::{
     Action, App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Window, WindowBackgroundAppearance, actions, div,
-    prelude::FluentBuilder,
+    StyleRefinement, Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
 };
 
 use crate::{
-    blur,
+    blur::Blur,
     files::Files,
     git::panel::{Acted, GitPanel},
     sessions::{self, Session},
@@ -86,8 +85,8 @@ pub struct Workspace {
     active: usize,
     files: Entity<Files>,
     git: Entity<GitPanel>,
-    /// What the window shows of the desktop, as last set.
-    background: WindowBackgroundAppearance,
+    /// What the window shows of the desktop, and the blur behind it.
+    background: Blur,
     _settings: Subscription,
     _acted: Subscription,
 }
@@ -113,9 +112,9 @@ impl Workspace {
             active: 0,
             files: cx.new(|_| Files::new(launch.cwd.clone())),
             git,
-            background: blur::appearance(SettingsStore::get(cx)),
+            background: Blur::new(window, SettingsStore::get(cx)),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
-                blur::follow(window, &mut this.background, SettingsStore::get(cx));
+                this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
             }),
             _acted: acted,

@@ -29,6 +29,16 @@ libc = "0.2"
 rustix-openpty = "0.2"
 signal-hook = "0.4"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+wayland-protocols = { version = "0.32", features = ["server", "staging"] }
+wayland-server = "0.31"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block = "0.1"
 objc = "0.2"
