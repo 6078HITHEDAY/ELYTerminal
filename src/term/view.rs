@@ -18,11 +18,12 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Copy, Find, Paste},
+    input::{self, Copy, Find, Paste, SelectAll},
     mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
+    zoom,
 };
 use crate::{
     settings::{Settings, SettingsStore},
@@ -71,6 +72,7 @@ pub struct TerminalView {
     _blink: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
+    _zoom: Subscription,
 }
 
 impl EventEmitter<TerminalEvent> for TerminalView {}
@@ -120,6 +122,7 @@ impl TerminalView {
                 view.search(false, cx);
                 cx.notify();
             }),
+            _zoom: cx.observe_global::<zoom::Enlarged>(|_, cx| cx.notify()),
         }
     }
 
@@ -266,8 +269,8 @@ pub fn load_font(font: &Font, system: &TextSystem) -> anyhow::Result<FontId> {
     Ok(id)
 }
 
-/// The font, cell and metrics the settings give at this window's scale.
-fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
+/// The font, cell and metrics the settings give at `points` and this window's scale.
+fn look(settings: &Settings, points: f32, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
     let font = Font {
         family: settings.font_family.clone().into(),
         features: if settings.ligatures {
@@ -279,7 +282,7 @@ fn look(settings: &Settings, ink: &Ink, window: &Window) -> anyhow::Result<Look>
         weight: FontWeight::NORMAL,
         style: FontStyle::Normal,
     };
-    let text = px(settings.font_size);
+    let text = px(points);
     let system = window.text_system();
     let id = load_font(&font, system)?;
     let advance = system
@@ -349,6 +352,7 @@ impl Render for TerminalView {
             .on_key_up(cx.listener(Self::key_up))
             .on_action(cx.listener(|view, _: &Copy, _, cx| view.copy(cx)))
             .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
+            .on_action(cx.listener(|view, _: &SelectAll, _, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
@@ -367,7 +371,7 @@ impl Render for TerminalView {
                 root.on_mouse_up(button, cx.listener(Self::mouse_up))
                     .on_mouse_up_out(button, cx.listener(Self::mouse_up))
             });
-        let root = match look(&settings, &ink, window) {
+        let root = match look(&settings, zoom::size(cx), &ink, window) {
             Ok(look) => {
                 self.cell = (
                     f32::from(look.cell.width).round() as u16,

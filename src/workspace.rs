@@ -16,6 +16,7 @@ use crate::{
     blur::Blur,
     files::Files,
     git::panel::{Acted, GitPanel},
+    menus,
     sessions::{self, Session},
     settings::{PanelTab, Settings, SettingsStore, StartIn},
     term::{
@@ -404,6 +405,7 @@ impl Render for Workspace {
         div()
             .size_full()
             .key_context(CONTEXT)
+            .map(menus::window_actions)
             .on_action(cx.listener(|this, _: &ToggleSessions, _, cx| {
                 this.toggle(
                     |settings| settings.show_sessions = !settings.show_sessions,

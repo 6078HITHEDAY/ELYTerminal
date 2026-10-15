@@ -1,8 +1,8 @@
 use alacritty_terminal::{
-    grid::Scroll,
+    grid::{Dimensions, Scroll},
     index::{Column, Line, Point as Cell, Side},
     selection::{Selection, SelectionType},
-    term::TermMode,
+    term::{Term, TermMode},
 };
 use gpui::{
     ClipboardItem, Context, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -298,6 +298,25 @@ impl TerminalView {
         (!text.is_empty()).then_some(text)
     }
 
+    /// Selects the history and the screen, blanks around them left out; copy on select takes the text.
+    pub(super) fn select_all(&mut self, cx: &mut Context<Self>) {
+        {
+            let mut term = self.pty.term.lock();
+            let Some(all) = everything(&*term) else {
+                log::debug!("terminal {}: nothing to select", self.pty.pid);
+                return;
+            };
+            term.selection = Some(all);
+        }
+        let selected = self.selected();
+        let count = selected.as_ref().map_or(0, |text| text.chars().count());
+        log::debug!("terminal {}: all {count} characters selected", self.pty.pid);
+        if let Some(text) = selected.filter(|_| SettingsStore::get(cx).copy_on_select) {
+            self.copy_text(text, true, cx);
+        }
+        cx.notify();
+    }
+
     /// The selection to the clipboard.
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
         match self.selected() {
@@ -345,5 +364,41 @@ impl TerminalView {
             if bracketed { ", bracketed" } else { "" }
         );
         self.input(keys::paste(&text, bracketed), cx);
+    }
+}
+
+/// Ghostty's select all: the first cell holding more than a space or tab, through history and screen, to the last.
+fn everything<T>(term: &Term<T>) -> Option<Selection> {
+    let grid = term.grid();
+    let cells = (grid.topmost_line().0..=grid.bottommost_line().0).flat_map(|line| {
+        (0..grid.columns()).map(move |column| Cell::new(Line(line), Column(column)))
+    });
+    let inked = |cell: &Cell| !matches!(grid[*cell].c, ' ' | '\t');
+    let first = cells.clone().find(inked)?;
+    let last = cells.rev().find(inked)?;
+    let mut all = Selection::new(SelectionType::Simple, first, Side::Left);
+    all.update(last, Side::Right);
+    Some(all)
+}
+
+#[cfg(test)]
+mod tests {
+    use alacritty_terminal::{
+        event::VoidListener,
+        term::{Config, test::TermSize},
+        vte::ansi::Processor,
+    };
+
+    use super::*;
+
+    #[test]
+    fn everything_runs_from_the_first_character_in_the_history_to_the_last() {
+        let mut term = Term::new(Config::default(), &TermSize::new(10, 3), VoidListener);
+        assert!(everything(&term).is_none(), "a blank grid selects nothing");
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, b"\r\n  one\r\n\r\ntwo  six\t\r\n\r\n");
+        term.selection = everything(&term);
+        let text = term.selection_to_string().expect("a selection");
+        assert_eq!(text, "one\n\ntwo  six");
     }
 }

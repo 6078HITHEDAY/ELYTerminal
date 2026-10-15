@@ -11,7 +11,7 @@ use super::{
     view::TerminalView,
 };
 
-actions!(elyterminal, [Copy, Paste, Find, FindNewer]);
+actions!(elyterminal, [Copy, Paste, Find, FindNewer, SelectAll]);
 
 /// The key context a terminal's root sets.
 pub const CONTEXT: &str = "Terminal";
@@ -19,16 +19,22 @@ pub const CONTEXT: &str = "Terminal";
 /// The key context of a terminal's find box.
 pub const FIND: &str = "TerminalFind";
 
-/// Copy, paste and find; Ely's focus keys go to the terminal's listeners instead.
+/// Copy, paste, select all and find; Ely's focus keys go to the terminal's listeners instead.
 pub fn bind_keys(cx: &mut App) {
-    let (copy, paste, find) = if cfg!(target_os = "macos") {
-        ("cmd-c", "cmd-v", "cmd-f")
+    let (copy, paste, all, find) = if cfg!(target_os = "macos") {
+        ("cmd-c", "cmd-v", "cmd-a", "cmd-f")
     } else {
-        ("ctrl-shift-c", "ctrl-shift-v", "ctrl-shift-f")
+        (
+            "ctrl-shift-c",
+            "ctrl-shift-v",
+            "ctrl-shift-a",
+            "ctrl-shift-f",
+        )
     };
     cx.bind_keys([
         KeyBinding::new(copy, Copy, Some(CONTEXT)),
         KeyBinding::new(paste, Paste, Some(CONTEXT)),
+        KeyBinding::new(all, SelectAll, Some(CONTEXT)),
         KeyBinding::new(find, Find, Some(CONTEXT)),
         KeyBinding::new(
             "shift-enter",

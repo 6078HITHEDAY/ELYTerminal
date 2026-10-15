@@ -10,7 +10,7 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
-    blur,
+    blur, menus,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes,
@@ -43,6 +43,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     input::bind_keys(cx);
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
+    menus::init(cx);
     // Settings alone hold no terminal, so they go with the last one.
     cx.on_window_closed(|cx, _| {
         let windows = cx.windows();

@@ -13,11 +13,11 @@ use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
     Subscription, Task, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
-    actions, div, px, size,
+    actions, div, prelude::FluentBuilder, px, size,
 };
 
 use super::{Settings, SettingsStore, StartIn};
-use crate::term::BLINK;
+use crate::{menus, term::BLINK};
 
 mod appearance;
 mod terminal;
@@ -325,6 +325,7 @@ impl Render for SettingsWindow {
         div()
             .size_full()
             .key_context(CONTEXT)
+            .map(menus::window_actions)
             .on_action(|_: &CloseSettings, window, _| {
                 log::info!("settings: the window closes");
                 window.remove_window();

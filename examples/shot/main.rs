@@ -1,0 +1,91 @@
+//! Runs a program in the main window, plays keys and mouse gestures on it, photographs it and names its AppKit views; `to:settings` and `to:main` aim what follows.
+
+#[cfg(target_os = "macos")]
+fn main() {
+    use std::time::Duration;
+
+    use ely_gpui_component::Assets;
+    use elyterminal::{app, settings::window::SettingsWindow, term::Launch};
+    use gpui::AnyWindowHandle;
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
+        .init();
+    let mut args = std::env::args().skip(1).peekable();
+    let keys: Vec<String> = if args.peek().map(String::as_str) == Some("--keys") {
+        args.next();
+        let keys = args.next().expect("keys after --keys");
+        keys.split_whitespace().map(String::from).collect()
+    } else {
+        Vec::new()
+    };
+    let out = args.next().expect("a png path");
+    let program = args.next().expect("a program");
+    let launch = Launch {
+        program: Some((program, args.collect())),
+        cwd: std::env::current_dir().expect("a current folder"),
+        env: Vec::new(),
+        reports: false,
+    };
+    gpui_platform::application()
+        .with_assets(Assets)
+        .run(move |cx: &mut gpui::App| {
+            ely_gpui_component::init(cx).expect("Ely starts");
+            app::start(cx).expect("the app starts");
+            let main: AnyWindowHandle = app::open(launch, cx).expect("the window opens").into();
+            cx.spawn(async move |cx| {
+                let number = |aim: AnyWindowHandle, cx: &mut gpui::AsyncApp| {
+                    let number = aim.update(cx, |_, window, _| capture::number(window));
+                    number.expect("the window lives").expect("a window number")
+                };
+                let mut aim = main;
+                capture::front(number(aim, cx)).expect("the window on screen");
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                for spec in &keys {
+                    match spec.as_str() {
+                        "to:main" => {
+                            aim = main;
+                            capture::front(number(aim, cx)).expect("the window on screen");
+                        }
+                        "to:settings" => {
+                            let windows = cx.update(|cx| cx.windows());
+                            let settings = windows
+                                .into_iter()
+                                .find(|window| window.downcast::<SettingsWindow>().is_some());
+                            aim = settings.expect("a settings window");
+                            capture::front(number(aim, cx)).expect("the window on screen");
+                        }
+                        spec => typing::post(spec, number(aim, cx)).expect("a key event"),
+                    }
+                    if spec.starts_with("to:") {
+                        log::info!("shot: {spec}");
+                    }
+                    cx.background_executor()
+                        .timer(Duration::from_millis(120))
+                        .await;
+                }
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let title = aim.update(cx, |_, window, _| window.window_title());
+                let title = title.expect("the window lives");
+                capture::snapshot(number(aim, cx), std::path::Path::new(&out)).expect("a picture");
+                let views = capture::views(number(aim, cx)).expect("the window's views");
+                log::info!("shot: wrote {out}, titled {title:?}, over {views:?}");
+                for line in capture::menus() {
+                    log::info!("shot: menu {line}");
+                }
+                cx.update(|cx| cx.quit());
+            })
+            .detach();
+        });
+}
+
+#[cfg(target_os = "macos")]
+mod capture;
+
+#[cfg(target_os = "macos")]
+mod typing;
+
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("shot photographs windows on macOS only");
+    std::process::exit(1);
+}
