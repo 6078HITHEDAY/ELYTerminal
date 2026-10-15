@@ -1,7 +1,6 @@
 use std::ops::RangeInclusive;
 
 use ely_gpui_component::{
-    buttons::SegmentedControl,
     forms::{FontPicker, NumberInput, RadioCard, Slider, Switch},
     layout::SimpleGrid,
     settings::{SettingsRow, SettingsSection},
@@ -12,7 +11,7 @@ use gpui::{
     px, relative, rems,
 };
 
-use super::{SettingsWindow, set};
+use super::{SettingsWindow, choice, set, switch};
 use crate::{
     settings::{CursorStyle, FONT_SIZE, LINE_HEIGHT, OPACITY, PADDING, Settings, SettingsStore},
     themes::{self, TerminalTheme},
@@ -97,33 +96,13 @@ impl SettingsWindow {
                 settings.ligatures,
                 |settings, on| settings.ligatures = on,
             )));
-        let (_, now, _) = CURSORS
-            .iter()
-            .find(|(style, ..)| *style == settings.cursor_style)
-            .expect("every cursor style is offered");
-        let style = CURSORS
-            .iter()
-            .fold(
-                SegmentedControl::new("cursor_style", *now),
-                |control, (_, key, name)| control.segment(*key, *name, None),
-            )
-            .size(ControlSize::Sm)
-            .on_change({
-                let this = this.clone();
-                move |key, _, cx| {
-                    let (style, ..) = CURSORS
-                        .iter()
-                        .find(|(_, each, _)| *each == key.as_ref())
-                        .expect("a cursor style the control offers");
-                    let style = *style;
-                    set(
-                        &this,
-                        format!("cursor_style is {style:?}"),
-                        cx,
-                        |settings| settings.cursor_style = style,
-                    );
-                }
-            });
+        let style = choice(
+            &this,
+            "cursor_style",
+            &CURSORS,
+            settings.cursor_style,
+            |settings, style| settings.cursor_style = style,
+        );
         let active = themes::active(settings, window.appearance());
         let lit = self.lit || !settings.cursor_blink;
         let cursor = SettingsSection::new("Cursor")
@@ -226,20 +205,6 @@ fn percent(fraction: f32) -> f64 {
 
 fn fraction(percent: f64) -> f32 {
     (percent / 100.) as f32
-}
-
-fn switch(
-    this: &Entity<SettingsWindow>,
-    field: &'static str,
-    on: bool,
-    put: fn(&mut Settings, bool),
-) -> Switch {
-    let this = this.clone();
-    Switch::new(field, on).on_change(move |on, _, cx| {
-        set(&this, format!("{field} is {on}"), cx, |settings| {
-            put(settings, on)
-        });
-    })
 }
 
 /// Every built-in theme as a card over its preview; `dark` picks the one a dark system wears.

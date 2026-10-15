@@ -1,7 +1,9 @@
+use std::fmt::Debug;
+
 use ely_gpui_component::{
     buttons::SegmentedControl,
     feedback::InlineMessage,
-    forms::{InputEvent, PathInput, TextInput},
+    forms::{InputEvent, PathInput, Switch, TextInput},
     primitives::{FocusScope, IconName, Severity},
     settings::{SettingsLayout, SettingsRow, SettingsSection},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
@@ -18,6 +20,7 @@ use super::{Settings, SettingsStore, StartIn};
 use crate::term::BLINK;
 
 mod appearance;
+mod terminal;
 
 actions!(elyterminal, [OpenSettings, CloseSettings]);
 
@@ -25,9 +28,10 @@ actions!(elyterminal, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, name and icon.
-const SECTIONS: [(&str, &str, IconName); 2] = [
+const SECTIONS: [(&str, &str, IconName); 3] = [
     ("general", "General", IconName::Settings),
     ("appearance", "Appearance", IconName::Palette),
+    ("terminal", "Terminal", IconName::Terminal),
 ];
 
 /// Cmd-, opens the settings, Cmd-W closes them; off macOS Ctrl-, and Ctrl-Shift-W, as Ghostty's.
@@ -204,6 +208,53 @@ fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
     );
 }
 
+/// A switch that saves through `put`.
+fn switch(
+    this: &Entity<SettingsWindow>,
+    field: &'static str,
+    on: bool,
+    put: fn(&mut Settings, bool),
+) -> Switch {
+    let this = this.clone();
+    Switch::new(field, on).on_change(move |on, _, cx| {
+        set(&this, format!("{field} is {on}"), cx, |settings| {
+            put(settings, on)
+        });
+    })
+}
+
+/// Segments for `choices`, each a value, its key and its name, that save the chosen value through `put`.
+fn choice<T: Copy + PartialEq + Debug + 'static>(
+    this: &Entity<SettingsWindow>,
+    field: &'static str,
+    choices: &'static [(T, &'static str, &'static str)],
+    now: T,
+    put: fn(&mut Settings, T),
+) -> SegmentedControl {
+    let (_, key, _) = choices
+        .iter()
+        .find(|(each, ..)| *each == now)
+        .expect("every choice is offered");
+    let this = this.clone();
+    choices
+        .iter()
+        .fold(
+            SegmentedControl::new(field, *key),
+            |control, (_, key, name)| control.segment(*key, *name, None),
+        )
+        .size(ControlSize::Sm)
+        .on_change(move |key, _, cx| {
+            let (value, ..) = choices
+                .iter()
+                .find(|(_, each, _)| *each == key.as_ref())
+                .expect("a choice the control offers");
+            let value = *value;
+            set(&this, format!("{field} is {value:?}"), cx, |settings| {
+                put(settings, value)
+            });
+        })
+}
+
 /// Saves one change and logs it, telling whether the settings hold it; a refused one changes nothing, and the window says why.
 fn set(
     this: &Entity<SettingsWindow>,
@@ -241,6 +292,7 @@ impl Render for SettingsWindow {
         let page = match self.section.as_ref() {
             "general" => self.general(cx).into_any_element(),
             "appearance" => self.appearance(window, cx).into_any_element(),
+            "terminal" => self.terminal(cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
         };
         let page = div()
