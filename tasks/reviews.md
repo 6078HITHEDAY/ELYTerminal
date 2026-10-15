@@ -99,3 +99,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T19
 
 - Round 1, c98bbad: PASS.
+
+## T20
+
+- Round 1, 6523632 and 107069b: PASS. 6523632 fixed a test the first Linux run caught: on Linux a program that ignores SIGHUP reads EIO when its pty closes, so GNU cat exits 1 where macOS gives EOF.
