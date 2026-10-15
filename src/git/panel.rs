@@ -1,7 +1,6 @@
 use std::{
     path::{Path, PathBuf},
     rc::Rc,
-    sync::{Arc, Mutex},
 };
 
 use ely_gpui_component::{
@@ -52,6 +51,8 @@ fn listed(repo: &Repo, section: ChangeSection) -> &[Change] {
 pub struct GitPanel {
     folder: PathBuf,
     state: State,
+    /// Where `state` was read: an action waits until it is `folder`.
+    read: PathBuf,
     /// The last action's failure: what failed, and what git said.
     error: Option<(&'static str, SharedString)>,
     subject: Entity<TextInput>,
@@ -60,10 +61,10 @@ pub struct GitPanel {
     diff: Option<Diff>,
     layout: DiffLayout,
     discarding: Option<(Change, ChangeSection)>,
-    /// One action at a time, in the order asked.
-    turn: Arc<Mutex<()>>,
     reading: Task<()>,
     opening: Task<()>,
+    /// The last action asked; each waits for the one before it.
+    acting: Task<()>,
 }
 
 impl EventEmitter<Acted> for GitPanel {}
@@ -77,6 +78,7 @@ impl GitPanel {
                 .placeholder("Description")
         });
         Self {
+            read: folder.clone(),
             folder,
             state: State::Reading,
             error: None,
@@ -86,9 +88,9 @@ impl GitPanel {
             diff: None,
             layout: DiffLayout::Unified,
             discarding: None,
-            turn: Arc::default(),
             reading: Task::ready(()),
             opening: Task::ready(()),
+            acting: Task::ready(()),
         }
     }
 
@@ -96,10 +98,31 @@ impl GitPanel {
     pub fn show(&mut self, folder: &Path, cx: &mut Context<Self>) {
         if folder != self.folder {
             log::info!("git panel: shows {}", folder.display());
+            // Inside the shown work tree the view stays while it reads, so a cd does not blank it.
+            let inside =
+                matches!(&self.state, State::Read(repo, _) if folder.starts_with(&repo.top));
+            if !inside {
+                self.state = State::Reading;
+            }
             self.folder = folder.to_path_buf();
             (self.error, self.diff, self.discarding) = (None, None, None);
+            self.opening = Task::ready(());
+            cx.notify();
         }
         self.read(cx);
+    }
+
+    /// The repository shown, once it was read in the shown folder.
+    fn current(&self) -> Option<&Repo> {
+        match &self.state {
+            State::Read(repo, _) if self.read == self.folder => Some(repo),
+            _ => None,
+        }
+    }
+
+    fn waits(&self, asked: &str) {
+        let folder = self.folder.display();
+        log::info!("git panel: {asked} waits for {folder} to read; nothing done");
     }
 
     /// Reads the repository and its recent commits, off the main thread.
@@ -132,6 +155,7 @@ impl GitPanel {
                 State::Failed(format!("{error:#}").into())
             }
         };
+        self.read = self.folder.clone();
         if state == self.state {
             return;
         }
@@ -153,7 +177,7 @@ impl GitPanel {
         cx.notify();
     }
 
-    /// Runs `work` on the repository at `top` off the main thread, one action at a time; on success `then`; after it, a fresh read and word to other views.
+    /// Runs `work` on the repository at `top` off the main thread once the action before it is done; on success `then`; after it, a fresh read and word to other views.
     fn act(
         &mut self,
         what: &'static str,
@@ -163,13 +187,10 @@ impl GitPanel {
         cx: &mut Context<Self>,
     ) {
         self.error = None;
-        let turn = self.turn.clone();
-        let done = cx.background_spawn(async move {
-            let _turn = turn.lock().expect("git panel: an action panicked");
-            work(&top)
-        });
-        cx.spawn(async move |panel, cx| {
-            let done = done.await;
+        let before = std::mem::replace(&mut self.acting, Task::ready(()));
+        self.acting = cx.spawn(async move |panel, cx| {
+            before.await;
+            let done = cx.background_spawn(async move { work(&top) }).await;
             let acted = |panel: &mut Self, cx: &mut Context<Self>| {
                 match done {
                     Ok(()) => then(panel, cx),
@@ -183,8 +204,7 @@ impl GitPanel {
                 cx.notify();
             };
             panel.update(cx, acted).ok();
-        })
-        .detach();
+        });
         cx.notify();
     }
 
@@ -196,8 +216,8 @@ impl GitPanel {
         action: ChangeAction,
         cx: &mut Context<Self>,
     ) {
-        let State::Read(repo, _) = &self.state else {
-            return;
+        let Some(repo) = self.current() else {
+            return self.waits(&format!("{action:?} {row}"));
         };
         let found = listed(repo, section)
             .iter()
@@ -226,8 +246,8 @@ impl GitPanel {
 
     /// Stages every unstaged change, or unstages every staged one.
     fn all(&mut self, stage: bool, cx: &mut Context<Self>) {
-        let State::Read(repo, _) = &self.state else {
-            return;
+        let Some(repo) = self.current() else {
+            return self.waits(if stage { "Stage all" } else { "Unstage all" });
         };
         let top = repo.top.clone();
         if stage {
@@ -242,8 +262,8 @@ impl GitPanel {
     }
 
     fn discard(&mut self, change: Change, section: ChangeSection, cx: &mut Context<Self>) {
-        let State::Read(repo, _) = &self.state else {
-            return;
+        let Some(repo) = self.current() else {
+            return self.waits(&format!("Discard {}", change.path.display()));
         };
         let top = repo.top.clone();
         log::info!("git panel: discarding {} confirmed", change.path.display());
@@ -251,24 +271,34 @@ impl GitPanel {
         self.act("Discard failed", top, work, |_, _| {}, cx);
     }
 
-    /// Commits what is staged with the typed message; on success the fields empty.
+    /// Commits what is staged with the typed message; on success the fields that still hold it empty.
     fn commit(&mut self, cx: &mut Context<Self>) {
-        let State::Read(repo, _) = &self.state else {
-            return;
+        let Some(repo) = self.current() else {
+            return self.waits("Commit");
         };
         let top = repo.top.clone();
-        let subject = self.subject.read(cx).text().trim().to_string();
-        let body = self.body.read(cx).text().trim().to_string();
-        let message = match body.is_empty() {
-            true => subject,
-            false => format!("{subject}\n\n{body}"),
+        let subject = self.subject.read(cx).text().to_string();
+        let body = self.body.read(cx).text().to_string();
+        let message = match body.trim() {
+            "" => subject.trim().to_string(),
+            body => format!("{}\n\n{body}", subject.trim()),
         };
         let amend = self.amend;
         let work = move |top: &Path| super::commit(top, &message, amend);
-        let then = |panel: &mut Self, cx: &mut Context<Self>| {
-            panel.amend = false;
-            panel.subject.update(cx, |input, cx| input.set_text("", cx));
-            panel.body.update(cx, |input, cx| input.set_text("", cx));
+        let committed = top.clone();
+        // A draft typed, or a box ticked, while it ran stays, as does all in another repository.
+        let then = move |panel: &mut Self, cx: &mut Context<Self>| {
+            if !matches!(&panel.state, State::Read(repo, _) if repo.top == committed) {
+                return;
+            }
+            for (input, text) in [(&panel.subject, subject), (&panel.body, body)] {
+                if input.read(cx).text() == text {
+                    input.update(cx, |input, cx| input.set_text("", cx));
+                }
+            }
+            if panel.amend == amend {
+                panel.amend = false;
+            }
         };
         self.act("Commit failed", top, work, then, cx);
     }
@@ -284,6 +314,7 @@ impl GitPanel {
         self.error = None;
         // Git keeps an untracked folder whole, so it has no lines.
         if section == ChangeSection::Untracked && is_folder(&change.path) {
+            self.opening = Task::ready(());
             let lines = Err("An untracked folder has no diff.");
             return self.shows(
                 Diff {
