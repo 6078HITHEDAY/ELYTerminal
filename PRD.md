@@ -72,7 +72,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 ## 8. Right panel: Files
 
-- A switch at the top, below the title bar: Git, Files.
+- A switch at the top, centered below the title bar: Git, Files.
 - Files shows the active session's working directory as a tree, folders first, Git status colors on names.
 - Double press: a folder opens, a file opens in the system's default app.
 - It reloads when the session reports a new directory and at each prompt.

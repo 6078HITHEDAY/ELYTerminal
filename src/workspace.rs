@@ -426,7 +426,7 @@ impl Render for Workspace {
                     .width(width)
                     .action(right)
                     // Below the title bar, clear of Windows' caption buttons.
-                    .child(div().flex().px_2().pt_2().child(switch))
+                    .child(div().flex().justify_center().px_2().pt_2().child(switch))
                     .children(quiet.then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
                     .child(body(tab == PanelTab::Files).child(self.files.clone())),

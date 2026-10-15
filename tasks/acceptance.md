@@ -70,7 +70,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | Columns toggle and keep their state | T11, T23 | a click on each title bar button hid its column and saved it, and a restart opened the window with both hidden (147 columns against 87); Cmd-B with the app active; Ctrl-Shift-B on a real X11 window | Pass |
 | The title shows the session's title, nothing else | T11 | log: "the title is", per session shown | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |
-| Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; gpui's Windows hit test reads only unoccluded hitboxes; not yet seen on a Windows screen | Partial |
+| Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; on the owner's PC, window messages asked the app for Windows' hit test along the title bar: v0.1.0 answered caption from end to end, T26's build answers client over the toggles and +, caption over the titles, min, max and close over Ely's buttons, and a press on close closed the app; the owner has not yet clicked it | Partial |
 
 ## 7. Sessions panel
 
@@ -85,7 +85,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| A switch at the top, below the title bar: Git, Files | T13, T26 | T13 review; a capture on X11 shows it below the title bar, the right toggle and Ely's window buttons in the bar above | Pass |
+| A switch at the top, centered below the title bar: Git, Files | T13, T26 | T13 review; a capture on X11 shows it centered below the title bar, the right toggle and Ely's window buttons in the bar above | Pass |
 | The session's folder as a tree, folders first, Git colors | T13 | `files::tests` | Pass |
 | Double press opens a folder, or a file in the default app | T13 | T13 review, with a logging `open` stub | Pass |
 | Reloads on a new folder and at each prompt | T13 | log: "the tree shows", per folder reported | Pass |
