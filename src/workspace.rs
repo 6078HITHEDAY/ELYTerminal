@@ -332,10 +332,7 @@ fn column_toggle(
         .variant(ButtonVariant::Ghost)
         .size(ControlSize::Sm)
         .tooltip(tip)
-        .on_click(move |_, _, cx| {
-            cx.stop_propagation();
-            workspace.update(cx, |this, cx| this.toggle(flip, cx));
-        })
+        .on_click(move |_, _, cx| workspace.update(cx, |this, cx| this.toggle(flip, cx)))
 }
 
 impl Render for Workspace {
@@ -379,7 +376,6 @@ impl Render for Workspace {
                 .size(ControlSize::Sm)
                 .tooltip("New session")
                 .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
             shell = shell.column(
@@ -410,11 +406,6 @@ impl Render for Workspace {
                 .segment("files", "Files", None)
                 .size(ControlSize::Sm)
                 .on_change(|value, _, cx| show_tab(value, cx));
-            // Its presses stay off the header, whose double press zooms.
-            let switch = div()
-                .id("panel-switch")
-                .on_click(|_, _, cx| cx.stop_propagation())
-                .child(switch);
             let quiet = self
                 .sessions
                 .get(self.active)
@@ -433,8 +424,9 @@ impl Render for Workspace {
             shell = shell.column(terminal).column(
                 ShellColumn::new("panel")
                     .width(width)
-                    .leading(switch)
                     .action(right)
+                    // Below the title bar, clear of Windows' caption buttons.
+                    .child(div().flex().px_2().pt_2().child(switch))
                     .children(quiet.then(caption))
                     .child(body(tab == PanelTab::Git).child(self.git.clone().cached(fill())))
                     .child(body(tab == PanelTab::Files).child(self.files.clone())),

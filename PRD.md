@@ -61,6 +61,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
 - The title shows the active session's title, and no other text.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
+- Every control in the title bar takes its own press on every platform, the window buttons Ely draws on Windows and Linux too.
 
 ## 7. Sessions panel
 
@@ -71,7 +72,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 ## 8. Right panel: Files
 
-- A switch at the top: Git, Files.
+- A switch at the top, below the title bar: Git, Files.
 - Files shows the active session's working directory as a tree, folders first, Git status colors on names.
 - Double press: a folder opens, a file opens in the system's default app.
 - It reloads when the session reports a new directory and at each prompt.

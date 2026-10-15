@@ -68,3 +68,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 15. Release
 
 - [x] T25 Windows zip with the icon in the executable, Linux tarball with the icon and a desktop entry, the app id on Linux windows, their scripts; release v0.1.0 on Gitea with the three builds.
+
+## 16. The title bar on Windows
+
+- [ ] T26 On Windows every title bar control takes its press, Ely's window buttons too: in Ely, window buttons and header items occlude the drag region; the Git and Files switch moves below the title bar; release v0.1.1 with the three builds.
