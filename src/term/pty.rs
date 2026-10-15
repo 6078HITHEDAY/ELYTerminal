@@ -337,7 +337,8 @@ mod tests {
 
     #[test]
     fn a_program_that_ignores_sighup_ends_when_the_pty_closes() {
-        close_after_ready("trap '' HUP; printf READY; exec cat", "exit status: 0");
+        // cat reads EOF on macOS and EIO on Linux; the shell's own exit holds on both.
+        close_after_ready("trap '' HUP; printf READY; cat; exit 7", "exit status: 7");
     }
 
     #[test]

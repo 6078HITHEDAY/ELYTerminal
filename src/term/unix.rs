@@ -289,7 +289,7 @@ impl Drop for Pty {
     fn drop(&mut self) {
         unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGHUP) };
         unregister(self.sig);
-        // Closed before the wait, so a program that ignores SIGHUP reads EOF.
+        // Closed before the wait, so a program that ignores SIGHUP finds the terminal gone.
         unsafe { ManuallyDrop::drop(&mut self.file) };
         match self.child.wait() {
             Ok(status) => log::info!("pty {}: hung up, {status}", self.id()),
