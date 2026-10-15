@@ -10,10 +10,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - run: |
-          echo "PATH=$PATH"
-          ls -l /opt/homebrew/bin/fish /opt/homebrew/bin/pwsh /usr/local/bin/fish /usr/local/bin/pwsh || true
-          /bin/zsh -lc 'echo "login PATH=$PATH"; command -v brew fish pwsh' || true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95"
@@ -30,18 +26,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          $env:PATH -split ';'
-          "CARGO_HOME=$env:CARGO_HOME RUSTUP_HOME=$env:RUSTUP_HOME USERPROFILE=$env:USERPROFILE"
-          Get-Command rustup, rustc, cargo, pwsh, bash -All -ErrorAction SilentlyContinue | Format-Table -AutoSize Name, Source
-          Get-ChildItem "$env:USERPROFILE\.cargo\bin" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-      - if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "PATH=$PATH"
-          command -v rustup rustc cargo || true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95"
@@ -51,7 +35,9 @@ jobs:
       # The Linux job container runs as root, which ignores the file permissions the tests check.
       - if: runner.os == 'Linux'
         run: |
-          apt-get update && apt-get install -y zsh fish xvfb
+          apt-get update && apt-get install -y --no-install-recommends pkg-config libwayland-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libx11-xcb-dev libfontconfig-dev \
+            libfreetype-dev zsh fish xvfb
           useradd --create-home ci
           chmod o+x "$HOME"
           chown -R ci "$GITHUB_WORKSPACE" "$HOME/.cargo" "$HOME/.rustup"

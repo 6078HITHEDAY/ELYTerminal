@@ -6,7 +6,7 @@ pub mod menus;
 pub mod sessions;
 pub mod settings;
 pub mod term;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod testlog;
 pub mod themes;
 pub mod workspace;
