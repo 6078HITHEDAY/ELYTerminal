@@ -10,7 +10,7 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
-    settings::SettingsStore,
+    settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes,
     workspace::{self, TITLE, Workspace},
@@ -41,9 +41,15 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
     workspace::bind_keys(cx);
+    settings::window::bind_keys(cx);
+    // Settings alone hold no terminal, so they go with the last one.
     cx.on_window_closed(|cx, _| {
-        if cx.windows().is_empty() {
-            log::info!("app: no window left; quitting");
+        let windows = cx.windows();
+        if !windows
+            .iter()
+            .any(|window| window.downcast::<Workspace>().is_some())
+        {
+            log::info!("app: no terminal window left; quitting");
             cx.quit();
         }
     })

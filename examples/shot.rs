@@ -1,11 +1,12 @@
-//! Runs a program in the main window, plays keys and mouse gestures on it, and photographs it.
+//! Runs a program in the main window, plays keys and mouse gestures on it, and photographs it; `to:settings` and `to:main` aim what follows.
 
 #[cfg(target_os = "macos")]
 fn main() {
     use std::time::Duration;
 
     use ely_gpui_component::Assets;
-    use elyterminal::{app, term::Launch};
+    use elyterminal::{app, settings::window::SettingsWindow, term::Launch};
+    use gpui::AnyWindowHandle;
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
         .init();
@@ -30,28 +31,42 @@ fn main() {
         .run(move |cx: &mut gpui::App| {
             ely_gpui_component::init(cx).expect("Ely starts");
             app::start(cx).expect("the app starts");
-            let window = app::open(launch, cx).expect("the window opens");
+            let main: AnyWindowHandle = app::open(launch, cx).expect("the window opens").into();
             cx.spawn(async move |cx| {
-                let number = window
-                    .update(cx, |_, window, _| capture::number(window))
-                    .expect("the window lives")
-                    .expect("a window number");
-                capture::front(number).expect("the window on screen");
+                let number = |aim: AnyWindowHandle, cx: &mut gpui::AsyncApp| {
+                    let number = aim.update(cx, |_, window, _| capture::number(window));
+                    number.expect("the window lives").expect("a window number")
+                };
+                let mut aim = main;
+                capture::front(number(aim, cx)).expect("the window on screen");
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 for spec in &keys {
-                    typing::post(spec, number).expect("a key event");
+                    match spec.as_str() {
+                        "to:main" => {
+                            aim = main;
+                            capture::front(number(aim, cx)).expect("the window on screen");
+                        }
+                        "to:settings" => {
+                            let windows = cx.update(|cx| cx.windows());
+                            let settings = windows
+                                .into_iter()
+                                .find(|window| window.downcast::<SettingsWindow>().is_some());
+                            aim = settings.expect("a settings window");
+                            capture::front(number(aim, cx)).expect("the window on screen");
+                        }
+                        spec => typing::post(spec, number(aim, cx)).expect("a key event"),
+                    }
+                    if spec.starts_with("to:") {
+                        log::info!("shot: {spec}");
+                    }
                     cx.background_executor()
                         .timer(Duration::from_millis(120))
                         .await;
                 }
                 cx.background_executor().timer(Duration::from_secs(1)).await;
-                let (number, title) = window
-                    .update(cx, |_, window, _| {
-                        (capture::number(window), window.window_title())
-                    })
-                    .expect("the window lives");
-                let number = number.expect("a window number");
-                capture::snapshot(number, std::path::Path::new(&out)).expect("a picture");
+                let title = aim.update(cx, |_, window, _| window.window_title());
+                let title = title.expect("the window lives");
+                capture::snapshot(number(aim, cx), std::path::Path::new(&out)).expect("a picture");
                 log::info!("shot: wrote {out}, titled {title:?}");
                 cx.update(|cx| cx.quit());
             })
@@ -80,12 +95,13 @@ mod capture {
         u32::try_from(number).context("window number out of range")
     }
 
-    /// Shows the window without activating the app: gpui draws it, real input stays put.
+    /// Shows the window and makes it the app's key window, which AppKit sends keys to, without activating the app: gpui draws it, real input stays put.
     pub fn front(number: u32) -> anyhow::Result<()> {
         unsafe {
             let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
             let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
             anyhow::ensure!(!window.is_null(), "no window {number}");
+            let _: () = msg_send![window, makeKeyWindow];
             let _: () = msg_send![window, orderFrontRegardless];
         }
         Ok(())
@@ -144,7 +160,8 @@ mod typing {
     };
 
     /// US layout key codes and what each key types.
-    const KEYS: [(&str, u16, &str); 26] = [
+    const KEYS: [(&str, u16, &str); 27] = [
+        (",", 43, ","),
         ("a", 0, "a"),
         ("b", 11, "b"),
         ("c", 8, "c"),

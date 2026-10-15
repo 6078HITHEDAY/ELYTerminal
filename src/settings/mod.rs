@@ -1,6 +1,7 @@
 mod store;
+pub mod window;
 
-use std::ops::RangeInclusive;
+use std::{env, ffi::OsStr, ops::RangeInclusive, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -129,7 +130,43 @@ impl Settings {
             }
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
+        anyhow::ensure!(
+            self.shell.is_empty() || runs(&self.shell, &env::var_os("PATH").unwrap_or_default()),
+            "shell is {:?}, which names no program",
+            self.shell
+        );
         Ok(())
+    }
+}
+
+/// Whether `shell` names a program a session starts: a file at a full path, or a name in one of `folders`, as `PATH` lists them.
+fn runs(shell: &str, folders: &OsStr) -> bool {
+    let path = Path::new(shell);
+    if path.is_absolute() {
+        return program(path);
+    }
+    // A relative path would hang on each session's folder.
+    if path.components().count() != 1 {
+        return false;
+    }
+    env::split_paths(folders).any(|folder| {
+        let file = folder.join(path);
+        program(&file) || (cfg!(windows) && program(&file.with_extension("exe")))
+    })
+}
+
+/// Whether `path` is a file a session can run.
+fn program(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let run =
+            |meta: std::fs::Metadata| meta.is_file() && meta.permissions().mode() & 0o111 != 0;
+        path.metadata().is_ok_and(run)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
     }
 }
 
@@ -173,6 +210,36 @@ mod tests {
             error.to_string(),
             "scrollback is 100001, outside 0 to 100000"
         );
+    }
+
+    #[test]
+    fn a_shell_names_a_program_or_none() {
+        let shell = |shell: &str| Settings {
+            shell: shell.into(),
+            ..Settings::default()
+        };
+        assert!(shell("").validate().is_ok(), "the login shell");
+        let named = if cfg!(windows) { "cmd" } else { "sh" };
+        assert!(shell(named).validate().is_ok(), "a name on PATH");
+        let error = shell("/no/such/shell").validate().expect_err("no file");
+        let said = "shell is \"/no/such/shell\", which names no program";
+        assert_eq!(error.to_string(), said);
+        assert!(shell("bin/sh").validate().is_err(), "a relative path");
+        #[cfg(unix)]
+        {
+            assert!(runs("sh", OsStr::new("/bin")));
+            let root = OsStr::new("/");
+            assert!(
+                !runs("bin/sh", root),
+                "a relative path, though / holds bin/sh"
+            );
+            assert!(shell("/bin/sh").validate().is_ok());
+            assert!(shell("/bin").validate().is_err(), "a folder");
+            assert!(
+                shell("/etc/hosts").validate().is_err(),
+                "a file that does not run"
+            );
+        }
     }
 
     #[test]
