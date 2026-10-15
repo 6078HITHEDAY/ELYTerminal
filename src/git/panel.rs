@@ -286,9 +286,9 @@ impl GitPanel {
         let amend = self.amend;
         let work = move |top: &Path| super::commit(top, &message, amend);
         let committed = top.clone();
-        // A draft typed, or a box ticked, while it ran stays, as does all in another repository.
+        // A draft typed, or a box ticked, while it ran stays, as does all while a folder reads or in another repository.
         let then = move |panel: &mut Self, cx: &mut Context<Self>| {
-            if !matches!(&panel.state, State::Read(repo, _) if repo.top == committed) {
+            if panel.current().is_none_or(|repo| repo.top != committed) {
                 return;
             }
             for (input, text) in [(&panel.subject, subject), (&panel.body, body)] {
