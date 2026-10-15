@@ -81,6 +81,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Through the `git` command line. No libgit2.
 - Shows the branch, staged and unstaged changes, a commit message field and Commit, and recent commits.
 - Stage and unstage a file. Press a file to see its diff in Ely's `DiffViewer`.
+- Discard, which Ely's changes list draws on every unstaged and untracked row, asks first: an edit goes back to the index, a new file is deleted.
 - Outside a repository it says so. A failed git command shows its error.
 - It reloads at each prompt and on directory change.
 
@@ -124,4 +125,4 @@ Cmd-, opens it. Categories on the left, rows on the right, Ely's settings compon
 
 ## Deferred
 
-Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, discard changes, quick terminal.
+Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, quick terminal.
