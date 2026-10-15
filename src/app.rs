@@ -65,6 +65,17 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         "settings: font_family is {family:?}, which is not installed"
     );
     themes::apply(cx);
+    let chosen =
+        |settings: &settings::Settings| (settings.theme.clone(), settings.dark_theme.clone());
+    let mut worn = chosen(SettingsStore::get(cx));
+    cx.observe_global::<SettingsStore>(move |cx| {
+        let now = chosen(SettingsStore::get(cx));
+        if now != worn {
+            worn = now;
+            themes::apply(cx);
+        }
+    })
+    .detach();
     Ok(())
 }
 

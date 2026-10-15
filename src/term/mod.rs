@@ -18,4 +18,4 @@ mod unix;
 mod view;
 
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};
-pub use view::{ICONS, MONO, TerminalEvent, TerminalView};
+pub use view::{BLINK, ICONS, MONO, TerminalEvent, TerminalView};

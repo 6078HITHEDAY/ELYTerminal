@@ -36,7 +36,7 @@ pub const ICONS: &str = "JetBrainsMono Nerd Font Mono";
 pub const MONO: &str = "JetBrains Mono";
 
 /// How long the cursor shows, then hides, while it blinks.
-const BLINK: Duration = Duration::from_millis(600);
+pub const BLINK: Duration = Duration::from_millis(600);
 
 /// What a terminal tells its owner.
 #[derive(Clone, Debug, PartialEq)]

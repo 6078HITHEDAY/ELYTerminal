@@ -10,11 +10,14 @@ use ely_gpui_component::{
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Subscription, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions, actions,
-    div, px, size,
+    Subscription, Task, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
+    actions, div, px, size,
 };
 
-use super::{SettingsStore, StartIn};
+use super::{Settings, SettingsStore, StartIn};
+use crate::term::BLINK;
+
+mod appearance;
 
 actions!(elyterminal, [OpenSettings, CloseSettings]);
 
@@ -22,7 +25,10 @@ actions!(elyterminal, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, name and icon.
-const SECTIONS: [(&str, &str, IconName); 1] = [("general", "General", IconName::Settings)];
+const SECTIONS: [(&str, &str, IconName); 2] = [
+    ("general", "General", IconName::Settings),
+    ("appearance", "Appearance", IconName::Palette),
+];
 
 /// Cmd-, opens the settings, Cmd-W closes them; off macOS Ctrl-, and Ctrl-Shift-W, as Ghostty's.
 pub fn bind_keys(cx: &mut App) {
@@ -52,7 +58,7 @@ fn open_window(cx: &mut App) {
         }
         return;
     }
-    let bounds = Bounds::centered(None, size(px(760.0), px(560.0)), cx);
+    let bounds = Bounds::centered(None, size(px(900.0), px(640.0)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
@@ -79,8 +85,14 @@ pub struct SettingsWindow {
     shell: Entity<TextInput>,
     /// Why the typed shell is not saved.
     refused: Option<SharedString>,
+    /// Why the last change did not save.
+    failed: Option<SharedString>,
+    font: Entity<TextInput>,
+    /// Whether the cursor preview shows, as it blinks.
+    lit: bool,
     _typed: Subscription,
     _settings: Subscription,
+    _blink: Task<()>,
 }
 
 impl SettingsWindow {
@@ -90,6 +102,7 @@ impl SettingsWindow {
             input.set_text(SettingsStore::get(cx).shell.clone(), cx);
             input
         });
+        let font = cx.new(|cx| TextInput::new(window, cx));
         let typed = cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
             if let InputEvent::Changed = event {
                 let shell = input.read(cx).text().to_string();
@@ -104,9 +117,31 @@ impl SettingsWindow {
             section: SECTIONS[0].0.into(),
             shell,
             refused: None,
+            failed: None,
+            font,
+            lit: true,
             _typed: typed,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            _blink: Self::blink(cx),
         }
+    }
+
+    /// Blinks the cursor preview as a terminal blinks its cursor, while it shows.
+    fn blink(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(BLINK).await;
+                let ticked = this.update(cx, |this, cx| {
+                    if this.section == "appearance" && SettingsStore::get(cx).cursor_blink {
+                        this.lit = !this.lit;
+                        cx.notify();
+                    }
+                });
+                if ticked.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     /// Saves `shell` when it names a program; else says why and keeps the saved one.
@@ -143,7 +178,10 @@ impl SettingsWindow {
             .segment("home", "Home", None)
             .segment("session", "Session's folder", None)
             .size(ControlSize::Sm)
-            .on_change(|value, _, cx| start_in(value, cx));
+            .on_change({
+                let this = cx.entity();
+                move |value, _, cx| start_in(&this, value, cx)
+            });
         SettingsSection::new("General")
             .row(SettingsRow::new("Shell").control(shell))
             .row(SettingsRow::new("Start in").control(start))
@@ -151,21 +189,62 @@ impl SettingsWindow {
 }
 
 /// Where new sessions start, as the settings keep it.
-fn start_in(value: &SharedString, cx: &mut App) {
+fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
     let start = match value.as_ref() {
         "home" => StartIn::Home,
         "session" => StartIn::Session,
         other => unreachable!("settings: no start {other}"),
     };
-    match SettingsStore::update(cx, |settings| settings.start_in = start) {
-        Ok(()) => log::info!("settings: new sessions start in {start:?}"),
-        Err(error) => log::error!("settings: the start stays: {error:#}"),
+    set(
+        this,
+        format!("new sessions start in {start:?}"),
+        cx,
+        |settings| settings.start_in = start,
+    );
+}
+
+/// Saves one change and logs it; a refused one changes nothing, and the window says why.
+fn set(
+    this: &Entity<SettingsWindow>,
+    change: String,
+    cx: &mut App,
+    edit: impl FnOnce(&mut Settings),
+) {
+    let mut next = SettingsStore::get(cx).clone();
+    edit(&mut next);
+    if next == *SettingsStore::get(cx) {
+        return;
     }
+    let failed = match SettingsStore::update(cx, |settings| *settings = next) {
+        Ok(()) => {
+            log::info!("settings: {change}");
+            None
+        }
+        Err(error) => {
+            log::error!("settings: refused {change}: {error:#}");
+            Some(format!("{error:#}").into())
+        }
+    };
+    this.update(cx, |this, cx| {
+        this.failed = failed;
+        cx.notify();
+    });
 }
 
 impl Render for SettingsWindow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pick = cx.entity();
+        let page = match self.section.as_ref() {
+            "general" => self.general(cx).into_any_element(),
+            "appearance" => self.appearance(window, cx).into_any_element(),
+            other => unreachable!("settings: no section {other}"),
+        };
+        let page = div()
+            .flex()
+            .flex_col()
+            .gap_4()
+            .children((self.failed.clone()).map(|why| InlineMessage::new(Severity::Danger, why)))
+            .child(page);
         let layout = SettingsLayout::new("settings", SECTIONS, self.section.clone(), {
             move |key, _, cx| {
                 pick.update(cx, |this, cx| {
@@ -174,7 +253,7 @@ impl Render for SettingsWindow {
                 })
             }
         })
-        .page(self.general(cx));
+        .page(page);
         let body = div()
             .id("settings-body")
             .size_full()
