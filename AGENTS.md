@@ -33,7 +33,7 @@ ELYTerminal. A terminal on GPUI and Ely components. `PRD.md` says what it does; 
 - `assets/shell-integration`: ELYTerminal's own scripts (not Ghostty's, which are GPL): zsh through `ZDOTDIR`, bash through `--rcfile`, fish through `XDG_DATA_DIRS`, PowerShell through `-NoExit -Command`. Each prompt sends OSC 7 and, except in fish, whose `fish_title` stays, a title.
 - `assets/fonts`: JetBrains Mono 2.304's bold and italic faces (OFL; Ely bundles regular), and Nerd Fonts 3.5.1's JetBrains Mono NF Mono Regular, which draws icons a font lacks.
 - `assets/themes`: Ghostty theme files copied verbatim from iTerm2-Color-Schemes (MIT, its `LICENSE` beside them).
-- `assets/icons`: the icon, an original figure, Ely, holding a terminal: `elyterminal-macos.svg` on macOS's rounded square, `elyterminal.svg` the figure alone, for Windows and Linux.
+- `assets/icons`: the icon, an original figure, Ely, holding a terminal: `elyterminal-macos.svg` on macOS's rounded square, `elyterminal.svg` the figure alone, for Windows and Linux; the macOS file holds a copy of the figure's markup, so an edit to the figure is made in both.
 
 ## Rules
 

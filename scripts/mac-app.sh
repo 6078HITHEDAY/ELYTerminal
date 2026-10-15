@@ -4,7 +4,8 @@ set -eu
 cd "$(dirname "$0")/.."
 cargo build --release --locked
 version=$(cargo pkgid)
-version=${version##*@}
+version=${version##*[#@]}
+case $version in [0-9]*) ;; *) echo "mac-app: cargo pkgid names no version" >&2; exit 1 ;; esac
 out=target/release
 app=$out/ELYTerminal.app
 work=$(mktemp -d)
