@@ -71,4 +71,4 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 16. The title bar on Windows
 
-- [ ] T26 On Windows every title bar control takes its press, Ely's window buttons too: in Ely, window buttons and header items occlude the drag region; the Git and Files switch moves below the title bar, centered; release v0.1.1 with the three builds.
+- [ ] T26 On Windows every title bar control takes its press, Ely's window buttons too: in Ely, window buttons and header items occlude the drag region; the Git and Files switch moves below the title bar, centered; on Windows and Linux a gear in the title bar opens Settings; release v0.1.1 with the three builds.

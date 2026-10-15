@@ -18,7 +18,7 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session},
-    settings::{PanelTab, Settings, SettingsStore, StartIn},
+    settings::{PanelTab, Settings, SettingsStore, StartIn, window::OpenSettings},
     term::{
         Events, Launch, Pty, TerminalEvent, TerminalView, config,
         shell::{ShellIntegration, launch},
@@ -356,6 +356,20 @@ impl Render for Workspace {
             tip(settings.show_panel, "Git and Files"),
             |settings| settings.show_panel = !settings.show_panel,
         );
+        // No menu bar off macOS: a gear opens Settings.
+        let gear = (!cfg!(target_os = "macos")).then(|| {
+            IconButton::new("open-settings", IconName::Settings)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .tooltip("Settings")
+                .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenSettings), cx))
+        });
+        let end = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .children(gear)
+            .child(right);
         let mut shell = ColumnShell::new("workspace").glass();
         let shown = self
             .sessions
@@ -424,7 +438,7 @@ impl Render for Workspace {
             shell = shell.column(terminal).column(
                 ShellColumn::new("panel")
                     .width(width)
-                    .action(right)
+                    .action(end)
                     // Below the title bar, clear of Windows' caption buttons.
                     .child(div().flex().justify_center().px_2().pt_2().child(switch))
                     .children(quiet.then(caption))
@@ -432,7 +446,7 @@ impl Render for Workspace {
                     .child(body(tab == PanelTab::Files).child(self.files.clone())),
             );
         } else {
-            shell = shell.column(terminal.action(right));
+            shell = shell.column(terminal.action(end));
         }
         // The context sits above the focus root, so its keys work wherever focus is.
         div()

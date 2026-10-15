@@ -88,7 +88,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 ## 10. Settings window
 
-Cmd-, opens it. Categories on the left, rows on the right, Ely's settings components. Changes apply at once to every session and save.
+Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, Ely's settings components. Changes apply at once to every session and save.
 
 - General
   - Shell: a path; empty runs the login shell.

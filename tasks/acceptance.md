@@ -106,6 +106,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | Cmd-, opens it; categories left, rows right; changes apply at once and save | T16 | T16 review | Pass |
+| On Windows and Linux, a gear in the title bar opens it too | T26 | on X11 under Xvfb with xfwm4, xdotool's click on the gear, just inside the right toggle, opened the 900×640 Settings window ("settings: the window opens"), after a click on + opened a session; sent through `App::dispatch_action`, the same click had opened nothing; the owner has not yet clicked it on Windows | Partial |
 | General: Shell, Start in | T16 | `settings::tests` | Pass |
 | Appearance: theme grids, dark theme, font, size, line height, ligatures, cursor and preview, opacity, blur, padding | T17 | T17 review | Pass |
 | Terminal: scrollback, Option as Alt (macOS), copy on select | T18 | T18 review | Pass |
