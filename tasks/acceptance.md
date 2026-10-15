@@ -23,7 +23,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01 | `Cargo.toml`: Ely `a2cb531`, `gpui-pre` `=0.3.8` | Pass |
 | `alacritty_terminal` 0.26 | T04 | `=0.26.0` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
-| CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 910 on `be8d0e2`, see the CI notes | Pass |
+| CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 919 on `09930c2`, see the CI notes | Pass |
 | Private repo; no credential in any file or commit | T01 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits | Pass |
 
 ## 3. Settings model and storage
@@ -132,7 +132,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|
 | Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
 | `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux in Colima: 138 tests, clippy | Pass |
-| CI green on macOS, Ubuntu and Windows | run 910 on `be8d0e2`: all three jobs pass; see the CI notes below | Pass |
+| CI green on macOS, Ubuntu and Windows | run 919 on `09930c2`: all three jobs pass; see the CI notes below | Pass |
 
 ## CI notes
 
@@ -146,7 +146,7 @@ A clippy run for `x86_64-pc-windows-msvc` on macOS, with stand-ins for the MSVC 
 
 Run 907 then failed the PowerShell test on macOS: it typed its probe right after the first folder report, which pwsh 7.6.6 sends before PSReadLine reads its first key, and the line was echoed, never run. The shell tests now type a line only once the line editor reads raw keys.
 
-Run 910, on `be8d0e2`, passed all three jobs: macOS ran `scripts/check.sh` (135 tests, the fonts check, clippy, fmt, the 500-line rule) and the build; Ubuntu ran 138 tests and the build; Windows ran 113 tests and the build, without the Unix-only pty and shell tests.
+Run 919, on `09930c2`, passed all three jobs: macOS ran `scripts/check.sh` (135 tests, the fonts check, clippy, fmt, the 500-line rule) and the build; Ubuntu ran 138 tests and the build; Windows ran 113 tests and the build, without the Unix-only pty and shell tests.
 
 ## The owner's checks
 
