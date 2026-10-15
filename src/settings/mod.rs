@@ -1,7 +1,12 @@
 mod store;
 pub mod window;
 
-use std::{env, ffi::OsStr, ops::RangeInclusive, path::Path};
+use std::{
+    env,
+    ffi::OsStr,
+    ops::RangeInclusive,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -131,7 +136,7 @@ impl Settings {
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
         anyhow::ensure!(
-            self.shell.is_empty() || runs(&self.shell, &env::var_os("PATH").unwrap_or_default()),
+            self.shell.is_empty() || program_path(&self.shell).is_some(),
             "shell is {:?}, which names no program",
             self.shell
         );
@@ -139,35 +144,44 @@ impl Settings {
     }
 }
 
-/// Whether `shell` names a program a session starts: a file at a full path, or a name in one of `folders`, as `PATH` lists them.
-fn runs(shell: &str, folders: &OsStr) -> bool {
-    let path = Path::new(shell);
-    if path.is_absolute() {
-        return program(path);
-    }
-    // A relative path would hang on each session's folder.
-    if path.components().count() != 1 {
-        return false;
-    }
-    env::split_paths(folders).any(|folder| {
-        let file = folder.join(path);
-        program(&file) || (cfg!(windows) && program(&file.with_extension("exe")))
-    })
+/// The program `shell` names, as a session starts it: a file at a full path, or the first in `PATH`'s full folders.
+pub fn program_path(shell: &str) -> Option<PathBuf> {
+    find(shell, &env::var_os("PATH").unwrap_or_default())
 }
 
-/// Whether `path` is a file a session can run.
+/// `shell`'s program, or the first one named so in `folders`, listed as `PATH` lists them.
+fn find(shell: &str, folders: &OsStr) -> Option<PathBuf> {
+    let path = Path::new(shell);
+    if path.is_absolute() {
+        return program(path).then(|| path.to_path_buf());
+    }
+    // A relative path, or a relative folder, would hang on each session's own folder.
+    if path.components().count() != 1 {
+        return None;
+    }
+    let files = env::split_paths(folders)
+        .filter(|folder| folder.is_absolute())
+        .flat_map(|folder| {
+            let file = folder.join(path);
+            let exe = cfg!(windows).then(|| file.with_extension("exe"));
+            [Some(file), exe]
+        });
+    files.flatten().find(|file| program(file))
+}
+
+/// Whether `path` is a file the running user may run, as the system answers, ACLs too.
+#[cfg(unix)]
 fn program(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let run =
-            |meta: std::fs::Metadata| meta.is_file() && meta.permissions().mode() & 0o111 != 0;
-        path.metadata().is_ok_and(run)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let Ok(name) = CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    path.is_file() && unsafe { libc::access(name.as_ptr(), libc::X_OK) } == 0
+}
+
+#[cfg(not(unix))]
+fn program(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn within<T: PartialOrd + std::fmt::Display>(
@@ -227,10 +241,12 @@ mod tests {
         assert!(shell("bin/sh").validate().is_err(), "a relative path");
         #[cfg(unix)]
         {
-            assert!(runs("sh", OsStr::new("/bin")));
+            let sh = Some(PathBuf::from("/bin/sh"));
+            assert_eq!(find("sh", OsStr::new("/bin")), sh);
             let root = OsStr::new("/");
-            assert!(
-                !runs("bin/sh", root),
+            assert_eq!(
+                find("bin/sh", root),
+                None,
                 "a relative path, though / holds bin/sh"
             );
             assert!(shell("/bin/sh").validate().is_ok());
@@ -240,6 +256,31 @@ mod tests {
                 "a file that does not run"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_shell_runs_for_this_user_from_a_full_folder() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let folder = std::env::temp_dir().join(format!("elyterminal-shell-{}", std::process::id()));
+        fs::create_dir_all(&folder).expect("a test folder");
+        let file = folder.join("review-shell");
+        fs::write(&file, "#!/bin/sh\n").expect("a script");
+        // Root may run what any execute bit allows.
+        let root = unsafe { libc::geteuid() } == 0;
+        for (mode, runs) in [(0o644, false), (0o641, root), (0o755, true)] {
+            fs::set_permissions(&file, fs::Permissions::from_mode(mode)).expect("a mode");
+            assert_eq!(program(&file), runs, "mode {mode:o}");
+        }
+        assert_eq!(find("review-shell", folder.as_os_str()), Some(file.clone()));
+    }
+
+    #[test]
+    fn a_relative_folder_counts_for_none() {
+        // Tests run in the crate, whose scripts folder holds a program.
+        let scripts = OsStr::new("scripts");
+        assert!(program(Path::new("scripts/check.sh")));
+        assert_eq!(find("check.sh", scripts), None);
     }
 
     #[test]

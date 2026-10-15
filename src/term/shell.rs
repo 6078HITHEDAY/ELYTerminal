@@ -77,7 +77,12 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
     let path = if shell.is_empty() {
         default_shell()?
     } else {
-        shell.to_string()
+        // The settings checked this path; the session runs no other.
+        let found = crate::settings::program_path(shell)
+            .with_context(|| format!("shell integration: {shell:?} names no program"))?;
+        (found.to_str())
+            .with_context(|| format!("shell integration: {} is not UTF-8", found.display()))?
+            .to_string()
     };
     let name = Path::new(&path)
         .file_stem()

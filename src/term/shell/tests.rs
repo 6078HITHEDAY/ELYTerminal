@@ -248,6 +248,14 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
 }
 
 #[test]
+fn a_shell_named_bare_runs_from_its_full_path() {
+    let started = launch("sh", PathBuf::from("/"), Path::new("/nonexistent")).expect("a launch");
+    let (program, _) = started.program.expect("a program");
+    assert!(Path::new(&program).is_absolute(), "{program}");
+    assert!(launch("no-such-shell", PathBuf::from("/"), Path::new("/")).is_err());
+}
+
+#[test]
 fn an_unknown_shell_starts_without_integration() {
     let dir = PathBuf::from("/nonexistent");
     let launch = launch("/bin/sh", PathBuf::from("/"), &dir).expect("a launch");
