@@ -59,4 +59,4 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 13. Acceptance
 
-- [ ] T23 End-to-end checks, README, acceptance table, CI green on three platforms.
+- [x] T23 End-to-end checks, README, acceptance table, CI green on three platforms.
