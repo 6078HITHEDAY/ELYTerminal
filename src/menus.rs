@@ -1,11 +1,9 @@
+use ely_gpui_component::forms::{Copy, Paste, SelectAll};
 use gpui::{App, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, actions};
 
 use crate::{
     settings::window::OpenSettings,
-    term::{
-        input::{Copy, Find, Paste, SelectAll},
-        zoom,
-    },
+    term::{input::Find, zoom},
     workspace::{CloseSession, NewSession, TogglePanel, ToggleSessions},
 };
 
@@ -14,7 +12,7 @@ actions!(
     [Quit, Bigger, Smaller, ResetSize, Minimize, Zoom]
 );
 
-/// The menu bar the PRD lists; macOS draws it and names the first menu after the app.
+/// The PRD's menu bar.
 pub fn menus() -> Vec<Menu> {
     let menu = |name: &str, items| Menu {
         name: name.to_string().into(),
@@ -69,7 +67,7 @@ pub fn menus() -> Vec<Menu> {
     ]
 }
 
-/// Ghostty's keys for Quit and the font's size, Cmd on macOS and Ctrl elsewhere, Cmd-M to minimize; what they do; then the menus, which show the keys bound by now.
+/// Binds app commands before building their menus.
 pub fn init(cx: &mut App) {
     let (quit, modifier) = if cfg!(target_os = "macos") {
         ("cmd-q", "cmd")
@@ -97,7 +95,7 @@ pub fn init(cx: &mut App) {
     cx.set_menus(menus());
 }
 
-/// Minimize and Zoom on a window's root: only a window answers them.
+/// Minimize and Zoom, which only a window answers.
 pub fn window_actions<E: InteractiveElement>(root: E) -> E {
     root.on_action(|_: &Minimize, window, _| {
         log::info!("window: minimized");

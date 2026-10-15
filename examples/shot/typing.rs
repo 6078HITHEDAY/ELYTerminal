@@ -59,7 +59,7 @@ fn string(text: &str) -> *mut Object {
     unsafe { msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()] }
 }
 
-/// `mark` composes `text` as an input method does; `commit` types it.
+/// An input method's `mark` or `commit` of `text`.
 fn compose(call: &str, text: &str, number: u32) -> anyhow::Result<()> {
     let none = Range {
         location: i64::MAX as u64,
@@ -114,7 +114,7 @@ fn steps(gesture: &str, points: &[CGPoint]) -> anyhow::Result<Vec<(String, CGPoi
     })
 }
 
-/// A step's event type, button and the selector gpui's view takes it by.
+/// A step's event type, button and gpui's selector.
 fn kind(step: &str) -> anyhow::Result<(CGEventType, CGMouseButton, &'static str)> {
     Ok(match step {
         "ldown" => (
@@ -153,7 +153,7 @@ fn kind(step: &str) -> anyhow::Result<(CGEventType, CGMouseButton, &'static str)
     })
 }
 
-/// Hands gpui's view a mouse gesture as AppKit events, even while the window is inactive.
+/// Hands gpui's view a gesture as AppKit events.
 fn mouse(name: &str, flags: u64, number: u32) -> anyhow::Result<()> {
     let mut fields = name.split('@');
     let gesture = fields.next().context("a gesture")?;
@@ -214,7 +214,7 @@ fn mouse(name: &str, flags: u64, number: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Posts `spec`, a key, an input method call or a mouse gesture, on window `number`.
+/// Posts one spec on window `number`.
 pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
     if let Some((call, text)) = spec.split_once(':') {
         return compose(call, text, number);

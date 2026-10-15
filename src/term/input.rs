@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use alacritty_terminal::{grid::Scroll, term::TermMode};
+use ely_gpui_component::forms::{Copy, Paste, SelectAll};
 use gpui::{
     App, Bounds, Context, EntityInputHandler, KeyBinding, KeyDownEvent, KeyUpEvent, Keystroke,
     NoAction, Pixels, Point, UTF16Selection, Window, actions,
@@ -11,7 +12,7 @@ use super::{
     view::TerminalView,
 };
 
-actions!(elyterminal, [Copy, Paste, Find, FindNewer, SelectAll]);
+actions!(elyterminal, [Find, FindNewer]);
 
 /// The key context a terminal's root sets.
 pub const CONTEXT: &str = "Terminal";
@@ -19,7 +20,7 @@ pub const CONTEXT: &str = "Terminal";
 /// The key context of a terminal's find box.
 pub const FIND: &str = "TerminalFind";
 
-/// Copy, paste, select all and find; Ely's focus keys go to the terminal's listeners instead.
+/// The terminal's keys; Ely's focus keys reach its listeners.
 pub fn bind_keys(cx: &mut App) {
     let (copy, paste, all, find) = if cfg!(target_os = "macos") {
         ("cmd-c", "cmd-v", "cmd-a", "cmd-f")

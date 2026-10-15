@@ -6,7 +6,10 @@ use alacritty_terminal::{
     term::{ClipboardType, TermMode},
     vte::ansi::CursorShape,
 };
-use ely_gpui_component::theme::ActiveTheme;
+use ely_gpui_component::{
+    forms::{Copy, Paste, SelectAll},
+    theme::ActiveTheme,
+};
 use futures::StreamExt;
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontId, FontStyle,
@@ -18,7 +21,7 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Copy, Find, Paste, SelectAll},
+    input::{self, Find},
     mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
@@ -269,7 +272,7 @@ pub fn load_font(font: &Font, system: &TextSystem) -> anyhow::Result<FontId> {
     Ok(id)
 }
 
-/// The font, cell and metrics the settings give at `points` and this window's scale.
+/// Font, cell and metrics at `points` on this window.
 fn look(settings: &Settings, points: f32, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
     let font = Font {
         family: settings.font_family.clone().into(),

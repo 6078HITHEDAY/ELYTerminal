@@ -17,7 +17,7 @@ pub fn number(window: &gpui::Window) -> anyhow::Result<u32> {
     u32::try_from(number).context("window number out of range")
 }
 
-/// Shows the window and makes it the app's key window, which AppKit sends keys to, without activating the app: gpui draws it, real input stays put.
+/// Shows the window as key, the app left inactive.
 pub fn front(number: u32) -> anyhow::Result<()> {
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
@@ -29,7 +29,7 @@ pub fn front(number: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The class of each view under the window's content, as AppKit names it; gpui's blur is a `BlurredView`.
+/// AppKit's class of each view under the content.
 pub fn views(number: u32) -> anyhow::Result<Vec<String>> {
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
@@ -50,7 +50,7 @@ pub fn views(number: u32) -> anyhow::Result<Vec<String>> {
     }
 }
 
-/// The menu bar's items as AppKit holds them: menu, item, then the key and its modifier mask.
+/// Each menu item with its key and modifier mask.
 pub fn menus() -> Vec<String> {
     let text = |string: *mut Object| -> String {
         let bytes: *const std::ffi::c_char = unsafe { msg_send![string, UTF8String] };
@@ -80,7 +80,7 @@ pub fn menus() -> Vec<String> {
     lines
 }
 
-/// Writes the window `number` as a PNG; the app's own window needs no permission.
+/// Writes window `number` as a PNG.
 pub fn snapshot(number: u32, path: &Path) -> anyhow::Result<()> {
     use core_graphics::{
         geometry::{CGPoint, CGRect, CGSize},

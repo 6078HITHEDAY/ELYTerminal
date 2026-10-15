@@ -298,7 +298,7 @@ impl TerminalView {
         (!text.is_empty()).then_some(text)
     }
 
-    /// Selects the history and the screen, blanks around them left out; copy on select takes the text.
+    /// Selects all text; copy on select takes it.
     pub(super) fn select_all(&mut self, cx: &mut Context<Self>) {
         {
             let mut term = self.pty.term.lock();
@@ -367,13 +367,17 @@ impl TerminalView {
     }
 }
 
-/// Ghostty's select all: the first cell holding more than a space or tab, through history and screen, to the last.
+/// Ghostty's select all: first to last non-blank cell.
 fn everything<T>(term: &Term<T>) -> Option<Selection> {
     let grid = term.grid();
     let cells = (grid.topmost_line().0..=grid.bottommost_line().0).flat_map(|line| {
         (0..grid.columns()).map(move |column| Cell::new(Line(line), Column(column)))
     });
-    let inked = |cell: &Cell| !matches!(grid[*cell].c, ' ' | '\t');
+    let inked = |point: &Cell| {
+        let cell = &grid[*point];
+        let marked = cell.zerowidth().is_some_and(|marks| !marks.is_empty());
+        marked || !matches!(cell.c, ' ' | '\t')
+    };
     let first = cells.clone().find(inked)?;
     let last = cells.rev().find(inked)?;
     let mut all = Selection::new(SelectionType::Simple, first, Side::Left);
@@ -391,14 +395,25 @@ mod tests {
 
     use super::*;
 
+    /// What select all copies after `bytes`.
+    fn all(bytes: &[u8]) -> Option<String> {
+        let mut term = Term::new(Config::default(), &TermSize::new(10, 3), VoidListener);
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, bytes);
+        term.selection = everything(&term);
+        term.selection_to_string()
+    }
+
     #[test]
     fn everything_runs_from_the_first_character_in_the_history_to_the_last() {
-        let mut term = Term::new(Config::default(), &TermSize::new(10, 3), VoidListener);
-        assert!(everything(&term).is_none(), "a blank grid selects nothing");
-        let mut parser: Processor = Processor::new();
-        parser.advance(&mut term, b"\r\n  one\r\n\r\ntwo  six\t\r\n\r\n");
-        term.selection = everything(&term);
-        let text = term.selection_to_string().expect("a selection");
-        assert_eq!(text, "one\n\ntwo  six");
+        assert_eq!(all(b""), None, "a blank grid selects nothing");
+        let text = all(b"\r\n  one\r\n\r\ntwo  six\t\r\n\r\n");
+        assert_eq!(text.as_deref(), Some("one\n\ntwo  six"));
+        let mark = all(" \u{301}".as_bytes());
+        assert_eq!(mark.as_deref(), Some(" \u{301}"), "a mark on a space");
+        let last = all("text \u{301}".as_bytes());
+        assert_eq!(last.as_deref(), Some("text \u{301}"), "a mark ends it");
+        let link = all(b"\x1b]8;;http://a\x07 \x1b]8;;\x07text");
+        assert_eq!(link.as_deref(), Some("text"), "a linked space is blank");
     }
 }

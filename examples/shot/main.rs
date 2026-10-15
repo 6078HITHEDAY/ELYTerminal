@@ -1,4 +1,4 @@
-//! Runs a program in the main window, plays keys and mouse gestures on it, photographs it and names its AppKit views; `to:settings` and `to:main` aim what follows.
+//! Plays SPECS on the app's windows and photographs one.
 
 #[cfg(target_os = "macos")]
 fn main() {

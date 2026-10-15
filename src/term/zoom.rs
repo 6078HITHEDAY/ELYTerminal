@@ -2,18 +2,18 @@ use gpui::{App, Global};
 
 use crate::settings::{FONT_SIZE, SettingsStore};
 
-/// Points the terminal's font stands above the Size setting, below it when negative; Bigger and Smaller move it, nothing saves it.
+/// Unsaved font-size offset.
 #[derive(Default)]
 pub struct Enlarged(f32);
 
 impl Global for Enlarged {}
 
-/// The size the terminal draws its font at: the setting, moved, inside the range.
+/// The font size the terminal draws.
 pub fn size(cx: &App) -> f32 {
     shown(SettingsStore::get(cx).font_size, cx.global::<Enlarged>().0)
 }
 
-/// Moves the font `by` points, or back to the setting when `by` is none.
+/// Moves the font `by` points; none resets it.
 pub fn step(by: Option<f32>, cx: &mut App) {
     let setting = SettingsStore::get(cx).font_size;
     let enlarged = by.map_or(0.0, |by| moved(setting, cx.global::<Enlarged>().0, by));
@@ -28,7 +28,7 @@ fn shown(setting: f32, enlarged: f32) -> f32 {
     (setting + enlarged).clamp(*FONT_SIZE.start(), *FONT_SIZE.end())
 }
 
-/// What `enlarged` becomes once the font moves `by` points from where it shows.
+/// The offset after moving `by` from the shown size.
 fn moved(setting: f32, enlarged: f32, by: f32) -> f32 {
     shown(shown(setting, enlarged) + by, 0.0) - setting
 }
