@@ -69,3 +69,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 8369d96: FAIL. A file or folder named with a newline aborted gpui's line shaping under Ely's Ellipsis; on macOS a decomposed name on disk missed Git's composed mark; a folder named with a newline split the rev-parse prefix, so marks fell on a wrong path. Fixed in 937dab8: a label built from a path shows control characters as their pictures, the session row's folder too, which shared the cause; on macOS a name meets Git's mark in composed form; the prefix keeps its own newlines.
 - Round 2, 937dab8: PASS.
+
+## T14
+
+- Round 1, e296668: FAIL. A staged copy kept its source as an old path, so unstaging or diffing the copy took the source's own staged change along; paths went through lossy text before git saw them, so a name not in UTF-8 could unstage another file that showed alike; diffs still ran text converters, which can hide a real change; a CRLF warning on stderr failed a valid untracked diff; a conflict where our side deleted the file diffed as empty. Fixed in 911500c: paths stay git's bytes until shown, Files' keys and listings too, which shared the cause; a copy is a new file; diffs pass --no-textconv; an untracked diff stands when git printed one, its warning logged; a conflict diffs against HEAD.
+- Round 2, 911500c: PASS.

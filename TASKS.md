@@ -38,7 +38,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 9. Right panel: Git
 
-- [ ] T14 Git through the command line: status, branch, stage, unstage, commit, log, diff; tests on a temp repo.
+- [x] T14 Git through the command line: status, branch, stage, unstage, commit, log, diff; tests on a temp repo.
 - [ ] T15 Git panel: branch, changes, stage and unstage, commit, recent commits, diff view, errors.
 
 ## 10. Settings window
