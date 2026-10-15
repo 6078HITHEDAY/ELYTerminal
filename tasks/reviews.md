@@ -91,3 +91,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, f2cc16f: FAIL. The font picker saved a family gpui cannot load, such as Apple Color Emoji, which has no m, and the terminal drew with a fallback without a word; after a refused save a number field kept the refused draft, so once a later save cleared the message the field and the settings disagreed. Fixed in ee37018: a font saves, and a settings file starts, only when gpui loads it as the terminal draws it, and the terminal draws with no other font; numbers save on commit; a refusal resets the number fields and the font picker to the settings.
 - Round 2, ee37018: PASS.
+
+## T18
+
+- Round 1, 764ff45: PASS.

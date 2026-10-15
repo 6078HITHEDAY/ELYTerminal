@@ -45,7 +45,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 - [x] T16 Settings window: categories, General rows, live apply and save.
 - [x] T17 Appearance: theme grids with previews, font, cursor with preview, opacity, blur, padding.
-- [ ] T18 Terminal rows: scrollback, Option as Alt, copy on select.
+- [x] T18 Terminal rows: scrollback, Option as Alt, copy on select.
 
 ## 11. Background blur
 
