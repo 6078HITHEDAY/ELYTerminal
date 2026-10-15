@@ -10,6 +10,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      - run: |
+          echo "PATH=$PATH"
+          ls -l /opt/homebrew/bin/fish /opt/homebrew/bin/pwsh /usr/local/bin/fish /usr/local/bin/pwsh || true
+          /bin/zsh -lc 'echo "login PATH=$PATH"; command -v brew fish pwsh' || true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95"
@@ -26,6 +30,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      - if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:PATH -split ';'
+          "CARGO_HOME=$env:CARGO_HOME RUSTUP_HOME=$env:RUSTUP_HOME USERPROFILE=$env:USERPROFILE"
+          Get-Command rustup, rustc, cargo, pwsh, bash -All -ErrorAction SilentlyContinue | Format-Table -AutoSize Name, Source
+          Get-ChildItem "$env:USERPROFILE\.cargo\bin" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+      - if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "PATH=$PATH"
+          command -v rustup rustc cargo || true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.95"
