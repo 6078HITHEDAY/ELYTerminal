@@ -1,4 +1,4 @@
-//! Runs a program in the main window, plays keys and mouse gestures on it, and photographs it; `to:settings` and `to:main` aim what follows.
+//! Runs a program in the main window, plays keys and mouse gestures on it, photographs it and names its AppKit views; `to:settings` and `to:main` aim what follows.
 
 #[cfg(target_os = "macos")]
 fn main() {
@@ -67,7 +67,8 @@ fn main() {
                 let title = aim.update(cx, |_, window, _| window.window_title());
                 let title = title.expect("the window lives");
                 capture::snapshot(number(aim, cx), std::path::Path::new(&out)).expect("a picture");
-                log::info!("shot: wrote {out}, titled {title:?}");
+                let views = capture::views(number(aim, cx)).expect("the window's views");
+                log::info!("shot: wrote {out}, titled {title:?}, over {views:?}");
                 cx.update(|cx| cx.quit());
             })
             .detach();
@@ -105,6 +106,27 @@ mod capture {
             let _: () = msg_send![window, orderFrontRegardless];
         }
         Ok(())
+    }
+
+    /// The class of each view under the window's content, as AppKit names it; gpui's blur is a `BlurredView`.
+    pub fn views(number: u32) -> anyhow::Result<Vec<String>> {
+        unsafe {
+            let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+            let window: *mut Object = msg_send![app, windowWithWindowNumber: i64::from(number)];
+            anyhow::ensure!(!window.is_null(), "no window {number}");
+            let content: *mut Object = msg_send![window, contentView];
+            let views: *mut Object = msg_send![content, subviews];
+            let count: u64 = msg_send![views, count];
+            let named = (0..count).map(|ix| {
+                let view: *mut Object = msg_send![views, objectAtIndex: ix];
+                let class: *mut Object = msg_send![view, className];
+                let text: *const std::ffi::c_char = msg_send![class, UTF8String];
+                std::ffi::CStr::from_ptr(text)
+                    .to_string_lossy()
+                    .into_owned()
+            });
+            Ok(named.collect())
+        }
     }
 
     /// Writes the window `number` as a PNG; the app's own window needs no permission.

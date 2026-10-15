@@ -114,11 +114,25 @@ fn the_dark_theme_wins_only_in_dark_mode() {
 #[test]
 fn the_chrome_wears_the_theme() {
     let dracula = find("dracula").expect("dracula");
-    let chrome = palette(dracula).expect("a mapped palette");
+    let chrome = palette(dracula, 1.0);
     assert_eq!(chrome.bg, dracula.background);
     assert_eq!(chrome.fg, dracula.foreground);
     assert_eq!(chrome.ansi, dracula.ansi);
     assert_eq!(chrome.danger, dracula.ansi[1]);
-    assert!(chrome.glass.a < 1.0);
-    assert!(palette(find("ely-dark").expect("ely")).is_none());
+    let ely = palette(find("ely-dark").expect("ely"), 1.0);
+    assert_eq!(ely.bg, Palette::dark(false).bg, "Ely's own colors");
+}
+
+#[test]
+fn the_glass_lets_through_what_the_opacity_leaves() {
+    for id in ["dracula", "ely-light"] {
+        let theme = find(id).expect("a theme");
+        let chrome = palette(theme, 0.4);
+        assert_eq!(chrome.glass, chrome.bg.alpha(0.4), "{id}");
+        assert_eq!(
+            chrome.bg.a, 1.0,
+            "{id}: the ground under dialogs stays solid"
+        );
+        assert_eq!(palette(theme, 1.0).glass, chrome.bg, "{id}");
+    }
 }

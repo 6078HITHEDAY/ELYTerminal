@@ -9,10 +9,12 @@ use ely_gpui_component::{
 use gpui::{
     Action, App, AppContext, Context, Entity, EntityId, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
+    StyleRefinement, Styled, Subscription, Window, WindowBackgroundAppearance, actions, div,
+    prelude::FluentBuilder,
 };
 
 use crate::{
+    blur,
     files::Files,
     git::panel::{Acted, GitPanel},
     sessions::{self, Session},
@@ -84,6 +86,8 @@ pub struct Workspace {
     active: usize,
     files: Entity<Files>,
     git: Entity<GitPanel>,
+    /// What the window shows of the desktop, as last set.
+    background: WindowBackgroundAppearance,
     _settings: Subscription,
     _acted: Subscription,
 }
@@ -109,7 +113,11 @@ impl Workspace {
             active: 0,
             files: cx.new(|_| Files::new(launch.cwd.clone())),
             git,
-            _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            background: blur::appearance(SettingsStore::get(cx)),
+            _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
+                blur::follow(window, &mut this.background, SettingsStore::get(cx));
+                cx.notify();
+            }),
             _acted: acted,
         };
         workspace.add(pty, events, launch, window, cx);
@@ -316,7 +324,7 @@ impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = SettingsStore::get(cx);
         let width = cx.theme().sidebar_width(false);
-        let mut shell = ColumnShell::new("workspace");
+        let mut shell = ColumnShell::new("workspace").glass();
         if settings.show_sessions {
             let (workspace, home) = (cx.entity(), dirs::home_dir());
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {

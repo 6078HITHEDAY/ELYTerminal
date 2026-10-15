@@ -1,4 +1,5 @@
 pub mod app;
+pub mod blur;
 pub mod files;
 pub mod git;
 pub mod sessions;

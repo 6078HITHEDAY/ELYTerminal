@@ -357,7 +357,10 @@ impl Render for TerminalView {
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))
-            .bg(ink.bg.alpha(settings.background_opacity));
+            // The window's glass grounds the theme's background; a program's own paints over it.
+            .when(ink.bg != theme.background, |root| {
+                root.bg(ink.bg.alpha(settings.background_opacity))
+            });
         let root = [MouseButton::Left, MouseButton::Middle, MouseButton::Right]
             .into_iter()
             .fold(root, |root, button| {

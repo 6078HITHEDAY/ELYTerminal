@@ -4,20 +4,23 @@ use gpui::App;
 use super::{TerminalTheme, active};
 use crate::settings::SettingsStore;
 
-/// The chrome's palette for a terminal theme; none for Ely's own, which Ely draws.
-pub fn palette(theme: &TerminalTheme) -> Option<Palette> {
-    if theme.ely {
-        return None;
-    }
-    let (bg, fg, ansi) = (theme.background, theme.foreground, theme.ansi);
+/// The chrome's palette for a terminal theme, its glass as see-through as the background; Ely's own keep Ely's colors.
+pub fn palette(theme: &TerminalTheme, opacity: f32) -> Palette {
     let base = if theme.is_dark() {
         Palette::dark(false)
     } else {
         Palette::light(false)
     };
+    if theme.ely {
+        return Palette {
+            glass: base.bg.alpha(opacity),
+            ..base
+        };
+    }
+    let (bg, fg, ansi) = (theme.background, theme.foreground, theme.ansi);
     let tint = |share: f32| bg.mix(&fg, share);
     let wash = |color: gpui::Hsla| bg.mix(&color, 0.18);
-    Some(Palette {
+    Palette {
         bg,
         surface: bg,
         sunken: tint(0.03),
@@ -44,7 +47,7 @@ pub fn palette(theme: &TerminalTheme) -> Option<Palette> {
         warning_subtle: wash(ansi[3]),
         danger_subtle: wash(ansi[1]),
         info_subtle: wash(ansi[4]),
-        glass: bg.alpha(base.glass.a),
+        glass: bg.alpha(opacity),
         tooltip_bg: tint(0.2),
         tooltip_fg: fg,
         chart: [
@@ -67,18 +70,20 @@ pub fn palette(theme: &TerminalTheme) -> Option<Palette> {
             variable: fg,
         },
         ..base
-    })
+    }
 }
 
 /// Dresses the app in the theme the settings choose for the system's appearance.
 pub fn apply(cx: &mut App) {
-    let theme = active(SettingsStore::get(cx), cx.window_appearance());
+    let settings = SettingsStore::get(cx);
+    let theme = active(settings, cx.window_appearance());
+    let opacity = settings.background_opacity;
     let mode = if theme.is_dark() {
         Mode::Dark
     } else {
         Mode::Light
     };
-    Theme::set_palette(mode, palette(theme), cx);
+    Theme::set_palette(mode, Some(palette(theme, opacity)), cx);
     Theme::set_mode_now(mode, cx);
-    log::info!("theme: {} in {mode:?}", theme.id);
+    log::info!("theme: {} in {mode:?}, glass at {opacity}", theme.id);
 }

@@ -10,6 +10,7 @@ use gpui::{
 #[cfg(target_os = "macos")]
 use crate::term::mac;
 use crate::{
+    blur,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
     themes,
@@ -60,8 +61,10 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         mac::deliver_command_key_ups()?;
     }
     themes::apply(cx);
-    let chosen =
-        |settings: &settings::Settings| (settings.theme.clone(), settings.dark_theme.clone());
+    let chosen = |settings: &settings::Settings| {
+        let theme = (settings.theme.clone(), settings.dark_theme.clone());
+        (theme, settings.background_opacity)
+    };
     let mut worn = chosen(SettingsStore::get(cx));
     cx.observe_global::<SettingsStore>(move |cx| {
         let now = chosen(SettingsStore::get(cx));
@@ -77,6 +80,7 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
 /// Opens the main window running `launch`.
 pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
     let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
+    let background = blur::appearance(SettingsStore::get(cx));
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
@@ -86,6 +90,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         }),
         // Ely's columns draw the controls; only Linux reads this, and must not draw its own.
         window_decorations: Some(WindowDecorations::Client),
+        window_background: background,
         ..Default::default()
     };
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
@@ -95,6 +100,9 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
             .detach();
         cx.new(|cx| Workspace::new(pty, events, launch, window, cx))
     })?;
-    log::info!("app: main window open");
+    log::info!(
+        "app: main window open, blur: {background:?} on {}",
+        std::env::consts::OS
+    );
     Ok(window)
 }
