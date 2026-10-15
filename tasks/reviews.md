@@ -107,3 +107,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T21
 
 - Round 1, b5e4967: PASS. The work found that Ely's ResizeBorder painted a client-drawn window's pane solid, so no Linux window showed the desktop and T20's blur could not show; Ely 5dc4dd1 adds ResizeBorder::glass, and T20's region now covers the pane alone.
+
+## T22
+
+- Round 1, 5ee67bd: FAIL. Edit's Copy, Paste and Select All named the terminal's own actions, so with find, a settings field or the commit field in focus gpui disabled them and a menu press did nothing; Select All took a space under a combining mark for a blank and dropped the mark at either end; two new comments ran long. Fixed in 37220a7: Ely a2cb531, approved by the user, exports its text input's Copy, Cut, Paste and SelectAll, which the terminal and the menu now name; a cell with a mark counts as a character; every new comment is one short line.
+- Round 2, 37220a7: PASS.

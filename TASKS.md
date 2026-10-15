@@ -55,7 +55,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 12. Menus and shortcuts
 
-- [ ] T22 macOS menu bar; key bindings on all platforms.
+- [x] T22 macOS menu bar; key bindings on all platforms.
 
 ## 13. Acceptance
 
