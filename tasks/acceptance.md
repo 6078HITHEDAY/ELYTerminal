@@ -134,6 +134,14 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux in Colima: 138 tests, clippy | Pass |
 | CI green on macOS, Ubuntu and Windows | run 919 on `09930c2`: all three jobs pass; see the CI notes below | Pass |
 
+## 14. Icon and the macOS app
+
+| PRD line | Task | Evidence | Status |
+|---|---|---|---|
+| The icon: Ely, a girl with long pink hair, holding a terminal | T24 | `assets/icons`, drawn at 16 to 1024 px and legible at 32; the owner saw it | Pass |
+| macOS: the rounded square; Windows and Linux: the figure alone, flat | T24 | `elyterminal-macos.svg` on Apple's grid; `elyterminal.svg`, which no Windows or Linux build carries yet | Pass |
+| `scripts/mac-app.sh` builds the app, signed ad hoc, and its disk image | T24 | its run: `codesign --verify --strict` passes on the app and on its copy in the image; the `.icns` holds 16 to 1024 px; the image verifies and mounts with the app beside Applications; LaunchServices opens the app as `com.zacharyzhang.elyterminal` | Pass |
+
 ## CI notes
 
 On 2026-10-15 every job first failed on its runner, not on the code. With the owner's leave, each runner was put right:

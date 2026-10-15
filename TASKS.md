@@ -60,3 +60,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 13. Acceptance
 
 - [x] T23 End-to-end checks, README, acceptance table, CI green on three platforms.
+
+## 14. Icon and the macOS app
+
+- [ ] T24 Icon: Ely holding a terminal, on macOS's rounded square and alone for Windows and Linux; `scripts/mac-app.sh` builds `ELYTerminal.app` and its disk image.

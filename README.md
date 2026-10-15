@@ -10,6 +10,8 @@ Rust 1.95.
 cargo run --release
 ```
 
+On macOS, `scripts/mac-app.sh` builds `ELYTerminal.app`, with its icon, and a disk image of it in `target/release`.
+
 On Linux, install the libraries gpui links first. On Debian and Ubuntu:
 
 ```sh

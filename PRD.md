@@ -123,6 +123,12 @@ Cmd-, opens it. Categories on the left, rows on the right, Ely's settings compon
 - `scripts/check.sh` passes: fmt, clippy with `-D warnings`, tests, no file over 500 lines.
 - CI green on macOS, Ubuntu and Windows.
 
+## 14. Icon and the macOS app
+
+- The icon is Ely, a girl with long pink hair, holding a terminal in front of her.
+- macOS: the icon on the rounded square macOS gives app icons. Windows and Linux: the figure alone, no ground, flat, as Papirus draws.
+- `scripts/mac-app.sh` builds `ELYTerminal.app` from a release build with its icon, signed ad hoc, and a disk image holding it beside a link to Applications.
+
 ## Deferred
 
 Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, quick terminal.
