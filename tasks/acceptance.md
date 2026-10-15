@@ -132,7 +132,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|
 | Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
 | `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux through `scripts/linux.sh`: 138 tests, clippy, on aarch64 in Colima and on x86_64 in WSL's Docker | Pass |
-| CI green on macOS, Ubuntu and Windows | run 926 on `65bb4d3`: all three jobs pass; see the CI notes below | Pass |
+| CI green on macOS, Ubuntu and Windows | run 934 on `0075667`: all three jobs pass; see the CI notes below | Pass |
 
 ## 14. Icon and the macOS app
 
@@ -146,7 +146,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| A Gitea release, `vVERSION`, with the macOS disk image, a Windows zip and a Linux tarball | T25 | published after T25's review | Open |
+| A Gitea release, `vVERSION`, with the macOS disk image, a Windows zip and a Linux tarball | T25 | `v0.1.0` at `0075667`, its three files built from that commit by their scripts and checked again: the disk image verifies and its app passes `codesign --verify --strict`; the zip's executable has the icon and no C runtime DLL; the tarball opens its window on Ubuntu 22.04; each file downloaded back matches the SHA-256 in the release notes | Pass |
 | The Windows executable carries the icon | T25 | its resources: icon group 1 with the seven images of `elyterminal.ico`, 16 to 256 px, and gpui's manifest (PerMonitorV2); a GUI program, importing no C runtime DLL; not yet seen on a Windows screen | Pass |
 | The Linux tarball carries the icon and a desktop entry; the window names itself `com.zacharyzhang.elyterminal` | T25 | on Ubuntu 22.04: `desktop-file-validate` reports nothing, every library resolves, glibc 2.35; under Xvfb `WM_CLASS` reads `com.zacharyzhang.elyterminal` twice, and under headless sway the window's `app_id` reads the same | Pass |
 | Each build comes from its script | T25 | `scripts/mac-app.sh` on macOS, `scripts/windows-zip.ps1` on the owner's Windows PC, `scripts/linux-tar.sh` in the owner's WSL | Pass |
@@ -164,6 +164,8 @@ A clippy run for `x86_64-pc-windows-msvc` on macOS, with stand-ins for the MSVC 
 Run 907 then failed the PowerShell test on macOS: it typed its probe right after the first folder report, which pwsh 7.6.6 sends before PSReadLine reads its first key, and the line was echoed, never run. The shell tests now type a line only once the line editor reads raw keys.
 
 Run 926, on `65bb4d3`, passed all three jobs: macOS ran `scripts/check.sh` (135 tests, the fonts check, clippy, fmt, the 500-line rule) and the build; Ubuntu ran 138 tests and the build; Windows ran 113 tests and the build, without the Unix-only pty and shell tests.
+
+After run 928 cargo failed on the Windows PC: `Swatinem/rust-cache`'s post step had deleted `rustup` from the host's `~/.cargo/bin`, on the Mac mini too, leaving the proxies pointing at nothing. The cache step now runs only in the Linux container. On the hosts, `rustup toolchain install --no-self-update` reads `rust-toolchain.toml` in place of dtolnay's action, which ran `rustup default`, so CI leaves their default toolchain alone. Run 934, on `0075667`, passed all three jobs, each on 1.95.0 "overridden by rust-toolchain.toml".
 
 ## The owner's checks
 
