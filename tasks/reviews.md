@@ -103,3 +103,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T20
 
 - Round 1, 6523632 and 107069b: PASS. 6523632 fixed a test the first Linux run caught: on Linux a program that ignores SIGHUP reads EIO when its pty closes, so GNU cat exits 1 where macOS gives EOF.
+
+## T21
+
+- Round 1, b5e4967: PASS. The work found that Ely's ResizeBorder painted a client-drawn window's pane solid, so no Linux window showed the desktop and T20's blur could not show; Ely 5dc4dd1 adds ResizeBorder::glass, and T20's region now covers the pane alone.

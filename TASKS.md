@@ -51,7 +51,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 - [x] T19 macOS and Windows: `Blurred` or `Transparent` or `Opaque` from settings, applied live.
 - [x] T20 Wayland: `ext_background_effect_v1` on the window's surface.
-- [ ] T21 X11: `_KDE_NET_WM_BLUR_BEHIND_REGION` on the window.
+- [x] T21 X11: `_KDE_NET_WM_BLUR_BEHIND_REGION` on the window.
 
 ## 12. Menus and shortcuts
 
