@@ -2,7 +2,7 @@
 
 `PRD.md` line by line, as of T23. Status: **Pass** when a test, a run or a review shows it; **Partial** when part of it was shown; **Open** when nothing has shown it yet. Reviews are in `tasks/reviews.md`; tests are named by module (`cargo test -- MODULE`).
 
-What no check reached: no one has looked at the window on Windows, which CI builds and tests; no real KWin or Wayland desktop drew the blur. On 2026-10-15 macOS gave `shot` the window's ground alone, for old and new builds alike, while the terminal it ran under lacked Screen Recording (`CGPreflightScreenCaptureAccess` false); that day's macOS checks read the app's log.
+What no check reached: no one has looked at the window on Windows, which CI builds and tests; no real KWin drew the blur; of Wayland desktops, only Hyprland, on the owner's Omarchy, has drawn it. On 2026-10-15 macOS gave `shot` the window's ground alone, for old and new builds alike, while the terminal it ran under lacked Screen Recording (`CGPreflightScreenCaptureAccess` false); that day's macOS checks read the app's log.
 
 ## 1. Product
 
@@ -121,7 +121,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|---|
 | macOS: `Blurred` (NSVisualEffectView) | T19, T23 | `shot` reads `BlurredView, blur 30` off the view's backdrop layer; the owner saw the desktop blur | Pass |
 | Windows: `Blurred` (acrylic) | T19 | the same gpui call; on 2026-10-15 the owner saw the window blur on Windows | Pass |
-| Wayland: `ext_background_effect_v1` beside gpui's `org_kde_kwin_blur` | T20 | `blur::wayland` tests on a `wayland-server` compositor; no real compositor | Partial |
+| Wayland: `ext_background_effect_v1` beside gpui's `org_kde_kwin_blur` | T20, T28 | `blur::wayland` tests on a `wayland-server` compositor; on the owner's Omarchy 4.0.4, Hyprland 0.56.2 took `ext_background_effect_v1` from a T27 release build: the log named it and the pane's region, and the wallpaper behind the window blurred while Hyprland's blur was on and showed sharp while it was off; Plasma and GNOME not run | Partial |
 | X11: `_KDE_NET_WM_BLUR_BEHIND_REGION`, removed when blur turns off | T21 | `blur::x11` test on Xvfb; the property on a real xfwm4 window; KWin not run | Partial |
 | Neither protocol: transparency without blur; the log names the path | T20, T21 | the log lines in `src/blur` | Pass |
 
