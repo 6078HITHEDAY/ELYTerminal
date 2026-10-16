@@ -81,5 +81,5 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 18. herdr
 
 - [x] T29 Inside herdr the right column follows herdr's focused pane, which the owner found frozen: herdr keeps its panes' OSC 7, so on macOS and Linux ELYTerminal reads the folder from herdr's socket while herdr's client runs in the session's foreground.
-- [ ] T30 The main window opens at the size it was left at, on macOS, Windows and Linux, which the owner asked for: the size is kept in the settings.
+- [x] T30 The main window opens at the size it was left at, on macOS, Windows and Linux, which the owner asked for: the size is kept in the settings.
 - [ ] T31 Release v0.1.2 with T29 and T30: version 0.1.2; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes say it fixes herdr compatibility and keeps the window's size.
