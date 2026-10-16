@@ -129,13 +129,13 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 - The icon is Ely, a girl with long pink hair, holding a terminal in front of her.
 - macOS: the icon on the rounded square macOS gives app icons. Windows and Linux: the figure alone, no ground, flat, as Papirus draws.
-- `scripts/mac-app.sh` builds `ELYTerminal.app` from a release build with its icon, signed ad hoc, and a disk image holding it beside a link to Applications.
+- `scripts/mac-app.sh` builds `ELYTerminal.app` from a release build with its icon, signed ad hoc, or for a release with Developer ID and notarized, and a disk image holding it beside a link to Applications.
 
 ## 15. Release
 
-- A release on Gitea, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon), a Windows zip (x86_64) and a Linux tarball (x86_64).
+- A release on Gitea, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon, signed with Developer ID and notarized), a Windows zip (x86_64) and a Linux tarball (x86_64).
 - The Windows executable carries the icon. The Linux tarball carries the icon and a desktop entry, and the window names itself after it, `com.zacharyzhang.elyterminal`, as the macOS bundle does.
-- Each build comes from its platform's script: `scripts/mac-app.sh`, `scripts/windows-zip.ps1`, `scripts/linux-tar.sh`.
+- Each build comes from its platform's script: `scripts/mac-app.sh`, `scripts/windows-zip.ps1`, `scripts/linux-tar.sh`. The macOS one runs on the signing runner, through the Release workflow.
 
 ## Deferred
 

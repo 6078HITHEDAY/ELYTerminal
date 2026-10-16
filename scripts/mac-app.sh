@@ -1,7 +1,18 @@
 #!/bin/sh
-# mac-app.sh: ELYTerminal.app in target/release, signed ad hoc, and its disk image.
+# mac-app.sh: ELYTerminal.app in target/release and its disk image, signed ad hoc, or by SIGN_IDENTITY and notarized.
 set -eu
 cd "$(dirname "$0")/.."
+sign=${SIGN_IDENTITY:-}
+if [ -n "$sign" ]; then
+  [ -s "${NOTARY_KEY:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER:-}" ] || {
+    echo "mac-app: SIGN_IDENTITY needs NOTARY_KEY (a .p8 file), NOTARY_KEY_ID and NOTARY_ISSUER" >&2
+    exit 1
+  }
+  security find-identity -v -p codesigning | grep -q -F "\"$sign\"" || {
+    echo "mac-app: no valid identity \"$sign\" in the keychains" >&2
+    exit 1
+  }
+fi
 cargo build --release --locked
 version=$(cargo pkgid)
 version=${version##*[#@]}
@@ -38,11 +49,29 @@ cat > "$app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 plutil -lint -s "$app/Contents/Info.plist"
-codesign --force --sign - "$app"
+if [ -n "$sign" ]; then
+  codesign --force --options runtime --timestamp --sign "$sign" "$app"
+else
+  codesign --force --sign - "$app"
+fi
 mkdir "$work/disk"
 ditto "$app" "$work/disk/ELYTerminal.app"
 ln -s /Applications "$work/disk/Applications"
 dmg=$out/ELYTerminal-$version.dmg
 hdiutil create -quiet -volname ELYTerminal -srcfolder "$work/disk" -ov -format UDZO "$dmg"
+if [ -n "$sign" ]; then
+  codesign --force --timestamp --sign "$sign" "$dmg"
+  notary() { xcrun notarytool "$@" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"; }
+  notary submit "$dmg" --wait --output-format json > "$work/notary.json" || true
+  status=$(plutil -extract status raw -o - "$work/notary.json" 2>/dev/null || echo none)
+  echo "mac-app: notarization $status"
+  if [ "$status" != Accepted ]; then
+    cat "$work/notary.json" >&2
+    id=$(plutil -extract id raw -o - "$work/notary.json" 2>/dev/null) && notary log "$id" >&2
+    exit 1
+  fi
+  xcrun stapler staple "$dmg"
+  spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+fi
 echo "mac-app: $app"
 echo "mac-app: $dmg"

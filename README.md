@@ -6,7 +6,7 @@ A terminal for macOS, Windows and Linux, in Rust on GPUI and Ely components. Ses
 
 A release on Gitea carries three builds.
 
-- macOS 11 or later, Apple silicon: open `ELYTerminal-VERSION.dmg` and drag ELYTerminal into Applications. The app is signed ad hoc, not notarized, so macOS stops its first open: in System Settings, Privacy & Security, press Open Anyway.
+- macOS 11 or later, Apple silicon: open `ELYTerminal-VERSION.dmg` and drag ELYTerminal into Applications. The app is signed with Developer ID and notarized.
 - Windows 10 or later, x86_64: unzip `ELYTerminal-VERSION-windows-x86_64.zip` and run `elyterminal.exe`. It is unsigned; if SmartScreen stops it, press More info, then Run anyway.
 - Linux, x86_64, glibc 2.35 or later, with libxkbcommon, libxkbcommon-x11 and libxcb:
 
