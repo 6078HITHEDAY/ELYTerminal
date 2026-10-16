@@ -125,3 +125,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 2b8ae5d and 0075667: FAIL. The v0.1.0 release was not yet on Gitea, so the task line's release stood open.
 - Round 2, 59e41ea: PASS. v0.1.0 at 0075667 carries the disk image, the Windows zip and the Linux tarball; the reviewer downloaded each and found its SHA-256, signature, icon, manifest and glibc as recorded. CI run 934 on 0075667 passed on macOS, Ubuntu and Windows.
+
+## T26
+
+- Round 1, 6f7d3a9 and 0f87676 with Ely cdc5ce8: FAIL. v0.1.1 was still a draft, so the task line's release stood open.
+- Round 2, c316d27, 90a4625, 7bfb462, 43ea5b1 and 194c7bb: PASS. The owner's later asks went in first: a gear for Settings on Windows and Linux, Ctrl-V paste on Windows, the arrow pointer, the settings window without General, with the shortcut list and with columns that scroll apart, and the release's disk image signed with Developer ID and notarized on the macos-signing runner. v0.1.1 at 43ea5b1 is published and the repository public; the reviewer downloaded each file anonymously, checked its hash, signature and notarization, and drove the app on X11 and macOS. CI run 955 on 43ea5b1 passed on macOS, Ubuntu and Windows.
