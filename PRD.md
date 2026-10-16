@@ -44,7 +44,12 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC 7 scanner. The scanner reports the working directory.
 - Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. A shell without integration reports nothing, and the panels say so.
+- Prompt marks, OSC 133: the shell integration marks where each prompt starts (A) and ends (B), where a command starts (C), and where it ends with its exit status (D); the terminal reads any program's OSC 133. Cmd-Up and Cmd-Down, and Cmd-Shift-Up and Cmd-Shift-Down, on macOS, Ctrl-Shift-Up and Ctrl-Shift-Down elsewhere, scroll to the prompt before or after the view's top, as in Ghostty.
+- Program status, OSC 7501 revision 0.4: each terminal keeps the records programs report (state, id, kind, progress, app, title, msg), checked as the spec checks them; a new prompt drops working, blocked and idle records, a full reset drops them all; the terminal answers the support query with the states and kinds it takes.
+- Progress, OSC 9;4: set, error, indeterminate and pause stand as the root record until a program reports OSC 7501, until a full reset.
+- Notifications: OSC 9 (iTerm2), OSC 777 notify (rxvt) and OSC 99 (kitty: title and body in chunks, base64, ids, occasions, focus and report on activation, close, and its query); ConEmu's other OSC 9 commands are no notifications.
 - Inside herdr, which keeps its panes' OSC 7, the session's folder is that of herdr's focused pane, read from herdr's socket while herdr's client runs in the session, on macOS, Linux and Windows.
+- Inside herdr, which passes no OSC 7501 on, herdr's agent states (idle, working, blocked, done) are the session's status records.
 - Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks.
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
 - Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
@@ -61,6 +66,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
+- The sessions column and the right column resize by a drag on their border toward the terminal, on macOS, Windows and Linux, from 160 to 960 pixels; the widths are kept in settings once a drag rests, so the window opens with them.
 - The window opens at the size it was left at, on macOS, Windows and Linux: the size is kept in settings once it settles; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it; the window is no smaller than 100 by 100, the least the settings keep.
 - The title shows the active session's title, and no other text.
 - The pointer over the terminal is the arrow.
@@ -73,6 +79,8 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
 - A session whose program ends closes its row. The last row closing closes the window.
 - A bell in a hidden session marks its row.
+- A row shows its session's status: working, with its progress where known; waiting on the user, for a permission, a question or a login; done; error; and a mark when the last command failed. Hover shows each record's program, title and message. A hidden session that starts waiting marks its row until it is shown.
+- System notifications on macOS, Windows and Linux: a session that starts waiting, finishes or fails, and a program's OSC 9, 777 or 99 notification, post one while the window is not active or the session is hidden, one a session every 3 seconds at most; it names the session, and a press on it shows the window and the session. On macOS only the app bundle posts them.
 
 ## 8. Right panel: Files
 
