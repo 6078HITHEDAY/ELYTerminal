@@ -91,8 +91,11 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
     let kept = opening_size(cx);
     let bounds = Bounds::centered(None, kept, cx);
     let background = blur::appearance(SettingsStore::get(cx));
+    let least = px(*settings::WINDOW.start());
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
+        // No smaller than the settings keep.
+        window_min_size: Some(size(least, least)),
         titlebar: Some(TitlebarOptions {
             title: Some(TITLE.into()),
             appears_transparent: true,
@@ -144,15 +147,18 @@ fn opening_size(cx: &App) -> Size<Pixels> {
     )
 }
 
-/// Keeps the window's size in the settings once it settles; maximized or full screen, the size before stays.
+/// Keeps the window's size in the settings once it settles; maximized, full screen or hidden, the size before stays.
 fn keep_size(window: &mut Window, cx: &mut Context<Workspace>) {
     let mut _settling: Option<Task<()>> = None;
     cx.observe_window_bounds(window, move |_, window, cx| {
         _settling = Some(cx.spawn_in(window, async move |_, cx| {
             cx.background_executor().timer(SETTLE).await;
-            // Read once settled: X11 marks a window maximized after its new size.
+            // Read once settled: X11 marks a window maximized late, and unmaximized while hidden.
             let kept = cx.update(|window, cx| {
-                if window.is_maximized() || window.is_fullscreen() {
+                if !window.is_visible() || window.is_maximized() || window.is_fullscreen() {
+                    log::debug!(
+                        "app: the window is hidden, maximized or full screen; its kept size stays"
+                    );
                     return Ok(());
                 }
                 let area = window.window_bounds().get_bounds().size;
