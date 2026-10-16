@@ -103,7 +103,7 @@ impl SettingsWindow {
             settings.cursor_style,
             |settings, style| settings.cursor_style = style,
         );
-        let active = themes::active(settings, window.appearance());
+        let active = themes::active(settings, window.appearance(), cx);
         let lit = self.lit || !settings.cursor_blink;
         let cursor = SettingsSection::new("Cursor")
             .row(SettingsRow::new("Style").control(style))
@@ -113,7 +113,7 @@ impl SettingsWindow {
                 settings.cursor_blink,
                 |settings, on| settings.cursor_blink = on,
             )))
-            .row(SettingsRow::new("Preview").control(prompt(settings, active, lit, cx)));
+            .row(SettingsRow::new("Preview").control(prompt(settings, &active, lit, cx)));
         let opacity = percent(settings.background_opacity);
         let slider = Slider::new("background_opacity", opacity)
             .range(percent(*OPACITY.start()), percent(*OPACITY.end()))
@@ -207,7 +207,7 @@ fn fraction(percent: f64) -> f32 {
     (percent / 100.) as f32
 }
 
-/// Every built-in theme as a card over its preview; `dark` picks the one a dark system wears.
+/// Omarchy's theme where followed, then every built-in, as cards; `dark` picks the dark system's.
 fn grid(
     this: &Entity<SettingsWindow>,
     title: Option<&'static str>,
@@ -222,7 +222,8 @@ fn grid(
     } else {
         ("theme", Some(settings.theme.as_str()))
     };
-    let cards = themes::all().iter().map(|each| {
+    let omarchy = cx.try_global::<themes::Omarchy>().map(|omarchy| &omarchy.0);
+    let cards = omarchy.into_iter().chain(themes::all()).map(|each| {
         let (id, this) = (each.id, this.clone());
         let key = SharedString::from(format!("{field}-{id}"));
         RadioCard::new(key, chosen == Some(id), each.name)

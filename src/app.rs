@@ -64,6 +64,8 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         mac::repeat_held_keys();
         mac::deliver_command_key_ups()?;
     }
+    #[cfg(target_os = "linux")]
+    themes::omarchy::start(cx)?;
     themes::apply(cx);
     let chosen = |settings: &settings::Settings| {
         let theme = (settings.theme.clone(), settings.dark_theme.clone());

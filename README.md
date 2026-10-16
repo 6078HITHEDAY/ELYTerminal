@@ -47,7 +47,7 @@ The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `tra
 - A button at each end of the title bar hides or shows its side column; the window opens as it was left. On Windows and Linux a gear beside the right one opens Settings.
 - Files shows the session's folder as a tree with Git's marks.
 - Git shows the branch, stages, unstages, discards, commits, lists recent commits and opens diffs, all through the `git` command line.
-- Themes: Ely Dark, Ely Light, Catppuccin Mocha, Macchiato, Frappé and Latte, Tokyo Night, Dracula, Nord, Gruvbox Dark, Rosé Pine, Solarized Light, One Light and Kanagawa Wave. A second theme can take over while the system is dark.
+- Themes: Ely Dark, Ely Light, Catppuccin Mocha, Macchiato, Frappé and Latte, Tokyo Night, Dracula, Nord, Gruvbox Dark, Rosé Pine, Solarized Light, One Light and Kanagawa Wave. A second theme can take over while the system is dark. On Omarchy 4, an Omarchy theme follows the system's theme as it switches, and is the default there.
 - Background opacity and blur: NSVisualEffectView on macOS, acrylic on Windows, `ext_background_effect_v1` or `org_kde_kwin_blur` on Wayland, `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11, which KWin reads.
 
 ## Keys

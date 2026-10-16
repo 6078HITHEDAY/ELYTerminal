@@ -1,10 +1,12 @@
 mod chrome;
+#[cfg(target_os = "linux")]
+pub mod omarchy;
 
 use std::sync::LazyLock;
 
 use anyhow::Context as _;
 use ely_gpui_component::theme::Palette;
-use gpui::{Hsla, Rgba, WindowAppearance};
+use gpui::{App, Global, Hsla, Rgba, WindowAppearance};
 
 pub use chrome::{apply, palette};
 
@@ -31,6 +33,14 @@ impl TerminalTheme {
         self.background.l < 0.5
     }
 }
+
+/// The settings' name for Omarchy's theme, on Linux.
+pub const OMARCHY: &str = "omarchy";
+
+/// Omarchy's current theme, while ELYTerminal follows it.
+pub struct Omarchy(pub TerminalTheme);
+
+impl Global for Omarchy {}
 
 /// Upstream Ghostty files from iTerm2-Color-Schemes: id, shown name, text.
 const FILES: [(&str, &str, &str); 12] = [
@@ -112,17 +122,41 @@ pub fn find(id: &str) -> Option<&'static TerminalTheme> {
     all().iter().find(|theme| theme.id == id)
 }
 
+/// A theme the settings may name: built in, or Omarchy's on Linux.
+pub fn known(id: &str) -> bool {
+    find(id).is_some() || (cfg!(target_os = "linux") && id == OMARCHY)
+}
+
+/// A fresh install wears Omarchy's theme where Omarchy runs.
+pub fn default_id() -> &'static str {
+    #[cfg(target_os = "linux")]
+    if omarchy::path().is_some_and(|path| path.is_file()) {
+        return OMARCHY;
+    }
+    "catppuccin-mocha"
+}
+
 /// The theme the settings choose under the system's appearance.
-pub fn active(settings: &Settings, appearance: WindowAppearance) -> &'static TerminalTheme {
+pub fn chosen(settings: &Settings, appearance: WindowAppearance) -> &str {
     let dark = matches!(
         appearance,
         WindowAppearance::Dark | WindowAppearance::VibrantDark
     );
-    let id = match (&settings.dark_theme, dark) {
+    match (&settings.dark_theme, dark) {
         (Some(id), true) => id,
         _ => &settings.theme,
-    };
-    find(id).unwrap_or_else(|| panic!("settings name theme {id}, which validation admits"))
+    }
+}
+
+/// The chosen theme's colors; Omarchy's come from its global.
+pub fn active(settings: &Settings, appearance: WindowAppearance, cx: &App) -> TerminalTheme {
+    let id = chosen(settings, appearance);
+    if id == OMARCHY {
+        return cx.global::<Omarchy>().0.clone();
+    }
+    find(id)
+        .unwrap_or_else(|| panic!("settings name theme {id}, which validation admits"))
+        .clone()
 }
 
 fn ely(id: &'static str, name: &'static str, palette: Palette) -> TerminalTheme {

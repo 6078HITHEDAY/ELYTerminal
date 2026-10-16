@@ -43,6 +43,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | Background, foreground, cursor, cursor text, selection, 16 ANSI from upstream | T03 | `themes::tests` | Pass |
 | A theme maps onto Ely's `Palette` through `Theme::set_palette` | T03, T19 | `the_chrome_wears_the_theme` | Pass |
 | One theme, or a second for dark mode | T17 | T17 review | Pass |
+| On Omarchy 4, an Omarchy theme wears the current theme and follows each switch; the default there; another pick stops following | T27 | `omarchys_ghostty_conf_reads_without_its_glass`; on X11, with Omarchy v4.0.4's own renderer staging and swapping the folder as `omarchy-theme-set` does: with no theme saved the window wore Omarchy's, and through all 22 of its themes the terminal's ground matched each background within 1.5 s; Omarchy's glass lines changed nothing; a file without palette 7 was logged and the last theme stayed; a picked Catppuccin Mocha stayed through a switch; settings wearing it with no Omarchy stopped the start, naming the file | Pass |
 
 ## 5. Terminal engine
 
@@ -110,6 +111,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | On Windows and Linux, a gear in the title bar opens it too | T26 | on X11 under Xvfb with xfwm4, xdotool's click on the gear, just inside the right toggle, opened the 900×640 Settings window ("settings: the window opens"), after a click on + opened a session; sent through `App::dispatch_action`, the same click had opened nothing; the owner, given v0.1.1's build and the gear to click, reported it works on Windows | Pass |
 | Terminal: Shell, Start in | T16, T26 | `settings::tests`; the General page is gone, and a capture on X11 shows its two rows leading Terminal | Pass |
 | Appearance: theme grids, dark theme, font, size, line height, ligatures, cursor and preview, opacity, blur, padding | T17 | T17 review | Pass |
+| On Omarchy, the Omarchy theme first in the grid | T27 | on X11 with Omarchy's theme folder, the Omarchy card leads the grid, chosen, over a preview in its colors | Pass |
 | Terminal: scrollback, Option as Alt (macOS), copy on select | T18 | T18 review | Pass |
 | Terminal: every shortcut, with a search | T26 | read from the keymap, the bindings that apply in the main window's terminal; on X11 the list showed this platform's keys (Ctrl+Shift+T, Alt+1 and on), and typing "paste" left Edit's Paste, Ctrl+Shift+V | Pass |
 

@@ -36,6 +36,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 - A theme holds background, foreground, cursor, cursor text, selection background and foreground, and the 16 ANSI colors. Values come from the theme's upstream files (iTerm2-Color-Schemes' Ghostty export, or Ely's palette).
 - A theme maps onto Ely's `Palette` through `Theme::set_palette`, so panels, inputs and lists wear the theme.
 - Dark mode: one theme, or a second theme for when the system is dark.
+- On Omarchy 4 (Linux), an Omarchy theme wears Omarchy's current theme and changes with each switch. It is the default where Omarchy runs; picking another theme stops following.
 
 ## 5. Terminal engine
 
@@ -92,7 +93,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, each side scrolling on its own, Ely's components. Changes apply at once to every session and save.
 
 - Appearance
-  - Theme: a grid of previews.
+  - Theme: a grid of previews; on Omarchy, the Omarchy theme first.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
   - Font family: a list of installed fonts. Font size. Line height. Ligatures.
   - Cursor: style (block, bar, underline, hollow), blink, with a live preview.

@@ -243,9 +243,9 @@ impl TerminalView {
                 self.pty.pid
             ),
             Event::ColorRequest(index, reply) => {
-                let theme = themes::active(SettingsStore::get(cx), cx.window_appearance());
+                let theme = themes::active(SettingsStore::get(cx), cx.window_appearance(), cx);
                 let term = self.pty.term.lock();
-                let rgb = Ink::new(theme, term.colors()).query(index, term.colors());
+                let rgb = Ink::new(&theme, term.colors()).query(index, term.colors());
                 drop(term);
                 self.pty.write(reply(rgb).into_bytes());
             }
@@ -322,9 +322,9 @@ fn look(settings: &Settings, points: f32, ink: &Ink, window: &Window) -> anyhow:
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = SettingsStore::get(cx).clone();
-        let theme = themes::active(&settings, window.appearance());
+        let theme = themes::active(&settings, window.appearance(), cx);
         let term = self.pty.term.lock();
-        let ink = Ink::new(theme, term.colors());
+        let ink = Ink::new(&theme, term.colors());
         let lit = self.finder.as_ref().map_or_else(Vec::new, |finder| {
             finder.lit(&term, cx.theme().colors.warning)
         });

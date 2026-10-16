@@ -86,6 +86,52 @@ fn a_missing_key_or_bad_color_names_it() {
     assert!(parse("x", "X", "palette = 16=#000000").is_err());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn omarchys_ghostty_conf_reads_without_its_glass() {
+    // Omarchy 4 renders Tokyo Night so; glassy windows append the last four lines.
+    let rendered = [
+        "background = #1a1b26",
+        "foreground = #a9b1d6",
+        "cursor-color = #c0caf5",
+        "selection-background = #292e42",
+        "selection-foreground = #c0caf5",
+        "",
+        "palette = 0=#1a1b26",
+        "palette = 1=#f7768e",
+        "palette = 2=#9ece6a",
+        "palette = 3=#e0af68",
+        "palette = 4=#7aa2f7",
+        "palette = 5=#ad8ee6",
+        "palette = 6=#449dab",
+        "palette = 7=#a9b1d6",
+        "palette = 8=#414868",
+        "palette = 9=#ff7a93",
+        "palette = 10=#b9f27c",
+        "palette = 11=#ff9e64",
+        "palette = 12=#7da6ff",
+        "palette = 13=#bb9af7",
+        "palette = 14=#0db9d7",
+        "palette = 15=#c0caf5",
+        "# omarchy-glass begin",
+        "background-opacity = 0.65",
+        "gtk-custom-css = /usr/share/omarchy/default/gtk/glass.css",
+        "# omarchy-glass end",
+    ]
+    .join("\n");
+    let theme = omarchy::colors(&rendered).expect("Omarchy's file reads");
+    assert_eq!(theme.id, OMARCHY);
+    assert_eq!(theme.background, rgb(0x1a1b26));
+    assert_eq!(theme.cursor, rgb(0xc0caf5));
+    assert_eq!(theme.cursor_text, theme.background, "Ghostty's default");
+    assert_eq!(theme.ansi[8], rgb(0x414868));
+    let cut = rendered.replace("palette = 7=#a9b1d6\n", "");
+    assert_eq!(
+        omarchy::colors(&cut).expect_err("no 7").to_string(),
+        "no palette 7"
+    );
+}
+
 #[test]
 fn the_dark_theme_wins_only_in_dark_mode() {
     let settings = Settings {
@@ -94,21 +140,18 @@ fn the_dark_theme_wins_only_in_dark_mode() {
         ..Settings::default()
     };
     assert_eq!(
-        active(&settings, WindowAppearance::Light).id,
+        chosen(&settings, WindowAppearance::Light),
         "catppuccin-latte"
     );
     assert_eq!(
-        active(&settings, WindowAppearance::VibrantDark).id,
+        chosen(&settings, WindowAppearance::VibrantDark),
         "catppuccin-mocha"
     );
     let single = Settings {
         dark_theme: None,
         ..settings
     };
-    assert_eq!(
-        active(&single, WindowAppearance::Dark).id,
-        "catppuccin-latte"
-    );
+    assert_eq!(chosen(&single, WindowAppearance::Dark), "catppuccin-latte");
 }
 
 #[test]

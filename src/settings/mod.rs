@@ -82,7 +82,7 @@ impl Default for Settings {
         Self {
             shell: String::new(),
             start_in: StartIn::Home,
-            theme: "catppuccin-mocha".into(),
+            theme: themes::default_id().into(),
             dark_theme: None,
             font_family: "JetBrains Mono".into(),
             font_size: 13.0,
@@ -124,10 +124,7 @@ impl Settings {
             ("dark_theme", self.dark_theme.as_ref()),
         ] {
             if let Some(id) = id {
-                anyhow::ensure!(
-                    themes::find(id).is_some(),
-                    "{field} is {id:?}, no built-in theme"
-                );
+                anyhow::ensure!(themes::known(id), "{field} is {id:?}, no built-in theme");
             }
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");

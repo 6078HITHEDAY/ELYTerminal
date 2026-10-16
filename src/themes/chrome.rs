@@ -76,14 +76,14 @@ pub fn palette(theme: &TerminalTheme, opacity: f32) -> Palette {
 /// Dresses the app in the theme the settings choose for the system's appearance.
 pub fn apply(cx: &mut App) {
     let settings = SettingsStore::get(cx);
-    let theme = active(settings, cx.window_appearance());
+    let theme = active(settings, cx.window_appearance(), cx);
     let opacity = settings.background_opacity;
     let mode = if theme.is_dark() {
         Mode::Dark
     } else {
         Mode::Light
     };
-    Theme::set_palette(mode, Some(palette(theme, opacity)), cx);
+    Theme::set_palette(mode, Some(palette(&theme, opacity)), cx);
     Theme::set_mode_now(mode, cx);
     log::info!("theme: {} in {mode:?}, glass at {opacity}", theme.id);
 }
