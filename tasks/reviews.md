@@ -135,3 +135,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 340c7a9 and d8ebade: FAIL. A failed read marked the file's stamp as seen, so a theme file made readable again was never worn; `is_file`, `exists` and `metadata().ok()` took a permission error for absence, so a fresh install wore Catppuccin Mocha over an unreadable Omarchy folder, and an outage while following logged nothing. Fixed in aae7fba: the watcher compares the file's text, logs a failure once while it lasts and tries again; only a missing file means no Omarchy, and a file that cannot be read stops the start. The v0.1.1 Linux tarball was rebuilt from aae7fba on the owner's PC, which now runs Omarchy, and took the place of the one from 340c7a9 (1faf8ca).
 - Round 2, aae7fba and 1faf8ca: PASS. The reviewer reproduced both faults on the parent build and saw them gone, ran all 22 of Omarchy's themes through the window, and matched the new tarball's download to its SHA-256. CI run 976 on aae7fba passed on macOS and Ubuntu; its Windows job waits for the PC to run Windows again.
+
+## T28
+
+- Round 1, 741e48b with the v0.1.1 release notes: PASS. The reviewer read the new lines against Hyprland 0.56.2's `shouldBlur` and background-effect protocol and Omarchy 4.0.4's default `looknfeel.lua`, and the owner's captures with Hyprland's blur on and off against the acceptance row, which stays Partial for Wayland.
