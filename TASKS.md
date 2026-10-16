@@ -75,4 +75,4 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 17. Omarchy
 
-- [ ] T27 On Omarchy 4, an Omarchy theme wears the system's current theme and follows each switch, the default there; the v0.1.1 Linux tarball rebuilt with it, in place of the old one on the release.
+- [x] T27 On Omarchy 4, an Omarchy theme wears the system's current theme and follows each switch, the default there; the v0.1.1 Linux tarball rebuilt with it, in place of the old one on the release.
