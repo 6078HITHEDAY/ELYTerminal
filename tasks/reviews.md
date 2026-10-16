@@ -139,3 +139,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T28
 
 - Round 1, 741e48b with the v0.1.1 release notes: PASS. The reviewer read the new lines against Hyprland 0.56.2's `shouldBlur` and background-effect protocol and Omarchy 4.0.4's default `looknfeel.lua`, and the owner's captures with Hyprland's blur on and off against the acceptance row, which stays Partial for Wayland.
+
+## T29
+
+- Round 1, 3e30f95: FAIL. A shell that ran `exec herdr` kept its process group, so the session never looked at its foreground again and the panel stayed where it was; a relative `HERDR_SOCKET_PATH` was looked up from ELYTerminal's own folder, not the client's, so no socket answered. Fixed in 2af45cb: the foreground is its group and the executable its leader runs, a program that did not read is tried again, and a relative socket lies in the client's folder (`/proc/PID/cwd`, `proc_pidinfo` on macOS); on Linux an executable an update replaced still names itself herdr.
+- Round 2, 2af45cb: PASS. The reviewer ran real herdr 0.9.5 under the native view: a direct start, a delayed exec, a relative socket, both at once, and a folder with a space and an é each gave the folder events herdr's own snapshot named. CI run 988 on 3e30f95 and run 990 on 2af45cb passed on macOS, Ubuntu and Windows.
