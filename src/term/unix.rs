@@ -45,8 +45,7 @@ impl Pty {
         self.child.id()
     }
 
-    /// A copy of the master; tests read its modes.
-    #[cfg(test)]
+    /// A copy of the master, which reads the foreground and, in tests, the modes.
     pub fn master(&self) -> io::Result<File> {
         self.file.try_clone()
     }

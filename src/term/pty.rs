@@ -56,7 +56,7 @@ pub struct Pty {
     pub term: Arc<FairMutex<Term<Listener>>>,
     pub pid: u32,
     notifier: Notifier,
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     master: std::fs::File,
 }
 
@@ -111,7 +111,7 @@ pub fn spawn(
         )
     })?;
     let pid = child_id(&raw)?;
-    #[cfg(all(test, unix))]
+    #[cfg(unix)]
     let master = raw
         .master()
         .map_err(|error| anyhow::anyhow!("pty {pid}: no copy of the master: {error}"))?;
@@ -141,7 +141,7 @@ pub fn spawn(
             term,
             pid,
             notifier,
-            #[cfg(all(test, unix))]
+            #[cfg(unix)]
             master,
         },
         events,
@@ -181,6 +181,15 @@ impl Pty {
         self.term
             .lock()
             .resize(TermSize::new(size.num_cols.into(), size.num_lines.into()));
+    }
+}
+
+#[cfg(unix)]
+impl Pty {
+    /// The process group the program runs in the foreground.
+    pub fn foreground(&self) -> std::io::Result<i32> {
+        let group = rustix_openpty::rustix::termios::tcgetpgrp(&self.master)?;
+        Ok(group.as_raw_nonzero().get())
     }
 }
 
@@ -303,6 +312,27 @@ mod tests {
         );
         assert_eq!(ran.folders, [PathBuf::from("/tmp/a b")]);
         assert_eq!(ran.text, "x");
+    }
+
+    #[test]
+    fn the_foreground_is_the_program_s_own_group() {
+        let launch = Launch {
+            program: Some(("/bin/sh".into(), vec!["-c".into(), "exec sleep 30".into()])),
+            cwd: std::env::temp_dir(),
+            env: Vec::new(),
+            reports: false,
+        };
+        let (pty, _events) =
+            spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while pty.foreground().ok() != Some(pty.pid as i32) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{:?}",
+                pty.foreground()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     #[test]

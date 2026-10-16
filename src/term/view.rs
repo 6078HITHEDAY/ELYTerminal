@@ -73,6 +73,8 @@ pub struct TerminalView {
     shown: bool,
     _events: Task<()>,
     _blink: Task<()>,
+    #[cfg(unix)]
+    _herdr: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
     _zoom: Subscription,
@@ -117,6 +119,8 @@ impl TerminalView {
             shown: true,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
+            #[cfg(unix)]
+            _herdr: super::herdr::follow(cx),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
                     .term

@@ -1,6 +1,8 @@
 mod boxes;
 mod find;
 pub mod frame;
+#[cfg(unix)]
+mod herdr;
 pub mod ink;
 pub mod input;
 pub mod keys;
