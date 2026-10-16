@@ -360,7 +360,6 @@ impl Render for TerminalView {
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::wheel))
-            .cursor_text()
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))

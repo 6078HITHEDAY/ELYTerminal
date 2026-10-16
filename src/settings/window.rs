@@ -3,11 +3,11 @@ use std::fmt::Debug;
 use ely_gpui_component::{
     buttons::SegmentedControl,
     feedback::InlineMessage,
-    forms::{InputEvent, PathInput, Switch, TextInput},
-    primitives::{FocusScope, IconName, Severity},
-    settings::{SettingsLayout, SettingsRow, SettingsSection},
+    forms::{InputEvent, Switch, TextInput},
+    lists::{ListItem, SelectableList},
+    primitives::{FocusScope, Icon, IconName, Severity},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
-    theme::{ActiveTheme, ControlSize},
+    theme::{ActiveTheme, ControlSize, IconSize},
 };
 use gpui::{
     App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
@@ -16,7 +16,7 @@ use gpui::{
     actions, div, prelude::FluentBuilder, px, size,
 };
 
-use super::{Settings, SettingsStore, StartIn};
+use super::{Settings, SettingsStore};
 use crate::{app::APP_ID, menus, term::BLINK};
 
 mod appearance;
@@ -28,8 +28,7 @@ actions!(elyterminal, [OpenSettings, CloseSettings]);
 const CONTEXT: &str = "Settings";
 
 /// Each category's key, name and icon.
-const SECTIONS: [(&str, &str, IconName); 3] = [
-    ("general", "General", IconName::Settings),
+const SECTIONS: [(&str, &str, IconName); 2] = [
     ("appearance", "Appearance", IconName::Palette),
     ("terminal", "Terminal", IconName::Terminal),
 ];
@@ -83,11 +82,13 @@ fn open_window(cx: &mut App) {
     }
 }
 
-/// The settings window: categories down the side, the open one's rows beside them.
+/// The settings window: categories in one column, the open one's rows in the next, each scrolling on its own.
 pub struct SettingsWindow {
     focus: FocusHandle,
     section: SharedString,
     shell: Entity<TextInput>,
+    /// The shortcut list's search.
+    search: Entity<TextInput>,
     /// Why the typed shell is not saved.
     refused: Option<SharedString>,
     /// Why the last change did not save.
@@ -110,6 +111,7 @@ impl SettingsWindow {
             input
         });
         let font = cx.new(|cx| TextInput::new(window, cx));
+        let search = cx.new(|cx| TextInput::new(window, cx).placeholder("Search shortcuts"));
         let typed = cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
             if let InputEvent::Changed = event {
                 let shell = input.read(cx).text().to_string();
@@ -123,6 +125,7 @@ impl SettingsWindow {
             focus,
             section: SECTIONS[0].0.into(),
             shell,
+            search,
             refused: None,
             failed: None,
             drafts: 0,
@@ -167,46 +170,36 @@ impl SettingsWindow {
         };
         cx.notify();
     }
-
-    fn general(&self, cx: &Context<Self>) -> SettingsSection {
-        let start = match SettingsStore::get(cx).start_in {
-            StartIn::Home => "home",
-            StartIn::Session => "session",
-        };
-        let shell = div()
-            .w(cx.theme().prose_width())
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(PathInput::new("settings-shell", &self.shell))
-            .children((self.refused.clone()).map(|why| InlineMessage::new(Severity::Danger, why)));
-        let start = SegmentedControl::new("settings-start-in", start)
-            .segment("home", "Home", None)
-            .segment("session", "Session's folder", None)
-            .size(ControlSize::Sm)
-            .on_change({
-                let this = cx.entity();
-                move |value, _, cx| start_in(&this, value, cx)
-            });
-        SettingsSection::new("General")
-            .row(SettingsRow::new("Shell").control(shell))
-            .row(SettingsRow::new("Start in").control(start))
-    }
 }
 
-/// Where new sessions start, as the settings keep it.
-fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
-    let start = match value.as_ref() {
-        "home" => StartIn::Home,
-        "session" => StartIn::Session,
-        other => unreachable!("settings: no start {other}"),
-    };
-    set(
-        this,
-        format!("new sessions start in {start:?}"),
-        cx,
-        |settings| settings.start_in = start,
+/// The categories; a press, Up and Down, or Enter opens one.
+fn sections(open: &SharedString, cx: &Context<SettingsWindow>) -> SelectableList {
+    let muted = cx.theme().colors.fg_muted;
+    let list = SECTIONS.iter().fold(
+        SelectableList::new("settings-section-list").selected([open.clone()]),
+        |list, (key, name, icon)| {
+            let item = ListItem::new(SharedString::from(format!("settings-section-{key}")), *name)
+                .leading(Icon::new(*icon).size(IconSize::Sm).color(muted));
+            list.row(*key, item)
+        },
     );
+    let show = {
+        let this = cx.entity();
+        move |key: &SharedString, cx: &mut App| {
+            log::info!("settings: open {key}");
+            this.update(cx, |this, cx| {
+                this.section = key.clone();
+                cx.notify();
+            });
+        }
+    };
+    let enter = show.clone();
+    list.on_change(move |keys, _, cx| {
+        if let Some(key) = keys.first() {
+            show(key, cx);
+        }
+    })
+    .on_activate(move |key, _, cx| enter(key, cx))
 }
 
 /// A switch that saves through `put`.
@@ -289,9 +282,7 @@ fn set(
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let pick = cx.entity();
         let page = match self.section.as_ref() {
-            "general" => self.general(cx).into_any_element(),
             "appearance" => self.appearance(window, cx).into_any_element(),
             "terminal" => self.terminal(cx).into_any_element(),
             other => unreachable!("settings: no section {other}"),
@@ -302,26 +293,31 @@ impl Render for SettingsWindow {
             .gap_4()
             .children((self.failed.clone()).map(|why| InlineMessage::new(Severity::Danger, why)))
             .child(page);
-        let layout = SettingsLayout::new("settings", SECTIONS, self.section.clone(), {
-            move |key, _, cx| {
-                pick.update(cx, |this, cx| {
-                    this.section = key.clone();
-                    cx.notify();
-                })
-            }
-        })
-        .page(page);
+        let (_, name, _) = SECTIONS
+            .iter()
+            .find(|(key, ..)| *key == self.section.as_ref())
+            .expect("the open section is listed");
+        let list = div()
+            .id("settings-list")
+            .size_full()
+            .overflow_y_scroll()
+            .p_2()
+            .child(sections(&self.section, cx));
         let body = div()
             .id("settings-body")
             .size_full()
             .overflow_y_scroll()
             .p_6()
-            .child(layout);
-        let shell = ColumnShell::new("settings").column(
-            ShellColumn::new("settings-column")
-                .title("Settings")
-                .child(body),
-        );
+            .child(page);
+        // The categories and the page scroll apart.
+        let shell = ColumnShell::new("settings")
+            .column(
+                ShellColumn::new("settings-sections")
+                    .width(cx.theme().label_width() * 1.25)
+                    .title("Settings")
+                    .child(list),
+            )
+            .column(ShellColumn::new("settings-page").title(*name).child(body));
         // The context sits above the focus root, so its keys work wherever focus is.
         div()
             .size_full()

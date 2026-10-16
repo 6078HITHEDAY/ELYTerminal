@@ -1,12 +1,25 @@
 use ely_gpui_component::{
-    forms::NumberInput,
-    settings::{SettingsRow, SettingsSection},
-    theme::ControlSize,
+    buttons::SegmentedControl,
+    feedback::InlineMessage,
+    forms::{Copy, NumberInput, Paste, PathInput, SelectAll},
+    primitives::Severity,
+    settings::{KeyboardShortcutsList, SettingsRow, SettingsSection, Shortcut},
+    theme::{ActiveTheme, ControlSize},
 };
-use gpui::Context;
+use gpui::{
+    Action, App, Context, Div, Entity, KeyContext, ParentElement, SharedString, Styled, div,
+};
 
-use super::{SettingsWindow, choice, set, switch};
-use crate::settings::{OptionAsAlt, SCROLLBACK, SettingsStore};
+use super::{OpenSettings, SettingsWindow, choice, set, switch};
+use crate::{
+    menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
+    settings::{OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
+    term::input::{self, Find},
+    workspace::{
+        self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
+        TogglePanel, ToggleSessions,
+    },
+};
 
 /// Each way Option types Alt, its key and its name.
 const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
@@ -16,11 +29,42 @@ const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
     (OptionAsAlt::Both, "both", "Both"),
 ];
 
+/// The names of the sessions a digit shows.
+const PLACES: [&str; 8] = [
+    "Session 1",
+    "Session 2",
+    "Session 3",
+    "Session 4",
+    "Session 5",
+    "Session 6",
+    "Session 7",
+    "Session 8",
+];
+
 impl SettingsWindow {
-    /// Scrollback, Option as Alt on macOS, and copy on select.
-    pub(super) fn terminal(&self, cx: &Context<Self>) -> SettingsSection {
+    /// Shell, start in, scrollback, Option as Alt on macOS and copy on select, then the shortcuts.
+    pub(super) fn terminal(&self, cx: &Context<Self>) -> Div {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
+        let shell = div()
+            .w(cx.theme().prose_width())
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(PathInput::new("settings-shell", &self.shell))
+            .children((self.refused.clone()).map(|why| InlineMessage::new(Severity::Danger, why)));
+        let start = match settings.start_in {
+            StartIn::Home => "home",
+            StartIn::Session => "session",
+        };
+        let start = SegmentedControl::new("settings-start-in", start)
+            .segment("home", "Home", None)
+            .segment("session", "Session's folder", None)
+            .size(ControlSize::Sm)
+            .on_change({
+                let this = this.clone();
+                move |value, _, cx| start_in(&this, value, cx)
+            });
         let lines = NumberInput::new(("scrollback", self.drafts), f64::from(settings.scrollback))
             .range(f64::from(*SCROLLBACK.start()), f64::from(*SCROLLBACK.end()))
             .step(1000.)
@@ -35,6 +79,8 @@ impl SettingsWindow {
                 }
             });
         let mut section = SettingsSection::new("Terminal")
+            .row(SettingsRow::new("Shell").control(shell))
+            .row(SettingsRow::new("Start in").control(start))
             .row(SettingsRow::new("Scrollback lines").control(lines));
         // Off macOS, Alt is always Alt.
         if cfg!(target_os = "macos") {
@@ -53,6 +99,86 @@ impl SettingsWindow {
             settings.copy_on_select,
             |settings, on| settings.copy_on_select = on,
         );
-        section.row(SettingsRow::new("Copy on select").control(copy))
+        let section = section.row(SettingsRow::new("Copy on select").control(copy));
+        let keys = SettingsSection::new("Shortcuts")
+            .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
+        div().flex().flex_col().gap_6().child(section).child(keys)
     }
+}
+
+/// Where new sessions start, as the settings keep it.
+fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
+    let start = match value.as_ref() {
+        "home" => StartIn::Home,
+        "session" => StartIn::Session,
+        other => unreachable!("settings: no start {other}"),
+    };
+    set(
+        this,
+        format!("new sessions start in {start:?}"),
+        cx,
+        |settings| settings.start_in = start,
+    );
+}
+
+/// The listed commands, in order: group, name and action.
+fn listed() -> Vec<(&'static str, &'static str, Box<dyn Action>)> {
+    let mut listed = vec![
+        ("Sessions", "New session", NewSession.boxed_clone()),
+        ("Sessions", "Close session", CloseSession.boxed_clone()),
+        ("Sessions", "Next session", NextSession.boxed_clone()),
+        (
+            "Sessions",
+            "Previous session",
+            PreviousSession.boxed_clone(),
+        ),
+    ];
+    let places = PLACES.iter().enumerate();
+    listed.extend(places.map(|(ix, name)| ("Sessions", *name, SelectSession(ix).boxed_clone())));
+    listed.extend([
+        ("Sessions", "Last session", LastSession.boxed_clone()),
+        ("Edit", "Copy", Copy.boxed_clone()),
+        ("Edit", "Paste", Paste.boxed_clone()),
+        ("Edit", "Select all", SelectAll.boxed_clone()),
+        ("Edit", "Find", Find.boxed_clone()),
+        ("View", "Toggle sessions", ToggleSessions.boxed_clone()),
+        ("View", "Toggle right panel", TogglePanel.boxed_clone()),
+        ("View", "Bigger", Bigger.boxed_clone()),
+        ("View", "Smaller", Smaller.boxed_clone()),
+        ("View", "Reset size", ResetSize.boxed_clone()),
+        ("App", "Settings", OpenSettings.boxed_clone()),
+        ("App", "Minimize", Minimize.boxed_clone()),
+        ("App", "Quit", Quit.boxed_clone()),
+    ]);
+    listed
+}
+
+/// Each listed command's keys in the main window's terminal, a line per binding, from the keymap.
+fn shortcuts(cx: &App) -> Vec<Shortcut> {
+    let stack = [workspace::CONTEXT, input::CONTEXT]
+        .map(|name| KeyContext::parse(name).expect("a context name parses"));
+    let keymap = cx.key_bindings();
+    let keymap = keymap.borrow();
+    let mut shortcuts = Vec::new();
+    for (group, name, action) in listed() {
+        for binding in keymap.bindings_for_action(action.as_ref()) {
+            // gpui matches a binding at any depth of the context stack.
+            let applies = binding.predicate().is_none_or(|predicate| {
+                (1..=stack.len()).any(|depth| predicate.eval(&stack[..depth]))
+            });
+            if applies {
+                let strokes: Vec<String> = binding
+                    .keystrokes()
+                    .iter()
+                    .map(|key| key.unparse())
+                    .collect();
+                shortcuts.push(Shortcut {
+                    group: group.into(),
+                    name: name.into(),
+                    keys: strokes.join(" ").into(),
+                });
+            }
+        }
+    }
+    shortcuts
 }

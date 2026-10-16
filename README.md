@@ -52,6 +52,8 @@ The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `tra
 
 ## Keys
 
+Settings › Terminal lists them all, as this platform binds them.
+
 | | macOS | Windows and Linux |
 |---|---|---|
 | New session | Cmd-T | Ctrl-Shift-T |

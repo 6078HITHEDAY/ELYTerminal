@@ -45,7 +45,7 @@ actions!(
 pub struct SelectSession(pub usize);
 
 /// The key context of the main window's content.
-const CONTEXT: &str = "Workspace";
+pub const CONTEXT: &str = "Workspace";
 
 /// The window's title while the program names none.
 pub const TITLE: &str = "ELYTerminal";

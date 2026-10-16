@@ -69,6 +69,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | `ColumnShell` with three columns; blur when the setting is on | T11, T19 | `shot` names a `BlurredView` under the window | Pass |
 | Columns toggle and keep their state | T11, T23 | a click on each title bar button hid its column and saved it, and a restart opened the window with both hidden (147 columns against 87); Cmd-B with the app active; Ctrl-Shift-B on a real X11 window | Pass |
 | The title shows the session's title, nothing else | T11 | log: "the title is", per session shown | Pass |
+| The pointer over the terminal is the arrow | T26 | the terminal sets no pointer, so gpui's arrow shows; on X11 with the pointer over the grid, gpui asked for no I-beam ("text"), which it had asked for, and failed to load under Xvfb, before | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |
 | Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; on the owner's PC, window messages asked the app for Windows' hit test along the title bar: v0.1.0 answered caption from end to end, T26's build answers client over the toggles and +, caption over the titles, min, max and close over Ely's buttons, and a press on close closed the app; the owner has not yet clicked it | Partial |
 
@@ -105,11 +106,12 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| Cmd-, opens it; categories left, rows right; changes apply at once and save | T16 | T16 review | Pass |
+| Cmd-, opens it; categories left, rows right, each scrolling on its own; changes apply at once and save | T16, T26 | T16 review; on X11, eight wheel notches over the Terminal page carried it down to its Edit and View shortcuts while the category column and both headers stayed | Pass |
 | On Windows and Linux, a gear in the title bar opens it too | T26 | on X11 under Xvfb with xfwm4, xdotool's click on the gear, just inside the right toggle, opened the 900×640 Settings window ("settings: the window opens"), after a click on + opened a session; sent through `App::dispatch_action`, the same click had opened nothing; the owner has not yet clicked it on Windows | Partial |
-| General: Shell, Start in | T16 | `settings::tests` | Pass |
+| Terminal: Shell, Start in | T16, T26 | `settings::tests`; the General page is gone, and a capture on X11 shows its two rows leading Terminal | Pass |
 | Appearance: theme grids, dark theme, font, size, line height, ligatures, cursor and preview, opacity, blur, padding | T17 | T17 review | Pass |
 | Terminal: scrollback, Option as Alt (macOS), copy on select | T18 | T18 review | Pass |
+| Terminal: every shortcut, with a search | T26 | read from the keymap, the bindings that apply in the main window's terminal; on X11 the list showed this platform's keys (Ctrl+Shift+T, Alt+1 and on), and typing "paste" left Edit's Paste, Ctrl+Shift+V | Pass |
 
 ## 11. Background blur
 

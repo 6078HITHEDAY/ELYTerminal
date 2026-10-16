@@ -60,6 +60,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
 - The title shows the active session's title, and no other text.
+- The pointer over the terminal is the arrow.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
 - Every control in the title bar takes its own press on every platform, the window buttons Ely draws on Windows and Linux too.
 
@@ -88,11 +89,8 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 ## 10. Settings window
 
-Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, Ely's settings components. Changes apply at once to every session and save.
+Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, each side scrolling on its own, Ely's components. Changes apply at once to every session and save.
 
-- General
-  - Shell: a path; empty runs the login shell.
-  - Start in: Home, or the active session's folder.
 - Appearance
   - Theme: a grid of previews.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
@@ -101,9 +99,12 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Background opacity: a slider. Background blur: a switch.
   - Padding: horizontal and vertical.
 - Terminal
+  - Shell: a path; empty runs the login shell.
+  - Start in: Home, or the active session's folder.
   - Scrollback lines.
   - Option as Alt: off, left, right, both (macOS only).
   - Copy on select.
+  - Shortcuts: every shortcut, as this platform's keys, with a search.
 
 ## 11. Background blur
 
