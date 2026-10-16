@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, cell::RefCell, rc::Rc, time::Duration};
 
 use anyhow::Context as _;
 use ely_gpui_component::theme::ActiveTheme;
@@ -89,7 +89,9 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
 /// Opens the main window running `launch`.
 pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
     let kept = opening_size(cx);
-    let bounds = Bounds::centered(None, kept, cx);
+    // macOS grows a window by a point on a side whose edge falls on a half point.
+    let centered = Bounds::centered(None, kept, cx);
+    let bounds = Bounds::new(centered.origin.map(|at| at.round()), kept);
     let background = blur::appearance(SettingsStore::get(cx));
     let least = px(*settings::WINDOW.start());
     let options = WindowOptions {
@@ -149,9 +151,9 @@ fn opening_size(cx: &App) -> Size<Pixels> {
 
 /// Keeps the window's size in the settings once it settles; maximized, full screen or hidden, the size before stays.
 fn keep_size(window: &mut Window, cx: &mut Context<Workspace>) {
-    let mut _settling: Option<Task<()>> = None;
-    cx.observe_window_bounds(window, move |_, window, cx| {
-        _settling = Some(cx.spawn_in(window, async move |_, cx| {
+    let settling: Rc<RefCell<Option<Task<()>>>> = Rc::default();
+    let settle = move |window: &mut Window, cx: &mut Context<Workspace>| {
+        let task = cx.spawn_in(window, async move |_, cx| {
             cx.background_executor().timer(SETTLE).await;
             // Read once settled: X11 marks a window maximized late, and unmaximized while hidden.
             let kept = cx.update(|window, cx| {
@@ -179,7 +181,17 @@ fn keep_size(window: &mut Window, cx: &mut Context<Workspace>) {
                 Ok(Err(error)) => log::error!("{error:#}"),
                 Err(_) => log::debug!("app: the window closed before its size settled"),
             }
-        }));
+        });
+        settling.replace(Some(task));
+    };
+    let shown = settle.clone();
+    cx.observe_window_bounds(window, move |_, window, cx| settle(window, cx))
+        .detach();
+    // A size skipped while the window hid is read again once it shows.
+    cx.observe_window_visibility(window, move |_, visibility, window, cx| {
+        if visibility.is_visible() {
+            shown(window, cx);
+        }
     })
     .detach();
 }
