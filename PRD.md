@@ -20,7 +20,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 - `alacritty_terminal` 0.26 for the grid, the parser and the pseudo-terminal, as Ely uses it.
 - Logs through `log` to stderr, `RUST_LOG` sets the level. No log setting in the app.
 - CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test.
-- Private repo `ELYTerminal` on git.zacharyzhang.com. No credential in any file or commit.
+- Repo `ELYTerminal` on git.zacharyzhang.com, private until v0.1.1, public since. No credential in any file or commit.
 
 ## 3. Settings model and storage
 

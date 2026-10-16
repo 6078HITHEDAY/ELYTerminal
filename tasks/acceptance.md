@@ -24,7 +24,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | `alacritty_terminal` 0.26 | T04 | `=0.26.0` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
 | CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 926 on `65bb4d3`, see the CI notes | Pass |
-| Private repo; no credential in any file or commit | T01 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits | Pass |
+| The repo, private until v0.1.1 and public since; no credential in any file or commit | T01, T26 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits; before the owner made it public, a scan of all 91 commits' contents and messages found no token, SSH password, gateway, port, SSH user or private key | Pass |
 
 ## 3. Settings model and storage
 
@@ -71,7 +71,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | The title shows the session's title, nothing else | T11 | log: "the title is", per session shown | Pass |
 | The pointer over the terminal is the arrow | T26 | the terminal sets no pointer, so gpui's arrow shows; on X11 with the pointer over the grid, gpui asked for no I-beam ("text"), which it had asked for, and failed to load under Xvfb, before | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |
-| Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; on the owner's PC, window messages asked the app for Windows' hit test along the title bar: v0.1.0 answered caption from end to end, T26's build answers client over the toggles and +, caption over the titles, min, max and close over Ely's buttons, and a press on close closed the app; the owner has not yet clicked it | Partial |
+| Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; on the owner's PC, window messages asked the app for Windows' hit test along the title bar: v0.1.0 answered caption from end to end, T26's build answers client over the toggles and +, caption over the titles, min, max and close over Ely's buttons, and a press on close closed the app; the owner, given v0.1.1's build and these controls to click, reported it works on Windows | Pass |
 
 ## 7. Sessions panel
 
@@ -107,7 +107,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | Cmd-, opens it; categories left, rows right, each scrolling on its own; changes apply at once and save | T16, T26 | T16 review; on X11, eight wheel notches over the Terminal page carried it down to its Edit and View shortcuts while the category column and both headers stayed | Pass |
-| On Windows and Linux, a gear in the title bar opens it too | T26 | on X11 under Xvfb with xfwm4, xdotool's click on the gear, just inside the right toggle, opened the 900×640 Settings window ("settings: the window opens"), after a click on + opened a session; sent through `App::dispatch_action`, the same click had opened nothing; the owner has not yet clicked it on Windows | Partial |
+| On Windows and Linux, a gear in the title bar opens it too | T26 | on X11 under Xvfb with xfwm4, xdotool's click on the gear, just inside the right toggle, opened the 900×640 Settings window ("settings: the window opens"), after a click on + opened a session; sent through `App::dispatch_action`, the same click had opened nothing; the owner, given v0.1.1's build and the gear to click, reported it works on Windows | Pass |
 | Terminal: Shell, Start in | T16, T26 | `settings::tests`; the General page is gone, and a capture on X11 shows its two rows leading Terminal | Pass |
 | Appearance: theme grids, dark theme, font, size, line height, ligatures, cursor and preview, opacity, blur, padding | T17 | T17 review | Pass |
 | Terminal: scrollback, Option as Alt (macOS), copy on select | T18 | T18 review | Pass |
@@ -118,7 +118,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | macOS: `Blurred` (NSVisualEffectView) | T19, T23 | `shot` reads `BlurredView, blur 30` off the view's backdrop layer; the owner saw the desktop blur | Pass |
-| Windows: `Blurred` (acrylic) | T19 | the same gpui call; CI builds and tests on Windows, but no one has seen the window | Partial |
+| Windows: `Blurred` (acrylic) | T19 | the same gpui call; on 2026-10-15 the owner saw the window blur on Windows | Pass |
 | Wayland: `ext_background_effect_v1` beside gpui's `org_kde_kwin_blur` | T20 | `blur::wayland` tests on a `wayland-server` compositor; no real compositor | Partial |
 | X11: `_KDE_NET_WM_BLUR_BEHIND_REGION`, removed when blur turns off | T21 | `blur::x11` test on Xvfb; the property on a real xfwm4 window; KWin not run | Partial |
 | Neither protocol: transparency without blur; the log names the path | T20, T21 | the log lines in `src/blur` | Pass |
@@ -129,7 +129,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|---|
 | The macOS menu bar | T22 | `shot` lists every item with its key | Pass |
 | The same shortcuts off macOS, Ctrl-Shift where they collide | T22 | xdotool on a real X11 window: select all, size, toggle, find, quit | Pass |
-| On Windows Ctrl-V pastes too, as in Windows Terminal | T26 | the binding is Windows' alone; on a real X11 window, with a command on the clipboard through xclip, Ctrl-Shift-V pasted its 33 characters and the shell ran it, and Ctrl-V pasted nothing, as Linux keeps it for programs; the owner has not yet pressed Ctrl-V on Windows | Partial |
+| On Windows Ctrl-V pastes too, as in Windows Terminal | T26 | the binding is Windows' alone; on a real X11 window, with a command on the clipboard through xclip, Ctrl-Shift-V pasted its 33 characters and the shell ran it, and Ctrl-V pasted nothing, as Linux keeps it for programs; the owner, given v0.1.1's build and Ctrl-V to press, reported it works on Windows | Pass |
 
 ## 13. Acceptance
 
@@ -137,7 +137,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|
 | Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
 | `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux through `scripts/linux.sh`: 138 tests, clippy, on aarch64 in Colima and on x86_64 in WSL's Docker | Pass |
-| CI green on macOS, Ubuntu and Windows | run 934 on `0075667`: all three jobs pass; see the CI notes below | Pass |
+| CI green on macOS, Ubuntu and Windows | run 955 on `43ea5b1`, v0.1.1's commit: all three jobs pass; see the CI notes below | Pass |
 
 ## 14. Icon and the macOS app
 
@@ -145,13 +145,13 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|---|
 | The icon: Ely, a girl with long pink hair, holding a terminal | T24 | `assets/icons`, drawn at 16 to 1024 px and legible at 32; the owner saw it | Pass |
 | macOS: the rounded square; Windows and Linux: the figure alone, flat | T24 | `elyterminal-macos.svg` on Apple's grid; `elyterminal.svg`, which the Linux tarball carries and the Windows `.ico` renders | Pass |
-| `scripts/mac-app.sh` builds the app, signed ad hoc, and its disk image | T24 | its run: `codesign --verify --strict` passes on the app and on its copy in the image; the `.icns` holds 16 to 1024 px; the image verifies and mounts with the app beside Applications; LaunchServices opens the app as `com.zacharyzhang.elyterminal` | Pass |
+| `scripts/mac-app.sh` builds the app, signed ad hoc, or for a release with Developer ID and notarized, and its disk image | T24, T26 | its run: `codesign --verify --strict` passes on the app and on its copy in the image; the `.icns` holds 16 to 1024 px; the image verifies and mounts with the app beside Applications; LaunchServices opens the app as `com.zacharyzhang.elyterminal`; for v0.1.1 the Release workflow (run 959) ran it on `macos-signing`: notarization Accepted, the ticket stapled, and on this Mac the downloaded image and its app pass `codesign --verify --strict` under the Developer ID and Gatekeeper's `accepted, source=Notarized Developer ID`; the owner opened it; without the key the script stops before building | Pass |
 
 ## 15. Release
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| A Gitea release, `vVERSION`, with the macOS disk image, a Windows zip and a Linux tarball | T25 | `v0.1.0` at `0075667`, its three files built from that commit by their scripts and checked again: the disk image verifies and its app passes `codesign --verify --strict`; the zip's executable has the icon and no C runtime DLL; the tarball opens its window on Ubuntu 22.04; each file downloaded back matches the SHA-256 in the release notes | Pass |
+| A Gitea release, `vVERSION`, with the macOS disk image, a Windows zip and a Linux tarball | T25, T26 | `v0.1.1` at `43ea5b1`: the zip and the tarball from their scripts on the owner's PC and WSL, the disk image from the Release workflow, signed and notarized; each downloaded back anonymously, once the repository was public, matches the SHA-256 in the release notes. `v0.1.0` at `0075667`, its three files built from that commit by their scripts and checked again: the disk image verifies and its app passes `codesign --verify --strict`; the zip's executable has the icon and no C runtime DLL; the tarball opens its window on Ubuntu 22.04; each file downloaded back matches the SHA-256 in the release notes | Pass |
 | The Windows executable carries the icon | T25 | its resources: icon group 1 with the seven images of `elyterminal.ico`, 16 to 256 px, and gpui's manifest (PerMonitorV2); a GUI program, importing no C runtime DLL; not yet seen on a Windows screen | Pass |
 | The Linux tarball carries the icon and a desktop entry; the window names itself `com.zacharyzhang.elyterminal` | T25 | on Ubuntu 22.04: `desktop-file-validate` reports nothing, every library resolves, glibc 2.35; under Xvfb `WM_CLASS` reads `com.zacharyzhang.elyterminal` twice, and under headless sway the window's `app_id` reads the same | Pass |
 | Each build comes from its script | T25 | `scripts/mac-app.sh` on macOS, `scripts/windows-zip.ps1` on the owner's Windows PC, `scripts/linux-tar.sh` in the owner's WSL | Pass |
