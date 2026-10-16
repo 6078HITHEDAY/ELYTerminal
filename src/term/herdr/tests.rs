@@ -38,6 +38,8 @@ fn a_client_finds_its_server_as_herdr_does() {
     let socket = env(&[("HOME", "/h"), ("HERDR_SOCKET_PATH", "/s.sock")]);
     assert_eq!(found("herdr", &socket), PathBuf::from("/s.sock"));
     assert_eq!(found("herdr --session work", &socket), work);
+    let relative = env(&[("HOME", "/h"), ("HERDR_SOCKET_PATH", "herdr.sock")]);
+    assert_eq!(found("herdr", &relative), PathBuf::from("herdr.sock"));
     let named = env(&[("HOME", "/h"), ("HERDR_SESSION", "work")]);
     assert_eq!(found("herdr", &named), work);
     assert!(follows(&args("herdr"), &env(&[])).is_err());
@@ -120,7 +122,7 @@ fn herdr_answers_over_its_socket() {
 
 /// macOS hides the variables of its own programs, such as `/bin/sleep`, so the test reads itself.
 #[test]
-fn a_process_reads_with_its_path_arguments_and_variables() {
+fn a_process_reads_with_its_path_arguments_variables_and_folder() {
     let pid = std::process::id() as i32;
     let read = path(pid).expect("its path");
     let (args, env) = launch(pid).expect("its arguments");
@@ -128,6 +130,25 @@ fn a_process_reads_with_its_path_arguments_and_variables() {
     assert_eq!(fs::canonicalize(read).ok(), fs::canonicalize(exe).ok());
     assert_eq!(args, std::env::args().collect::<Vec<_>>());
     assert_eq!(env.get("HOME"), std::env::var_os("HOME").as_ref());
+    let folder = std::env::current_dir().expect("this test's folder");
+    assert_eq!(
+        fs::canonicalize(cwd(pid).expect("its folder")).ok(),
+        fs::canonicalize(folder).ok()
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_updated_herdr_still_names_itself() {
+    let deleted = PathBuf::from("/home/u/.local/bin/herdr (deleted)");
+    assert_eq!(
+        installed(deleted),
+        PathBuf::from("/home/u/.local/bin/herdr")
+    );
+    assert_eq!(
+        installed("/usr/bin/herdr".into()),
+        PathBuf::from("/usr/bin/herdr")
+    );
 }
 
 #[cfg(target_os = "macos")]

@@ -28,37 +28,60 @@ type Invocation = (Vec<String>, HashMap<String, OsString>);
 /// Follows the pane herdr's server has focused while herdr's client runs in the foreground.
 pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
     cx.spawn(async move |view, cx| {
-        let (mut group, mut socket, mut shown, mut failed) = (None, None, None, String::new());
+        let mut seen: Option<(i32, Option<PathBuf>)> = None;
+        let (mut socket, mut shown, mut retry, mut failed) = (None, None, false, String::new());
         loop {
             cx.background_executor().timer(CHECK).await;
-            let Ok((pid, now)) = view.update(cx, |view, _| (view.pty.pid, view.pty.foreground()))
+            let Ok((pid, group)) = view.update(cx, |view, _| (view.pty.pid, view.pty.foreground()))
             else {
                 break;
             };
-            let now = match now {
-                Ok(now) => Some(now),
+            let group = match group {
+                Ok(group) => Some(group),
                 Err(error) => {
-                    if group.is_some() {
+                    if seen.is_some() {
                         log::debug!("terminal {pid}: its foreground does not read: {error}");
                     }
                     None
                 }
             };
-            if now != group {
-                group = now;
+            // An exec keeps the group and swaps the program, so the two name the foreground.
+            let program = match group {
+                Some(group) => {
+                    let exe = cx
+                        .background_executor()
+                        .spawn(async move { path(group).ok() })
+                        .await;
+                    Some((group, exe))
+                }
+                None => None,
+            };
+            if program != seen {
+                if let Some((group, None)) = &program {
+                    log::debug!(
+                        "terminal {pid}: process {group}, another user's or gone, does not read"
+                    );
+                }
+                seen = program.clone();
                 shown = None;
+                retry = true;
                 failed.clear();
                 if socket.take().is_some() {
                     log::info!("terminal {pid}: herdr left the foreground");
                 }
-                let found = match now {
-                    Some(now) => {
+            }
+            if retry {
+                let found = match program {
+                    Some((group, Some(exe)))
+                        if exe.file_name().is_some_and(|name| name == "herdr") =>
+                    {
                         cx.background_executor()
-                            .spawn(async move { client(now) })
+                            .spawn(async move { client(group) })
                             .await
                     }
-                    None => Ok(None),
+                    _ => Ok(None),
                 };
+                retry = found.is_err();
                 socket = found.unwrap_or_else(|error| {
                     failure(&mut failed, pid, &error);
                     None
@@ -130,22 +153,20 @@ fn starting(error: &anyhow::Error) -> bool {
     })
 }
 
-/// The socket of the herdr server whose terminal client leads process group `group`, if one does.
+/// The socket of the herdr server whose terminal client leads process group `group`, if it is one.
 fn client(group: i32) -> anyhow::Result<Option<PathBuf>> {
-    let path = match path(group) {
-        Ok(path) => path,
-        // Another user's program, such as sudo, or one already gone.
-        Err(error) => {
-            log::debug!("terminal: process {group} does not read: {error}");
-            return Ok(None);
-        }
-    };
-    if path.file_name().is_none_or(|name| name != "herdr") {
-        return Ok(None);
-    }
     let (args, env) =
         launch(group).with_context(|| format!("herdr: process {group} does not read"))?;
-    follows(&args, &env)
+    let Some(socket) = follows(&args, &env)? else {
+        return Ok(None);
+    };
+    if socket.is_absolute() {
+        return Ok(Some(socket));
+    }
+    // herdr reads a relative socket from its client's folder.
+    let folder =
+        cwd(group).with_context(|| format!("herdr: process {group}'s folder does not read"))?;
+    Ok(Some(folder.join(socket)))
 }
 
 /// The socket a herdr process with `args` and `env` shows, if it is herdr's terminal client.
@@ -305,7 +326,17 @@ pub(super) fn focused(reply: &str) -> anyhow::Result<Option<PathBuf>> {
 
 #[cfg(target_os = "linux")]
 fn path(pid: i32) -> io::Result<PathBuf> {
-    std::fs::read_link(format!("/proc/{pid}/exe"))
+    std::fs::read_link(format!("/proc/{pid}/exe")).map(installed)
+}
+
+/// The path of an executable the kernel marks ` (deleted)`, as an update that replaced it leaves it.
+#[cfg(target_os = "linux")]
+pub(super) fn installed(path: PathBuf) -> PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    match path.as_os_str().as_bytes().strip_suffix(b" (deleted)") {
+        Some(kept) => PathBuf::from(OsStr::from_bytes(kept)),
+        None => path,
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -315,6 +346,11 @@ fn launch(pid: i32) -> io::Result<Invocation> {
     let args = strings(&args).map(lossy).collect();
     let env = strings(&env).filter_map(variable).collect();
     Ok((args, env))
+}
+
+#[cfg(target_os = "linux")]
+fn cwd(pid: i32) -> io::Result<PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/cwd"))
 }
 
 /// Each NUL-ended string in `bytes`.
@@ -371,6 +407,40 @@ fn launch(pid: i32) -> io::Result<Invocation> {
     let size = ask(&mut buffer)?;
     buffer.truncate(size);
     procargs(&buffer)
+}
+
+#[cfg(target_os = "macos")]
+fn cwd(pid: i32) -> io::Result<PathBuf> {
+    // SAFETY: the struct is plain C data, valid zeroed.
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    // SAFETY: `info` holds the size given.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            (&raw mut info).cast(),
+            size,
+        )
+    };
+    if read <= 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if read != size {
+        return Err(io::Error::other(format!(
+            "proc_pidinfo read {read} of {size} bytes"
+        )));
+    }
+    let path = info
+        .pvi_cdir
+        .vip_path
+        .iter()
+        .flatten()
+        .map(|byte| *byte as u8);
+    Ok(PathBuf::from(OsString::from_vec(
+        path.take_while(|byte| *byte != 0).collect(),
+    )))
 }
 
 /// `KERN_PROCARGS2`'s layout: argc, the program's path, NUL padding, the arguments, the variables.
