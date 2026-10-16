@@ -13,21 +13,33 @@ use crate::term::Pty;
 
 pub(super) type Pid = i32;
 
+/// The foreground's group and its leader's executable: an exec keeps the group and swaps the program.
+pub(super) type Program = (Pid, Option<PathBuf>);
+
 /// herdr's executable.
-pub(super) const HERDR: &str = "herdr";
+const HERDR: &str = "herdr";
 
 /// The process group leading the session's foreground.
 pub(super) fn leader(pty: &Pty) -> io::Result<Pid> {
     pty.foreground()
 }
 
-/// The group's leader and its executable: an exec keeps the group and swaps the program.
-pub(super) fn running(group: Pid) -> io::Result<(Pid, Option<PathBuf>)> {
+pub(super) fn running(group: Pid) -> io::Result<Program> {
     Ok((group, path(group).ok()))
 }
 
 /// The socket of the herdr server whose terminal client leads process group `group`, if it is one.
-pub(super) fn client(group: Pid) -> anyhow::Result<Option<PathBuf>> {
+pub(super) fn client((group, exe): Program) -> anyhow::Result<Option<PathBuf>> {
+    let Some(exe) = exe else {
+        log::debug!("herdr: process {group}, another user's or gone, does not read");
+        return Ok(None);
+    };
+    if !exe
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(HERDR))
+    {
+        return Ok(None);
+    }
     let (args, env) =
         launch(group).with_context(|| format!("herdr: process {group} does not read"))?;
     let Some(socket) = follows(&args, &env)? else {

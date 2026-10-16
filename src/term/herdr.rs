@@ -15,11 +15,11 @@ use super::view::{TerminalEvent, TerminalView};
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-use unix::{HERDR, Pid, client, connect, home, leader, running};
+use unix::{Program, client, connect, home, leader, running};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-use windows::{HERDR, Pid, client, connect, home, leader, running};
+use windows::{Program, client, connect, home, leader, running};
 
 /// How often the session's foreground program is checked.
 const CHECK: Duration = Duration::from_millis(500);
@@ -36,7 +36,7 @@ type Invocation = (Vec<String>, HashMap<String, OsString>);
 /// Follows the pane herdr's server has focused while herdr's client runs in the session.
 pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
     cx.spawn(async move |view, cx| {
-        let mut seen: Option<(Pid, Option<PathBuf>)> = None;
+        let mut seen: Option<Program> = None;
         let (mut socket, mut shown, mut retry, mut failed) = (None, None, false, String::new());
         loop {
             cx.background_executor().timer(CHECK).await;
@@ -63,11 +63,6 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                 }
             };
             if program != seen {
-                if let Some((process, None)) = &program {
-                    log::debug!(
-                        "terminal {pid}: process {process}, another user's or gone, does not read"
-                    );
-                }
                 seen = program.clone();
                 shown = None;
                 retry = true;
@@ -78,16 +73,12 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
             }
             if retry {
                 let found = match program {
-                    Some((process, Some(exe)))
-                        if exe
-                            .file_name()
-                            .is_some_and(|name| name.eq_ignore_ascii_case(HERDR)) =>
-                    {
+                    Some(program) => {
                         cx.background_executor()
-                            .spawn(async move { client(process) })
+                            .spawn(async move { client(program) })
                             .await
                     }
-                    _ => Ok(None),
+                    None => Ok(None),
                 };
                 retry = found.is_err();
                 socket = found.unwrap_or_else(|error| {

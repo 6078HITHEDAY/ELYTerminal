@@ -147,6 +147,18 @@ fn a_process_reads_with_its_path_arguments_variables_and_folder() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn only_herdr_s_program_is_read() {
+    let pid = std::process::id() as i32;
+    assert_eq!(
+        client((pid, None)).expect("a program that does not read"),
+        None
+    );
+    let shell = client((pid, Some("/bin/sh".into())));
+    assert_eq!(shell.expect("another program"), None);
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn an_updated_herdr_still_names_itself() {
@@ -198,38 +210,64 @@ fn a_windows_client_finds_its_server_in_app_data() {
 
 #[cfg(windows)]
 #[test]
-fn herdr_is_sought_nearest_under_the_shell() {
-    use super::windows::nearest;
+fn herdr_is_sought_at_and_under_the_shell_not_under_herdr() {
+    use super::windows::herdrs;
     let processes = [
         (100, 50, "pwsh.exe"),
         (104, 100, "cmd.exe"),
         (108, 104, "HERDR.EXE"),
         (112, 100, "herdr.exe"),
+        (116, 112, "herdr.exe"),
+        (120, 100, "herdr.exe"),
         (200, 300, "a.exe"),
         (300, 200, "b.exe"),
     ]
     .map(|(pid, parent, name)| (pid, parent, name.to_owned()));
-    let pid = |root| nearest(&processes, root, HERDR).map(|(pid, ..)| *pid);
-    assert_eq!(pid(100), Some(112));
-    assert_eq!(pid(104), Some(108));
-    assert_eq!(pid(112), None);
-    assert_eq!(pid(200), None);
+    // 116 is the server 112 started; 120 one started beside it.
+    assert_eq!(herdrs(&processes, 100), [112, 120, 108]);
+    assert_eq!(herdrs(&processes, 112), [112]);
+    assert!(herdrs(&processes, 200).is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn a_server_or_a_command_beside_herdr_s_client_is_passed_by() {
+    use super::windows::pick;
+    let data = env(&[("APPDATA", r"C:\D")]);
+    let read = |words: &str| -> io::Result<Invocation> { Ok((args(words), data.clone())) };
+    let gone = || -> io::Result<Invocation> { Err(io::ErrorKind::NotFound.into()) };
+    let socket = Some(PathBuf::from(r"C:\D\herdr\herdr.sock"));
+    let server = "herdr.exe server";
+    let client = [(200, read(server)), (100, read("herdr.exe"))];
+    assert_eq!(pick(client).expect("a client"), socket);
+    let command = [(200, read(server)), (300, read("herdr.exe api snapshot"))];
+    assert_eq!(pick(command).expect("no client"), None);
+    let unread = [(300, gone()), (100, read("herdr.exe"))];
+    assert_eq!(pick(unread).expect("a client"), socket);
+    let error = pick([(300, gone()), (200, read(server))]).expect_err("an unread process");
+    assert!(format!("{error:#}").contains("process 300"), "{error:#}");
 }
 
 #[cfg(windows)]
 #[test]
 fn a_windows_process_reads_with_its_name_arguments_and_variables() {
-    use super::windows::launch;
+    use super::windows::{launch, processes};
     let pid = std::process::id();
     let exe = std::env::current_exe().expect("this test's path");
     let name = exe.file_name().expect("this test's name");
-    let (process, read) = running(pid).expect("the process list");
-    assert_eq!(process, pid);
-    assert!(read.is_some_and(|read| read.as_os_str().eq_ignore_ascii_case(name)));
+    let listed = processes().expect("the process list");
+    assert!(
+        listed
+            .iter()
+            .any(|(id, _, read)| *id == pid && name.eq_ignore_ascii_case(read)),
+        "process {pid} is not listed under its name"
+    );
+    assert!(running(pid).expect("the process list").is_empty());
     let (args, env) = launch(pid).expect("its arguments");
     assert_eq!(args, std::env::args().collect::<Vec<_>>());
     // Windows names it Path; the reader folds names to upper case.
-    assert_eq!(env.get("PATH"), std::env::var_os("PATH").as_ref());
+    let path = std::env::var_os("PATH");
+    assert!(env.get("PATH") == path.as_ref(), "PATH reads otherwise");
 }
 
 #[cfg(windows)]
