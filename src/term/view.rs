@@ -66,6 +66,8 @@ pub struct TerminalView {
     pub(super) held: HashSet<String>,
     pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
+    /// How many folders the program has reported.
+    pub(super) reports: u64,
     cell: (u16, u16),
     /// Focused in an active window, as the program last heard.
     focused: bool,
@@ -73,7 +75,6 @@ pub struct TerminalView {
     shown: bool,
     _events: Task<()>,
     _blink: Task<()>,
-    #[cfg(unix)]
     _herdr: Task<()>,
     _focus: [Subscription; 3],
     _settings: Subscription,
@@ -113,13 +114,13 @@ impl TerminalView {
             held: HashSet::new(),
             finder: None,
             size,
+            reports: 0,
             cell: (8, 16),
             focused: false,
             blinking: false,
             shown: true,
             _events: Self::pump(events, cx),
             _blink: Self::blink(cx),
-            #[cfg(unix)]
             _herdr: super::herdr::follow(cx),
             _settings: cx.observe_global::<SettingsStore>(|view, cx| {
                 view.pty
@@ -211,7 +212,10 @@ impl TerminalView {
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
         for event in events {
             match event {
-                PtyEvent::Folder(folder) => cx.emit(TerminalEvent::Folder(folder)),
+                PtyEvent::Folder(folder) => {
+                    self.reports += 1;
+                    cx.emit(TerminalEvent::Folder(folder));
+                }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
             }

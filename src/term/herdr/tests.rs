@@ -1,6 +1,7 @@
-use std::{fs, os::unix::net::UnixListener};
-
 use super::*;
+
+/// A root that makes a path absolute here.
+const ROOT: &str = if cfg!(windows) { "C:/" } else { "/" };
 
 fn args(words: &str) -> Vec<String> {
     words.split(' ').map(str::to_owned).collect()
@@ -73,11 +74,15 @@ fn reply(focused_pane: &str, cwd: &str) -> String {
 #[test]
 fn the_focused_pane_s_folder_comes_from_herdr_s_snapshot() {
     let read = |focused_pane: &str, cwd: &str| focused(&reply(focused_pane, cwd));
+    let folder = format!("{ROOT}srv/b");
     assert_eq!(
-        read(r#""w1:p2""#, r#""/srv/b""#).expect("a folder"),
-        Some("/srv/b".into())
+        read(r#""w1:p2""#, &format!("\"{folder}\"")).expect("a folder"),
+        Some(folder.clone().into())
     );
-    assert_eq!(read("null", r#""/srv/b""#).expect("no focus"), None);
+    assert_eq!(
+        read("null", &format!("\"{folder}\"")).expect("no focus"),
+        None
+    );
     assert_eq!(read(r#""w1:p2""#, "null").expect("no folder"), None);
     let error = read(r#""w1:p9""#, r#""/b""#).expect_err("a lost pane");
     assert!(error.to_string().contains("w1:p9"), "{error}");
@@ -90,8 +95,10 @@ fn the_focused_pane_s_folder_comes_from_herdr_s_snapshot() {
     assert!(focused("").is_err());
 }
 
+#[cfg(unix)]
 #[test]
 fn herdr_answers_over_its_socket() {
+    use std::{fs, os::unix::net::UnixListener};
     let dir = std::env::temp_dir().join(format!("elyterminal-herdr-{}", std::process::id()));
     if dir.exists() {
         fs::remove_dir_all(&dir).expect("a stale test folder goes");
@@ -121,8 +128,11 @@ fn herdr_answers_over_its_socket() {
 }
 
 /// macOS hides the variables of its own programs, such as `/bin/sleep`, so the test reads itself.
+#[cfg(unix)]
 #[test]
 fn a_process_reads_with_its_path_arguments_variables_and_folder() {
+    use super::unix::{cwd, launch, path};
+    use std::fs;
     let pid = std::process::id() as i32;
     let read = path(pid).expect("its path");
     let (args, env) = launch(pid).expect("its arguments");
@@ -140,6 +150,7 @@ fn a_process_reads_with_its_path_arguments_variables_and_folder() {
 #[cfg(target_os = "linux")]
 #[test]
 fn an_updated_herdr_still_names_itself() {
+    use super::unix::installed;
     let deleted = PathBuf::from("/home/u/.local/bin/herdr (deleted)");
     assert_eq!(
         installed(deleted),
@@ -154,6 +165,7 @@ fn an_updated_herdr_still_names_itself() {
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_lays_out_the_arguments_after_the_program_s_path() {
+    use super::unix::procargs;
     let mut buffer = 2i32.to_ne_bytes().to_vec();
     buffer.extend_from_slice(b"/usr/local/bin/herdr\0\0\0\0herdr\0\0HOME=/h\0X=a=b\0\0\0");
     let (args, env) = procargs(&buffer).expect("it parses");
@@ -161,4 +173,123 @@ fn macos_lays_out_the_arguments_after_the_program_s_path() {
     assert_eq!(env.get("HOME"), Some(&OsString::from("/h")));
     assert_eq!(env.get("X"), Some(&OsString::from("a=b")));
     assert!(procargs(&[1, 0]).is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn a_windows_client_finds_its_server_in_app_data() {
+    let roaming = PathBuf::from(r"C:\Users\u\AppData\Roaming\herdr");
+    let data = env(&[
+        ("APPDATA", r"C:\Users\u\AppData\Roaming"),
+        ("USERPROFILE", r"C:\D"),
+    ]);
+    assert_eq!(found("herdr", &data), roaming.join("herdr.sock"));
+    let profile = env(&[("USERPROFILE", r"C:\Users\u")]);
+    assert_eq!(
+        found("herdr --session work", &profile),
+        roaming.join(r"sessions\work\herdr.sock")
+    );
+    let config = env(&[("XDG_CONFIG_HOME", r"C:\x"), ("APPDATA", r"C:\D")]);
+    assert_eq!(
+        found("herdr", &config),
+        PathBuf::from(r"C:\x\herdr\herdr.sock")
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn herdr_is_sought_nearest_under_the_shell() {
+    use super::windows::nearest;
+    let processes = [
+        (100, 50, "pwsh.exe"),
+        (104, 100, "cmd.exe"),
+        (108, 104, "HERDR.EXE"),
+        (112, 100, "herdr.exe"),
+        (200, 300, "a.exe"),
+        (300, 200, "b.exe"),
+    ]
+    .map(|(pid, parent, name)| (pid, parent, name.to_owned()));
+    let pid = |root| nearest(&processes, root, HERDR).map(|(pid, ..)| *pid);
+    assert_eq!(pid(100), Some(112));
+    assert_eq!(pid(104), Some(108));
+    assert_eq!(pid(112), None);
+    assert_eq!(pid(200), None);
+}
+
+#[cfg(windows)]
+#[test]
+fn a_windows_process_reads_with_its_name_arguments_and_variables() {
+    use super::windows::launch;
+    let pid = std::process::id();
+    let exe = std::env::current_exe().expect("this test's path");
+    let name = exe.file_name().expect("this test's name");
+    let (process, read) = running(pid).expect("the process list");
+    assert_eq!(process, pid);
+    assert!(read.is_some_and(|read| read.as_os_str().eq_ignore_ascii_case(name)));
+    let (args, env) = launch(pid).expect("its arguments");
+    assert_eq!(args, std::env::args().collect::<Vec<_>>());
+    // Windows names it Path; the reader folds names to upper case.
+    assert_eq!(env.get("PATH"), std::env::var_os("PATH").as_ref());
+}
+
+#[cfg(windows)]
+#[test]
+fn herdr_answers_over_its_pipe() {
+    use std::os::windows::{
+        ffi::OsStrExt,
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
+    };
+    use windows_sys::Win32::{
+        Foundation::{ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::PIPE_ACCESS_DUPLEX,
+        System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, PIPE_TYPE_BYTE},
+    };
+    let socket = PathBuf::from(format!(
+        r"C:\elyterminal-herdr-{}\herdr.sock",
+        std::process::id()
+    ));
+    let name = format!(r"\\.\pipe\{}", socket.display());
+    let name: Vec<u16> = OsStr::new(&name).encode_wide().chain([0]).collect();
+    // SAFETY: `name` ends with a NUL; the handle is owned below.
+    let pipe = unsafe {
+        CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_BYTE,
+            1,
+            4096,
+            4096,
+            0,
+            std::ptr::null(),
+        )
+    };
+    assert_ne!(pipe, INVALID_HANDLE_VALUE, "{}", io::Error::last_os_error());
+    // SAFETY: the handle is new and ours.
+    let pipe = unsafe { OwnedHandle::from_raw_handle(pipe) };
+    let answer = reply(r#""w1:p2""#, r#""C:/srv""#);
+    let server = std::thread::spawn(move || {
+        // SAFETY: the pipe is open.
+        let joined = unsafe { ConnectNamedPipe(pipe.as_raw_handle(), std::ptr::null_mut()) };
+        let error = io::Error::last_os_error();
+        assert!(
+            joined != 0 || error.raw_os_error() == Some(ERROR_PIPE_CONNECTED as i32),
+            "{error}"
+        );
+        let stream = std::fs::File::from(pipe);
+        let mut request = String::new();
+        BufReader::new(&stream)
+            .read_line(&mut request)
+            .expect("a request");
+        (&stream)
+            .write_all(format!("{answer}\n").as_bytes())
+            .expect("a reply");
+        // The pipe goes only once the client has read the reply.
+        stream.sync_all().expect("the client reads the reply");
+        request
+    });
+    assert_eq!(folder(&socket).expect("an answer"), Some("C:/srv".into()));
+    assert_eq!(server.join().expect("the server").as_bytes(), SNAPSHOT);
+    let error = folder(&socket).expect_err("no server");
+    assert!(format!("{error:#}").contains("asking"), "{error:#}");
+    assert!(starting(&error), "{error:#}");
 }
