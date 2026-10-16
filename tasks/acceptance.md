@@ -9,7 +9,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | One window: sessions left, terminal middle, Git or Files right | T11 | T11 review; a real X11 window shows the terminal and the right column | Pass |
-| Every setting has a control in the settings window | T16–T18 | 17 of the 20 fields have a row; `show_sessions`, `show_panel` and `panel` are the main window's toggles and switch, which §6 keeps in the file | Pass |
+| Every setting has a control in the settings window | T16–T18, T30 | 17 of the 22 fields have a row; `show_sessions`, `show_panel` and `panel` are the main window's toggles and switch, and `window_width` and `window_height` its size, which §6 keeps in the file | Pass |
 | Silent: no sound, bell, notification, update check, telemetry, tip or onboarding | T10, T12 | a bell is logged and marks a hidden row; the code holds no network call or notification | Pass |
 | Clean: no subtitle, tagline, logging option, status bar or badge without state | T11–T18 | reviews of the layout and settings tasks | Pass |
 | Built-in themes, each with a preview, Catppuccin among them; a theme colors terminal and chrome | T03, T17 | `themes::tests`; T17 review | Pass |
@@ -70,6 +70,7 @@ What no check reached: no one has looked at the window on Windows, which CI buil
 |---|---|---|---|
 | `ColumnShell` with three columns; blur when the setting is on | T11, T19 | `shot` names a `BlurredView` under the window | Pass |
 | Columns toggle and keep their state | T11, T23 | a click on each title bar button hid its column and saved it, and a restart opened the window with both hidden (147 columns against 87); Cmd-B with the app active; Ctrl-Shift-B on a real X11 window | Pass |
+| The window opens at the size it was left at; maximized or full screen, the size before stays; a kept size past the screen shrinks to it | T30 | `a_value_out_of_range_names_its_field`; on X11 under xfwm4: the first start opened at 1200 by 760 and wrote nothing; a resize to 900 by 600 was kept with one write, and the next start opened at 900 by 600 and wrote nothing; maximized by xfwm4's Alt+F10 the window spanned the 1400 by 900 screen while the file kept 900 by 600, and restored it was 900 by 600 again; a kept 3000 by 2000 opened at 1400 by 900, logged; on macOS under `shot`, a kept 900 by 600 opened at 900 by 600 and a kept 5000 by 4000 at the visible 1920 by 1113, logged; a resize on macOS and any run on Windows not yet shown | Partial |
 | The title shows the session's title, nothing else | T11 | log: "the title is", per session shown | Pass |
 | The pointer over the terminal is the arrow | T26 | the terminal sets no pointer, so gpui's arrow shows; on X11 with the pointer over the grid, gpui asked for no I-beam ("text"), which it had asked for, and failed to load under Xvfb, before | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |

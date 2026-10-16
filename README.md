@@ -44,7 +44,7 @@ The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `tra
 - The terminal runs on `alacritty_terminal`: 256 colors and truecolor, bold, dim, italic, five underline styles, wide characters and combining marks. Box drawing, block elements and powerline shapes are drawn as geometry, so lines join across cells. Keys follow xterm and the kitty keyboard protocol; input methods compose at the cursor; programs can track the mouse; pastes are bracketed when a program asks; OSC 8 and plain links open with the link press below; find searches the scrollback.
 - Shell integration for zsh, bash, fish and PowerShell: each prompt reports its folder and title.
 - Sessions: new, close and switch. A bell marks a hidden session's row and makes no sound.
-- A button at each end of the title bar hides or shows its side column; the window opens as it was left. On Windows and Linux a gear beside the right one opens Settings.
+- A button at each end of the title bar hides or shows its side column; the window opens as it was left, at the size it was left at. On Windows and Linux a gear beside the right one opens Settings.
 - Files shows the session's folder as a tree with Git's marks. Inside herdr, on macOS and Linux, the folder is that of herdr's focused pane.
 - Git shows the branch, stages, unstages, discards, commits, lists recent commits and opens diffs, all through the `git` command line.
 - Themes: Ely Dark, Ely Light, Catppuccin Mocha, Macchiato, Frappé and Latte, Tokyo Night, Dracula, Nord, Gruvbox Dark, Rosé Pine, Solarized Light, One Light and Kanagawa Wave. A second theme can take over while the system is dark. On Omarchy 4, an Omarchy theme follows the system's theme as it switches, and is the default there.

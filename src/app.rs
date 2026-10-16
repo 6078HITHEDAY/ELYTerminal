@@ -1,10 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
 use anyhow::Context as _;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowDecorations, WindowHandle,
-    WindowOptions, px, size,
+    App, AppContext, Bounds, Context, Pixels, Size, Task, TitlebarOptions, Window, WindowBounds,
+    WindowDecorations, WindowHandle, WindowOptions, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -16,6 +16,9 @@ use crate::{
     themes,
     workspace::{self, TITLE, Workspace},
 };
+
+/// How long the window's size holds before it is kept, so a drag saves once.
+const SETTLE: Duration = Duration::from_millis(500);
 
 /// The id the macOS bundle and Linux desktop entry share.
 pub const APP_ID: &str = "com.zacharyzhang.elyterminal";
@@ -85,7 +88,8 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
 
 /// Opens the main window running `launch`.
 pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspace>> {
-    let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
+    let kept = opening_size(cx);
+    let bounds = Bounds::centered(None, kept, cx);
     let background = blur::appearance(SettingsStore::get(cx));
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -105,11 +109,71 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         window
             .observe_window_appearance(|_, cx| themes::apply(cx))
             .detach();
-        cx.new(|cx| Workspace::new(pty, events, launch, window, cx))
+        cx.new(|cx| {
+            keep_size(window, cx);
+            Workspace::new(pty, events, launch, window, cx)
+        })
     })?;
     log::info!(
-        "app: main window open, blur: {background:?} on {}",
+        "app: main window open at {} by {}, blur: {background:?} on {}",
+        f32::from(kept.width),
+        f32::from(kept.height),
         std::env::consts::OS
     );
     Ok(window)
+}
+
+/// The kept size, within the primary display's visible area where that is known.
+fn opening_size(cx: &App) -> Size<Pixels> {
+    let settings = SettingsStore::get(cx);
+    let room = cx
+        .primary_display()
+        .map(|display| display.visible_bounds().size);
+    let fit = |want: f32, side: Option<Pixels>| match side.map(f32::from) {
+        Some(side) if side > 0.0 && want > side => {
+            log::info!(
+                "app: a kept side of {want} px passes the screen's {side}; the window takes {side}"
+            );
+            px(side)
+        }
+        _ => px(want),
+    };
+    size(
+        fit(settings.window_width, room.map(|area| area.width)),
+        fit(settings.window_height, room.map(|area| area.height)),
+    )
+}
+
+/// Keeps the window's size in the settings once it settles; maximized or full screen, the size before stays.
+fn keep_size(window: &mut Window, cx: &mut Context<Workspace>) {
+    let mut _settling: Option<Task<()>> = None;
+    cx.observe_window_bounds(window, move |_, window, cx| {
+        _settling = Some(cx.spawn_in(window, async move |_, cx| {
+            cx.background_executor().timer(SETTLE).await;
+            // Read once settled: X11 marks a window maximized after its new size.
+            let kept = cx.update(|window, cx| {
+                if window.is_maximized() || window.is_fullscreen() {
+                    return Ok(());
+                }
+                let area = window.window_bounds().get_bounds().size;
+                let (width, height) = (
+                    f32::from(area.width).round(),
+                    f32::from(area.height).round(),
+                );
+                SettingsStore::update(cx, |settings| {
+                    settings.window_width = width;
+                    settings.window_height = height;
+                })
+                .with_context(|| {
+                    format!("app: the window's size, {width} by {height}, is not kept")
+                })
+            });
+            match kept {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => log::error!("{error:#}"),
+                Err(_) => log::debug!("app: the window closed before its size settled"),
+            }
+        }));
+    })
+    .detach();
 }

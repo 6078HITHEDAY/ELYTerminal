@@ -61,6 +61,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - Ely's `ColumnShell`: sessions column, terminal column, right column. The window opens with blur when the setting is on.
 - The sessions column and the right column toggle, each by a button at its end of the title bar or by key, and keep their state in settings, so the window opens as it was left.
+- The window opens at the size it was left at, on macOS, Windows and Linux: the size is kept in settings once it settles; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it.
 - The title shows the active session's title, and no other text.
 - The pointer over the terminal is the arrow.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.

@@ -75,6 +75,9 @@ pub struct Settings {
     pub show_sessions: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
+    /// The main window's size, unmaximized, in pixels.
+    pub window_width: f32,
+    pub window_height: f32,
 }
 
 impl Default for Settings {
@@ -100,6 +103,8 @@ impl Default for Settings {
             show_sessions: true,
             show_panel: true,
             panel: PanelTab::Git,
+            window_width: 1200.0,
+            window_height: 760.0,
         }
     }
 }
@@ -109,6 +114,7 @@ pub const LINE_HEIGHT: RangeInclusive<f32> = 1.0..=2.0;
 pub const OPACITY: RangeInclusive<f32> = 0.3..=1.0;
 pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
+pub const WINDOW: RangeInclusive<f32> = 100.0..=16384.0;
 
 impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
@@ -119,6 +125,8 @@ impl Settings {
         within("padding_x", self.padding_x, &PADDING)?;
         within("padding_y", self.padding_y, &PADDING)?;
         within("scrollback", self.scrollback, &SCROLLBACK)?;
+        within("window_width", self.window_width, &WINDOW)?;
+        within("window_height", self.window_height, &WINDOW)?;
         for (field, id) in [
             ("theme", Some(&self.theme)),
             ("dark_theme", self.dark_theme.as_ref()),
@@ -224,6 +232,15 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "scrollback is 100001, outside 0 to 100000"
+        );
+        let settings = Settings {
+            window_width: 50.0,
+            ..Settings::default()
+        };
+        let error = settings.validate().expect_err("too narrow");
+        assert_eq!(
+            error.to_string(),
+            "window_width is 50, outside 100 to 16384"
         );
     }
 
