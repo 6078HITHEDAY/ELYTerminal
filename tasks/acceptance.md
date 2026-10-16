@@ -181,3 +181,8 @@ On 2026-10-15 the owner ran the app on macOS and found three faults, now fixed:
 - The desktop showed through sharp: on macOS 27 gpui's `Selection` material builds no blur; the window's view now takes `underWindowBackground`, radius 30.
 - The debug build lagged; the release build does not.
 - No button hid the side columns; each now has one at its end of the title bar, its state saved.
+
+On 2026-10-16 the owner ran it on Omarchy 4.0.4 under Hyprland:
+
+- No window blurred: Omarchy turns Hyprland's own blur off, and Hyprland then blurs nothing; T28 says how to turn it on.
+- The v0.1.1 Linux tarball built from `aae7fba`, installed by hand, wore the Omarchy theme.
