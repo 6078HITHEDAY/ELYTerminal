@@ -86,11 +86,10 @@ fn a_missing_key_or_bad_color_names_it() {
     assert!(parse("x", "X", "palette = 16=#000000").is_err());
 }
 
+/// Omarchy 4 renders Tokyo Night so; glass mode appends the last four lines.
 #[cfg(target_os = "linux")]
-#[test]
-fn omarchys_ghostty_conf_reads_without_its_glass() {
-    // Omarchy 4 renders Tokyo Night so; glassy windows append the last four lines.
-    let rendered = [
+fn tokyo_night() -> String {
+    [
         "background = #1a1b26",
         "foreground = #a9b1d6",
         "cursor-color = #c0caf5",
@@ -118,7 +117,13 @@ fn omarchys_ghostty_conf_reads_without_its_glass() {
         "gtk-custom-css = /usr/share/omarchy/default/gtk/glass.css",
         "# omarchy-glass end",
     ]
-    .join("\n");
+    .join("\n")
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn omarchys_ghostty_conf_reads_without_its_glass() {
+    let rendered = tokyo_night();
     let theme = omarchy::colors(&rendered).expect("Omarchy's file reads");
     assert_eq!(theme.id, OMARCHY);
     assert_eq!(theme.background, rgb(0x1a1b26));
@@ -129,6 +134,39 @@ fn omarchys_ghostty_conf_reads_without_its_glass() {
     assert_eq!(
         omarchy::colors(&cut).expect_err("no 7").to_string(),
         "no palette 7"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn omarchys_file_is_worn_again_once_it_reads() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let folder = std::env::temp_dir().join(format!("elyterminal-omarchy-{}", std::process::id()));
+    if folder.exists() {
+        fs::remove_dir_all(&folder).expect("a stale test folder goes");
+    }
+    fs::create_dir_all(&folder).expect("a test folder");
+    let path = folder.join("ghostty.conf");
+    let text = tokyo_night();
+    fs::write(&path, &text).expect("a theme");
+    assert!(omarchy::check(&path, &text).expect("reads").is_none());
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("000");
+    // Root reads any mode.
+    if unsafe { libc::geteuid() } != 0 {
+        let error = omarchy::check(&path, "").expect_err("unreadable");
+        assert!(
+            format!("{error:#}").contains("Permission denied"),
+            "{error:#}"
+        );
+    }
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("644");
+    let (shown, theme) = omarchy::check(&path, "").expect("reads").expect("a theme");
+    assert_eq!((shown, theme.background), (text, rgb(0x1a1b26)));
+    fs::remove_dir_all(&folder).expect("the test folder goes");
+    assert!(
+        omarchy::check(&path, "")
+            .expect("gone mid-switch")
+            .is_none()
     );
 }
 

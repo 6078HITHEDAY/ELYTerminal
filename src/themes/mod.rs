@@ -127,10 +127,10 @@ pub fn known(id: &str) -> bool {
     find(id).is_some() || (cfg!(target_os = "linux") && id == OMARCHY)
 }
 
-/// A fresh install wears Omarchy's theme where Omarchy runs.
+/// A fresh install wears Omarchy's theme unless its file is surely absent.
 pub fn default_id() -> &'static str {
     #[cfg(target_os = "linux")]
-    if omarchy::path().is_some_and(|path| path.is_file()) {
+    if omarchy::path().is_some_and(|path| !matches!(path.try_exists(), Ok(false))) {
         return OMARCHY;
     }
     "catppuccin-mocha"

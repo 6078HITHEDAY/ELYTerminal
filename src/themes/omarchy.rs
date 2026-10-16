@@ -1,5 +1,6 @@
 use std::{
-    os::unix::fs::MetadataExt,
+    fs,
+    io::{self, ErrorKind},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -10,7 +11,7 @@ use gpui::App;
 use super::{OMARCHY, Omarchy, TerminalTheme, apply, parse};
 use crate::settings::SettingsStore;
 
-/// How often the theme folder is checked for a switch.
+/// How often Omarchy's theme file is read for a switch.
 const CHECK: Duration = Duration::from_millis(500);
 
 /// A Ghostty theme file's keys; Omarchy's other lines pass by.
@@ -29,71 +30,82 @@ pub fn path() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".local/state/omarchy/current/theme/ghostty.conf"))
 }
 
-/// Follows Omarchy's theme; a failed read stops the start only if worn.
+/// Follows Omarchy's theme; an unreadable file, or a bad one worn, stops the start.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
     let settings = SettingsStore::get(cx);
     let worn = settings.theme == OMARCHY || settings.dark_theme.as_deref() == Some(OMARCHY);
     let path = path().context("omarchy: no home folder")?;
     match read(&path) {
-        Ok(theme) => {
+        Ok((text, theme)) => {
             log::info!("omarchy: the theme follows {}", path.display());
             cx.set_global(Omarchy(theme));
-            watch(path, cx);
+            watch(path, text, cx);
             Ok(())
         }
         Err(error) if worn => Err(error.context("settings wear the Omarchy theme")),
-        Err(error) if path.exists() => {
-            log::error!("{error:#}; no Omarchy theme to follow");
+        Err(error) if missing(&error) => {
+            log::info!("omarchy: none at {}", path.display());
             Ok(())
         }
-        Err(_) => {
-            log::info!("omarchy: none at {}", path.display());
+        Err(error) if error.is::<io::Error>() => Err(error),
+        Err(error) => {
+            log::error!("{error:#}; no Omarchy theme to follow");
             Ok(())
         }
     }
 }
 
-/// A switch replaces the folder, so the file's identity changes.
-fn stamp(path: &Path) -> Option<(u64, u64, i64, i64, u64)> {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((
-        meta.dev(),
-        meta.ino(),
-        meta.mtime(),
-        meta.mtime_nsec(),
-        meta.len(),
-    ))
-}
-
-/// Omarchy signals only Alacritty, kitty and Ghostty, so this checks.
-fn watch(path: PathBuf, cx: &mut App) {
-    let mut seen = stamp(&path);
+/// Omarchy signals only Alacritty, kitty and Ghostty, so this reads the file.
+fn watch(path: PathBuf, mut shown: String, cx: &mut App) {
     cx.spawn(async move |cx| {
+        let mut failed = String::new();
         loop {
             cx.background_executor().timer(CHECK).await;
-            let now = stamp(&path);
-            // Gone mid-switch: the next check finds the new folder.
-            if now.is_none() || now == seen {
-                continue;
-            }
-            seen = now;
-            match read(&path) {
-                Ok(theme) => cx.update(|cx| {
-                    log::info!("omarchy: the theme changed");
-                    cx.set_global(Omarchy(theme));
-                    apply(cx);
-                }),
-                Err(error) => log::error!("{error:#}; the last Omarchy theme stays"),
+            match check(&path, &shown) {
+                Ok(None) => failed.clear(),
+                Ok(Some((text, theme))) => {
+                    shown = text;
+                    failed.clear();
+                    cx.update(|cx| {
+                        log::info!("omarchy: the theme changed");
+                        cx.set_global(Omarchy(theme));
+                        apply(cx);
+                    });
+                }
+                Err(error) => {
+                    let error = format!("{error:#}");
+                    if error != failed {
+                        log::error!("{error}; the last Omarchy theme stays");
+                        failed = error;
+                    }
+                }
             }
         }
     })
     .detach();
 }
 
-fn read(path: &Path) -> anyhow::Result<TerminalTheme> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("omarchy: reading {}", path.display()))?;
-    colors(&text).with_context(|| format!("omarchy: {}", path.display()))
+/// The file's theme when its text is not `shown`'s; none while unchanged.
+pub(super) fn check(path: &Path, shown: &str) -> anyhow::Result<Option<(String, TerminalTheme)>> {
+    match read(path) {
+        Ok((text, _)) if text == shown => Ok(None),
+        // Gone mid-switch: the next check finds the new folder.
+        Err(error) if missing(&error) => Ok(None),
+        next => next.map(Some),
+    }
+}
+
+fn read(path: &Path) -> anyhow::Result<(String, TerminalTheme)> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("omarchy: reading {}", path.display()))?;
+    let theme = colors(&text).with_context(|| format!("omarchy: {}", path.display()))?;
+    Ok((text, theme))
+}
+
+fn missing(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<io::Error>()
+        .is_some_and(|error| error.kind() == ErrorKind::NotFound)
 }
 
 /// Omarchy writes no cursor-text; the background stands in, as Ghostty's default.
