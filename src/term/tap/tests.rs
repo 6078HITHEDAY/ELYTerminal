@@ -7,7 +7,7 @@ fn scan(chunks: &[&[u8]]) -> Vec<String> {
     for chunk in chunks {
         scanner.feed(chunk, &mut |thing| {
             found.push(match thing {
-                Found::Osc(body) => String::from_utf8(body.to_vec()).expect("utf-8"),
+                Found::Osc(body, _) => String::from_utf8(body.to_vec()).expect("utf-8"),
                 Found::Reset => "RESET".into(),
             })
         });
@@ -25,6 +25,22 @@ fn finds_a_full_reset_between_bodies() {
         scan(&[b"\x1b[c\x1b]0;c"]).is_empty(),
         "DA1 and an unfinished body"
     );
+    // vte passes DEL and high bytes by in an escape, and the reset still comes.
+    assert_eq!(scan(&[b"\x1b\x7fc\x1b\xff", b"c"]), ["RESET", "RESET"]);
+}
+
+#[test]
+fn a_sequence_counts_from_osc_through_st_skipped_controls_too() {
+    let mut lengths = Vec::new();
+    let mut osc = b"\x1b]7501;".to_vec();
+    osc.extend([0; 5000]);
+    osc.extend_from_slice(b"state=done\x07\x1b]0;t\x1b\\");
+    Osc::default().feed(&osc, &mut |found| {
+        if let Found::Osc(body, length) = found {
+            lengths.push((body.len(), length));
+        }
+    });
+    assert_eq!(lengths, [(15, 5018), (3, 7)]);
 }
 
 #[test]

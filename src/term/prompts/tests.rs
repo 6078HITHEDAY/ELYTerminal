@@ -212,6 +212,14 @@ fn controls_after_an_osc_s_closing_escape_run_where_vte_runs_them() {
 }
 
 #[test]
+fn del_and_high_bytes_in_an_escape_go_on_after_it() {
+    assert_eq!(
+        passed(&[b"\x1b\x7f]133;A\x07$\x1b\xff", b"]133;B\x07"]),
+        b"\x1b\x7f]8;id=\x7f1;\x7f\x07$\x1b\xff]8;;\x07"
+    );
+}
+
+#[test]
 fn controls_vte_runs_inside_an_escape_go_on_before_the_link() {
     assert_eq!(
         passed(&[b"\x1b\n\x07]133;A\x07$"]),

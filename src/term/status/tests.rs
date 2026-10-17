@@ -4,6 +4,11 @@ fn encoded(text: &[u8]) -> String {
     BASE64.encode(text)
 }
 
+/// What `body` says when its sequence is as long as its frame makes it.
+fn said(body: &[u8]) -> Option<Status> {
+    read(body, body.len() + 9)
+}
+
 fn record(state: State, app: Option<&str>) -> Record {
     Record {
         state,
@@ -16,7 +21,7 @@ fn record(state: State, app: Option<&str>) -> Record {
 }
 
 fn reported(body: &str) -> Record {
-    match read(body.as_bytes()) {
+    match said(body.as_bytes()) {
         Some(Status::Report(_, record)) => record,
         other => panic!("{body}: {other:?}"),
     }
@@ -30,7 +35,7 @@ fn the_spec_s_examples_read_as_it_means_them() {
         msg: Some("Apply 3 to add, 1 to change, 0 to destroy?".into()),
         ..record(State::Blocked, Some("terraform"))
     };
-    assert_eq!(read(body), Some(Status::Report(String::new(), blocked)));
+    assert_eq!(said(body), Some(Status::Report(String::new(), blocked)));
     let body = b"state=working:id=us-east:title=VVMgRWFzdA==:progress=40:msg=UHVzaGluZyBpbWFnZQ==";
     let working = Record {
         progress: Some(40),
@@ -38,13 +43,13 @@ fn the_spec_s_examples_read_as_it_means_them() {
         msg: Some("Pushing image".into()),
         ..record(State::Working, None)
     };
-    assert_eq!(read(body), Some(Status::Report("us-east".into(), working)));
+    assert_eq!(said(body), Some(Status::Report("us-east".into(), working)));
     assert_eq!(
-        read(b"state=clear:id=us-east"),
+        said(b"state=clear:id=us-east"),
         Some(Status::Clear(Some("us-east".into())))
     );
-    assert_eq!(read(b"state=clear"), Some(Status::Clear(None)));
-    assert_eq!(read(b"?"), Some(Status::Query));
+    assert_eq!(said(b"state=clear"), Some(Status::Clear(None)));
+    assert_eq!(said(b"?"), Some(Status::Query));
     assert_eq!(
         reported("state=done:msg=VXBncmFkZWQgMTIgcGFja2FnZXM")
             .msg
@@ -82,9 +87,9 @@ fn a_sequence_that_breaks_a_rule_drops_whole() {
         format!("state=done:x={}", "a".repeat(4096 - 9 - 12)),
     ];
     for body in drops {
-        assert_eq!(read(body.as_bytes()), None, "{body}");
+        assert_eq!(said(body.as_bytes()), None, "{body}");
     }
-    assert!(read(format!("state=done:x={}", "a".repeat(4096 - 9 - 14)).as_bytes()).is_some());
+    assert!(said(format!("state=done:x={}", "a".repeat(4096 - 9 - 14)).as_bytes()).is_some());
 }
 
 #[test]
@@ -165,4 +170,42 @@ fn past_the_cap_the_record_updated_longest_ago_goes() {
         "r1 was updated longest ago"
     );
     assert!(records.list.iter().any(|(id, ..)| id == "r0"));
+}
+
+#[test]
+fn a_clear_that_breaks_a_rule_drops_whole() {
+    let drops = [
+        "state=clear:msg=Cg==".to_string(),
+        "state=clear:msg=A".into(),
+        format!("state=clear:app={}", "a".repeat(33)),
+        format!("state=clear:title={}", "a".repeat(257)),
+        "state=clear:id=a//b".into(),
+    ];
+    for body in drops {
+        assert_eq!(said(body.as_bytes()), None, "{body}");
+    }
+}
+
+#[test]
+fn every_pair_counts_though_the_last_of_a_key_wins() {
+    let drops = [
+        format!("state=done:app={}:app=ok", "a".repeat(33)),
+        "state=done:title=A:title=VVMgRWFzdA==".into(),
+        "state=done:id=a//b:id=ok".into(),
+        format!("state=done:msg={}:msg=b2s=", encoded(b"a\nb")),
+    ];
+    for body in drops {
+        assert_eq!(said(body.as_bytes()), None, "{body}");
+    }
+    assert_eq!(reported("state=done:app=x:app=y").app.as_deref(), Some("y"));
+    assert_eq!(
+        reported("state=done:app=a,b:app=ok").app.as_deref(),
+        Some("ok")
+    );
+}
+
+#[test]
+fn the_sequence_counts_from_osc_through_st() {
+    assert_eq!(read(b"state=done", 4097), None);
+    assert!(read(b"state=done", 4096).is_some());
 }

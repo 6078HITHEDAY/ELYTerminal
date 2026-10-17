@@ -77,11 +77,14 @@ fn report(found: Found, events: &UnboundedSender<PtyEvent>, pid: u32, last: &mut
             log::debug!("pty {pid}: a full reset");
             PtyEvent::Reset
         }
-        Found::Osc(body) => {
+        Found::Osc(body, length) => {
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
                 log::debug!("pty {pid}: {mark:?}");
                 PtyEvent::Mark(mark)
-            } else if let Some(status) = body.strip_prefix(b"7501;").and_then(status::read) {
+            } else if let Some(status) = body
+                .strip_prefix(b"7501;")
+                .and_then(|rest| status::read(rest, length))
+            {
                 log::debug!("pty {pid}: {status:?}");
                 PtyEvent::Status(status)
             } else if let Some(folder) = body.strip_prefix(b"7;").and_then(folder) {
@@ -152,9 +155,9 @@ enum State {
     Osc,
 }
 
-/// What the scanner finds: an OSC's body, or a full reset.
+/// What the scanner finds: an OSC's body with the sequence's length from OSC through ST, or a full reset.
 pub(crate) enum Found<'a> {
-    Osc(&'a [u8]),
+    Osc(&'a [u8], usize),
     Reset,
 }
 
@@ -163,6 +166,8 @@ pub(crate) enum Found<'a> {
 pub(crate) struct Osc {
     state: State,
     body: Vec<u8>,
+    /// The sequence's bytes so far, the controls the body leaves out too.
+    length: usize,
     overflow: bool,
 }
 
@@ -185,6 +190,7 @@ impl Osc {
             self.state = match (self.state, byte) {
                 (State::Escape, b']') => {
                     self.body.clear();
+                    self.length = 2;
                     self.overflow = false;
                     State::Osc
                 }
@@ -192,20 +198,24 @@ impl Osc {
                     found(Found::Reset);
                     State::Ground
                 }
-                // vte runs controls in an escape and stays there.
-                (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f) => State::Escape,
+                // vte runs controls in an escape, passes DEL and high bytes by, and stays there.
+                (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f | 0x7f..=0xff) => State::Escape,
                 (State::Escape, _) => State::Ground,
                 (State::Osc, 0x07 | 0x18 | 0x1a) => {
-                    self.finish(found);
+                    self.finish(1, found);
                     State::Ground
                 }
-                // ESC ends the body, then reads as an escape: `\` makes ST.
+                // ESC ends the body, then reads as an escape: `\` makes ST, counted so.
                 (State::Osc, 0x1b) => {
-                    self.finish(found);
+                    self.finish(2, found);
                     State::Escape
                 }
-                (State::Osc, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f) => State::Osc,
+                (State::Osc, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f) => {
+                    self.length += 1;
+                    State::Osc
+                }
                 (State::Osc, byte) => {
+                    self.length += 1;
                     if self.body.len() < MOST {
                         self.body.push(byte);
                     } else {
@@ -218,11 +228,11 @@ impl Osc {
         }
     }
 
-    fn finish(&mut self, found: &mut impl FnMut(Found)) {
+    fn finish(&mut self, end: usize, found: &mut impl FnMut(Found)) {
         if self.overflow {
             log::warn!("pty: an OSC over {MOST} bytes dropped");
         } else {
-            found(Found::Osc(&self.body));
+            found(Found::Osc(&self.body, self.length + end));
         }
         self.body.clear();
     }

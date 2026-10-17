@@ -64,9 +64,9 @@ const BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
 );
 
-/// The sequence in an OSC 7501 body past `7501;`; none for one the spec drops, logged with why.
-pub fn read(body: &[u8]) -> Option<Status> {
-    parse(body)
+/// The sequence in an OSC 7501 body past `7501;`, `length` bytes from OSC through ST; none for one the spec drops, logged with why.
+pub fn read(body: &[u8], length: usize) -> Option<Status> {
+    parse(body, length)
         .inspect_err(|why| log::warn!("pty: OSC 7501 dropped: {why}"))
         .ok()
 }
@@ -81,15 +81,16 @@ fn named(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || b"_.+-".contains(&byte)
 }
 
-fn parse(body: &[u8]) -> Result<Status, String> {
-    // ESC ] 7501 ; and an ST of two bytes frame the body.
-    if body.len() + 9 > SEQUENCE {
-        return Err(format!("over {SEQUENCE} bytes"));
+fn parse(body: &[u8], length: usize) -> Result<Status, String> {
+    if length > SEQUENCE {
+        return Err(format!("{length} bytes, over {SEQUENCE}"));
     }
     if body.trim_ascii() == b"?" {
         return Ok(Status::Query);
     }
-    let mut pairs = Vec::new();
+    // Every pair is checked before the last of each key wins.
+    let (mut state, mut id, mut kind, mut progress, mut app, mut title, mut msg) =
+        (None, None, None, None, None, None, None);
     for pair in body.split(|&byte| byte == b':') {
         // A malformed pair is skipped: no `=`, no key, or a byte outside the set.
         let Some(at) = pair.iter().position(|&byte| byte == b'=') else {
@@ -105,19 +106,20 @@ fn parse(body: &[u8]) -> Result<Status, String> {
         if key.len() > KEY {
             return Err(format!("a key over {KEY} bytes"));
         }
-        let ascii = |bytes| String::from_utf8(Vec::from(bytes)).expect("ASCII");
-        pairs.push((ascii(key), ascii(value)));
+        let value = String::from_utf8(value.to_vec()).expect("ASCII");
+        match key {
+            b"state" => state = Some(value),
+            b"id" => id = Some(self::id(&value)?),
+            b"kind" => kind = Some(value),
+            b"progress" => progress = Some(value),
+            b"app" if value.len() > APP => return Err(format!("an app over {APP} bytes")),
+            b"app" => app = Some(value),
+            b"title" => title = Some(text(&value, "title", 256, 192)?),
+            b"msg" => msg = Some(text(&value, "msg", 2732, 2048)?),
+            _ => {}
+        }
     }
-    // The last of a key wins.
-    let get = |key: &str| {
-        pairs
-            .iter()
-            .rev()
-            .find(|(name, _)| name == key)
-            .map(|(_, value)| value.as_str())
-    };
-    let id = get("id").map(id).transpose()?;
-    let state = match get("state").ok_or("no state")? {
+    let state = match state.as_deref().ok_or("no state")? {
         "idle" => State::Idle,
         "working" => State::Working,
         "done" => State::Done,
@@ -126,30 +128,20 @@ fn parse(body: &[u8]) -> Result<Status, String> {
         "clear" => return Ok(Status::Clear(id)),
         other => return Err(format!("state {other} is not the spec's")),
     };
-    let kind = match (state, get("kind")) {
+    let kind = match (state, kind.as_deref()) {
         (State::Blocked, Some("permission")) => Some(Kind::Permission),
         (State::Blocked, Some("question")) => Some(Kind::Question),
         (State::Blocked, Some("auth")) => Some(Kind::Auth),
         _ => None,
     };
     let progress = match state {
-        State::Working | State::Blocked => get("progress")
+        State::Working | State::Blocked => progress
             .filter(|value| value.bytes().all(|byte| byte.is_ascii_digit()))
             .and_then(|value| value.parse::<u8>().ok())
             .filter(|&value| value <= 100),
         _ => None,
     };
-    let app = match get("app") {
-        Some(app) if app.len() > APP => return Err(format!("an app over {APP} bytes")),
-        Some(app) if !app.is_empty() && app.bytes().all(named) => Some(app.to_string()),
-        _ => None,
-    };
-    let title = get("title")
-        .map(|value| text(value, "title", 256, 192))
-        .transpose()?;
-    let msg = get("msg")
-        .map(|value| text(value, "msg", 2732, 2048))
-        .transpose()?;
+    let app = app.filter(|app| !app.is_empty() && app.bytes().all(named));
     let record = Record {
         state,
         kind,

@@ -105,6 +105,14 @@ impl Prompts {
                 self.out.push(byte);
                 State::Escape { sent }
             }
+            // vte passes DEL and high bytes by in the escape: the ESC goes on, then they.
+            (State::Escape { sent }, 0x7f..=0xff) => {
+                if !sent {
+                    self.release();
+                }
+                self.out.push(byte);
+                State::Escape { sent: true }
+            }
             (State::Escape { .. }, _) => {
                 // A full reset clears the link the parser writes with.
                 if byte == b'c' {
