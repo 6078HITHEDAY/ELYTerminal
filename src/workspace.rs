@@ -154,7 +154,9 @@ impl Workspace {
             folder: launch.cwd,
             reports: launch.reports,
             bell: false,
+            waiting: false,
             status: None,
+            state: None,
             _events: events,
         });
     }
@@ -184,7 +186,7 @@ impl Workspace {
         }
     }
 
-    /// Shows session `index`, clears its bell, and gives its terminal the keys.
+    /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
     pub fn select(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index >= self.sessions.len() {
             return;
@@ -196,6 +198,7 @@ impl Workspace {
         }
         let session = &mut self.sessions[index];
         session.bell = false;
+        session.waiting = false;
         window.focus(&session.terminal.focus_handle(cx), cx);
         let folder = session.folder.clone();
         self.files.update(cx, |files, cx| files.show(&folder, cx));

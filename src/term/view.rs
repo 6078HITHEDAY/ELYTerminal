@@ -55,6 +55,8 @@ pub enum TerminalEvent {
     Finished(Option<i32>),
     /// A notification to show or close, OSC 9, 777 or 99.
     Notice(Ask),
+    /// Its records may have changed.
+    Records,
     Exited(ExitStatus),
 }
 
@@ -148,6 +150,11 @@ impl TerminalView {
         self.pty.pid
     }
 
+    /// What programs in this terminal say they are doing.
+    pub fn records(&self) -> &Records {
+        &self.records
+    }
+
     fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |view, cx| {
             while let Some(first) = events.next().await {
@@ -220,6 +227,15 @@ impl TerminalView {
         let drawn = events
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
+        let restated = events.iter().any(|event| {
+            matches!(
+                event,
+                PtyEvent::Mark(Mark::Prompt)
+                    | PtyEvent::Status(Status::Report(..) | Status::Clear(_))
+                    | PtyEvent::Ask(Ask::Progress(_))
+                    | PtyEvent::Reset
+            )
+        });
         for event in events {
             match event {
                 PtyEvent::Folder(folder) => {
@@ -240,6 +256,9 @@ impl TerminalView {
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
             self.search(false, cx);
+        }
+        if restated {
+            cx.emit(TerminalEvent::Records);
         }
         cx.notify();
     }

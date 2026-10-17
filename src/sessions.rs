@@ -3,13 +3,14 @@ use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     lists::ListItem,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize},
+    motion::ProgressRing,
+    primitives::{Icon, IconName, Tooltip},
+    theme::{ActiveTheme, ControlSize, IconSize},
 };
-use gpui::{App, Entity, Subscription};
+use gpui::{AnyElement, App, Entity, Hsla, SharedString, Subscription, div, prelude::*};
 
 use crate::{
-    term::TerminalView,
+    term::{Kind, Record, Records, State, TerminalView},
     workspace::{TITLE, Workspace},
 };
 
@@ -24,10 +25,18 @@ pub struct Session {
     pub reports: bool,
     /// A bell rang while it was hidden.
     pub bell: bool,
+    /// It started waiting on the user while hidden.
+    pub waiting: bool,
     /// The last command's exit status, as its shell reported it; none before one, or when it gave none.
     pub status: Option<i32>,
+    /// The state its mark shows, as its records last said.
+    pub state: Option<State>,
     pub _events: Subscription,
 }
+
+/// The most records hover lists, and the most characters it shows of each part.
+const LISTED: usize = 10;
+const SHORT: usize = 120;
 
 /// `folder` as a row shows it: the home folder as `~`, on one line.
 pub fn shown(folder: &Path, home: Option<&Path>) -> String {
@@ -59,7 +68,7 @@ pub fn after_close(active: usize, closed: usize, left: usize) -> usize {
     }
 }
 
-/// Session `index`'s row: its title and folder, a bell while one rang unseen, a button that closes it.
+/// Session `index`'s row: its title and folder, the mark of its status, a bell while one rang unseen, a button that closes it.
 pub fn row(
     workspace: &Entity<Workspace>,
     index: usize,
@@ -68,7 +77,8 @@ pub fn row(
     home: Option<&Path>,
     cx: &App,
 ) -> ListItem {
-    let pid = session.terminal.read(cx).pid() as usize;
+    let terminal = session.terminal.read(cx);
+    let pid = terminal.pid() as usize;
     let title = if session.title.is_empty() {
         TITLE
     } else {
@@ -78,7 +88,7 @@ pub fn row(
     let item = ListItem::new(("session", pid), title.to_string())
         .description(shown(&session.folder, home))
         .selected(active)
-        .strong(session.bell)
+        .strong(session.bell || session.waiting)
         .on_click(move |_, window, cx| select.update(cx, |this, cx| this.select(index, window, cx)))
         .trailing(
             IconButton::new(("close-session", pid), IconName::X)
@@ -90,11 +100,178 @@ pub fn row(
                     close.update(cx, |this, cx| this.close(index, window, cx))
                 }),
         );
-    if session.bell {
-        item.leading(Icon::new(IconName::Bell).color(cx.theme().colors.warning))
-    } else {
-        item
+    let mark = mark(pid, terminal.records(), session.status, cx);
+    let bell = session
+        .bell
+        .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
+    if mark.is_none() && bell.is_none() {
+        return item;
     }
+    item.leading(
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .children(mark)
+            .children(bell),
+    )
+}
+
+/// The mark of what the session's records say, else of its last command's failure; hover lists them.
+fn mark(pid: usize, records: &Records, status: Option<i32>, cx: &App) -> Option<AnyElement> {
+    let theme = cx.theme();
+    let colors = &theme.colors;
+    let icon = |name: IconName, color: Hsla| Icon::new(name).color(color).into_any_element();
+    let failed = status.filter(|&code| code != 0);
+    let mark = match (records.shown(), failed) {
+        (
+            Some(Record {
+                state: State::Blocked,
+                kind,
+                ..
+            }),
+            _,
+        ) => {
+            let name = match kind {
+                Some(Kind::Permission) => IconName::Shield,
+                Some(Kind::Question) => IconName::CircleHelp,
+                Some(Kind::Auth) => IconName::Key,
+                None => IconName::Hand,
+            };
+            icon(name, colors.warning)
+        }
+        (
+            Some(Record {
+                state: State::Error,
+                ..
+            }),
+            _,
+        ) => icon(IconName::CircleX, colors.danger),
+        (
+            Some(Record {
+                state: State::Working,
+                progress: Some(value),
+                ..
+            }),
+            _,
+        ) => ProgressRing::new(("session-progress", pid), f32::from(*value) / 100.0)
+            .size(theme.icon_size(IconSize::Xl))
+            .into_any_element(),
+        // A turning spinner would draw the window at every frame while the program works.
+        (
+            Some(Record {
+                state: State::Working,
+                ..
+            }),
+            _,
+        ) => icon(IconName::LoaderCircle, colors.info),
+        (
+            Some(Record {
+                state: State::Done, ..
+            }),
+            _,
+        ) => icon(IconName::CircleCheck, colors.success),
+        (_, Some(_)) => icon(IconName::CircleAlert, colors.danger),
+        (
+            Some(Record {
+                state: State::Idle, ..
+            }),
+            None,
+        ) => icon(IconName::Circle, colors.fg_muted),
+        (None, None) => return None,
+    };
+    let lines = hover(records, failed);
+    let tip = Tooltip::rich(move |_, _| {
+        div()
+            .flex()
+            .flex_col()
+            .children(lines.iter().cloned())
+            .into_any_element()
+    });
+    // Every mark takes the ring's box, so the title stays put as the state changes.
+    Some(
+        div()
+            .id(("session-status", pid))
+            .size(theme.icon_size(IconSize::Xl))
+            .flex()
+            .items_center()
+            .justify_center()
+            .tooltip(tip)
+            .child(mark)
+            .into_any_element(),
+    )
+}
+
+/// What hover shows: a line for each record, ten at most, with its state, app, title and message, then a failed command's status.
+pub fn hover(records: &Records, failed: Option<i32>) -> Vec<SharedString> {
+    let line = |(id, record): (&str, &Record)| {
+        let parts = [
+            records.app(id),
+            record.title.as_deref(),
+            record.msg.as_deref(),
+        ];
+        let said: Vec<String> = parts.into_iter().flatten().map(plain).collect();
+        let state = label(record);
+        SharedString::from(if said.is_empty() {
+            state
+        } else {
+            format!("{state}: {}", said.join(" · "))
+        })
+    };
+    let mut lines: Vec<SharedString> = records.iter().take(LISTED).map(line).collect();
+    let more = records.iter().count().saturating_sub(LISTED);
+    if more > 0 {
+        lines.push(format!("{more} more").into());
+    }
+    if let Some(code) = failed {
+        lines.push(format!("Last command exited with {code}").into());
+    }
+    lines
+}
+
+/// A record's state, as hover names it.
+fn label(record: &Record) -> String {
+    match (record.state, record.kind, record.progress) {
+        (State::Idle, ..) => "Idle".into(),
+        (State::Working, _, Some(value)) => format!("Working, {value}%"),
+        (State::Working, ..) => "Working".into(),
+        (State::Blocked, Some(Kind::Permission), _) => "Waiting for permission".into(),
+        (State::Blocked, Some(Kind::Question), _) => "Waiting for an answer".into(),
+        (State::Blocked, Some(Kind::Auth), _) => "Waiting for a login".into(),
+        (State::Blocked, None, _) => "Waiting".into(),
+        (State::Done, ..) => "Done".into(),
+        (State::Error, ..) => "Error".into(),
+    }
+}
+
+/// A program's text as hover shows it: on one line, 120 characters at most, without what could disguise it.
+pub fn plain(text: &str) -> String {
+    let kept: String = text.chars().filter(|&c| !invisible(c)).collect();
+    let line = one_line(&kept);
+    match line.char_indices().nth(SHORT) {
+        Some((at, _)) => format!("{}…", &line[..at]),
+        None => line,
+    }
+}
+
+/// C1 controls, direction controls and invisible formatting; joiners stay, as scripts and emoji need them.
+fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{80}'..='\u{9f}'
+            | '\u{ad}'
+            | '\u{61c}'
+            | '\u{180e}'
+            | '\u{200b}'
+            | '\u{200e}'
+            | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+            | '\u{e0000}'..='\u{e007f}'
+    )
 }
 
 #[cfg(test)]
@@ -134,5 +311,82 @@ mod tests {
         assert_eq!(after_close(1, 1, 3), 1, "it went: the next one");
         assert_eq!(after_close(3, 3, 3), 2, "the last went: the one before");
         assert_eq!(after_close(1, 2, 3), 1, "one after it went");
+    }
+
+    #[test]
+    fn hover_shows_a_program_s_text_as_text() {
+        assert_eq!(plain("evil\u{202e}txt.exe"), "eviltxt.exe");
+        assert_eq!(
+            plain("a\u{200b}b\u{feff}c\u{e0041}d\u{85}e\u{2066}f"),
+            "abcdef"
+        );
+        assert_eq!(
+            plain("👨\u{200d}💻 two\nlines"),
+            "👨\u{200d}💻 two␊lines",
+            "joiners stay"
+        );
+        assert_eq!(plain(&"x".repeat(SHORT)), "x".repeat(SHORT));
+        assert_eq!(
+            plain(&"é".repeat(SHORT + 1)),
+            format!("{}…", "é".repeat(SHORT))
+        );
+    }
+
+    #[test]
+    fn hover_lists_each_record_with_its_app_then_a_failed_command() {
+        let record =
+            |state: State, kind: Option<Kind>, progress: Option<u8>, texts: [Option<&str>; 3]| {
+                let [app, title, msg] = texts.map(|text| text.map(String::from));
+                Record {
+                    state,
+                    kind,
+                    progress,
+                    app,
+                    title,
+                    msg,
+                }
+            };
+        let mut records = Records::default();
+        records.report(
+            String::new(),
+            record(
+                State::Working,
+                None,
+                Some(40),
+                [Some("deploy"), None, Some("Deploying")],
+            ),
+        );
+        records.report(
+            "eu".into(),
+            record(
+                State::Blocked,
+                Some(Kind::Permission),
+                None,
+                [None, Some("EU West"), Some("Approve?")],
+            ),
+        );
+        records.report(
+            "eu/db".into(),
+            record(State::Done, None, None, [Some("db"), None, None]),
+        );
+        let lines: Vec<String> = hover(&records, Some(2))
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "Working, 40%: deploy · Deploying",
+                "Waiting for permission: deploy · EU West · Approve?",
+                "Done: db",
+                "Last command exited with 2"
+            ]
+        );
+        for at in 0..LISTED {
+            records.report(format!("r{at}"), record(State::Idle, None, None, [None; 3]));
+        }
+        let lines = hover(&records, None);
+        assert_eq!(lines.len(), LISTED + 1);
+        assert_eq!(lines[LISTED].to_string(), "3 more");
     }
 }

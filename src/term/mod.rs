@@ -24,4 +24,5 @@ mod view;
 pub mod zoom;
 
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};
+pub use status::{Kind, Record, Records, State};
 pub use view::{BLINK, ICONS, MONO, TerminalEvent, TerminalView, load_font};

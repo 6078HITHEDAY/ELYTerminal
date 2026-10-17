@@ -232,19 +232,20 @@ impl Records {
         }
     }
 
-    /// herdr's agents in place of the last ones, unless they are the same.
-    pub fn herdr(&mut self, agents: &[(String, Record)]) {
+    /// herdr's agents in place of the last ones; true when they differ.
+    pub fn herdr(&mut self, agents: &[(String, Record)]) -> bool {
         let held = self.list.iter().filter(|(id, ..)| id.starts_with(HERDR));
         if held
             .map(|(id, record, _)| (id, record))
             .eq(agents.iter().map(|(id, record)| (id, record)))
         {
-            return;
+            return false;
         }
         self.list.retain(|(id, ..)| !id.starts_with(HERDR));
         for (id, record) in agents {
             self.put(id.clone(), record.clone());
         }
+        true
     }
 
     /// A full reset: every record goes, and OSC 9;4 maps again.
@@ -286,6 +287,57 @@ impl Records {
     pub fn prompt(&mut self) {
         self.list
             .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error));
+    }
+
+    /// The user typed: done and error records are seen and go, but herdr's, which herdr marks seen; true when any went.
+    pub fn seen(&mut self) -> bool {
+        let before = self.list.len();
+        self.list.retain(|(id, record, _)| {
+            id.starts_with(HERDR) || !matches!(record.state, State::Done | State::Error)
+        });
+        self.list.len() != before
+    }
+
+    /// The record a row shows: blocked, else error, working, done or idle, the one reported last in its state.
+    pub fn shown(&self) -> Option<&Record> {
+        [
+            State::Blocked,
+            State::Error,
+            State::Working,
+            State::Done,
+            State::Idle,
+        ]
+        .into_iter()
+        .find_map(|state| {
+            self.list
+                .iter()
+                .filter(|(_, record, _)| record.state == state)
+                .max_by_key(|(.., at)| *at)
+                .map(|(_, record, _)| record)
+        })
+    }
+
+    /// Each record with its id, in the order first reported.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Record)> {
+        self.list
+            .iter()
+            .map(|(id, record, _)| (id.as_str(), record))
+    }
+
+    /// The app of the record at `id`: its own, else its nearest ancestor's, the root's last; herdr's agents have none.
+    pub fn app(&self, id: &str) -> Option<&str> {
+        let mut at = id;
+        loop {
+            let app = self
+                .list
+                .iter()
+                .find(|(name, ..)| name == at)
+                .and_then(|(_, record, _)| record.app.as_deref());
+            if app.is_some() || at.is_empty() || at.starts_with(HERDR) {
+                return app;
+            }
+            at = at.rfind('/').map_or("", |slash| &at[..slash]);
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use gpui::{Context, EntityId, Window};
 
 use super::Workspace;
-use crate::term::TerminalEvent;
+use crate::term::{State, TerminalEvent};
 
 impl Workspace {
     /// What session `id`'s terminal reported.
@@ -45,6 +45,19 @@ impl Workspace {
                     log::info!("app: session {pid}'s last command ended {ended}");
                 }
                 session.status = *status;
+            }
+            TerminalEvent::Records => {
+                let terminal = session.terminal.read(cx);
+                let state = terminal.records().shown().map(|record| record.state);
+                if state != session.state {
+                    log::info!("app: session {} shows {state:?}", terminal.pid());
+                    // A hidden session that starts waiting marks its row until it is shown.
+                    if state == Some(State::Blocked) && index != self.active {
+                        log::debug!("app: hidden session {} waits", index + 1);
+                        session.waiting = true;
+                    }
+                    session.state = state;
+                }
             }
             TerminalEvent::Notice(ask) => {
                 let pid = session.terminal.read(cx).pid();

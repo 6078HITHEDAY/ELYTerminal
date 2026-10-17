@@ -9,7 +9,7 @@ use gpui::{
 
 use super::{
     keys::{self, Action, Key, Kitty},
-    view::TerminalView,
+    view::{TerminalEvent, TerminalView},
 };
 
 actions!(elyterminal, [Find, FindNewer, PreviousPrompt, NextPrompt]);
@@ -68,7 +68,7 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 impl TerminalView {
-    /// Bytes from the keyboard: back to the newest line, no selection, then to the program.
+    /// Bytes from the keyboard: back to the newest line, no selection, then to the program, which sees done and error records.
     pub(super) fn input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
         let mut term = self.pty.term.lock();
         term.scroll_display(Scroll::Bottom);
@@ -77,6 +77,9 @@ impl TerminalView {
         }
         drop(term);
         self.pty.write(bytes);
+        if self.records.seen() {
+            cx.emit(TerminalEvent::Records);
+        }
         cx.notify();
     }
 

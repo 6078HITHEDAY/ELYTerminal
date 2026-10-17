@@ -298,3 +298,76 @@ fn osc_9_4_maps_to_the_root_record_until_a_program_reports() {
         "a full reset maps again"
     );
 }
+
+#[test]
+fn a_row_shows_the_most_pressing_record_the_last_reported_in_its_state() {
+    let mut records = Records::default();
+    assert_eq!(records.shown(), None);
+    let shown = |records: &Records| records.shown().map(|record| (record.state, record.kind));
+    records.report("a".into(), record(State::Idle, None));
+    assert_eq!(shown(&records), Some((State::Idle, None)));
+    records.report("b".into(), record(State::Done, None));
+    assert_eq!(shown(&records), Some((State::Done, None)));
+    records.report("c".into(), record(State::Working, None));
+    assert_eq!(shown(&records), Some((State::Working, None)));
+    records.report("d".into(), record(State::Error, None));
+    assert_eq!(shown(&records), Some((State::Error, None)));
+    let asks = |kind| Record {
+        kind: Some(kind),
+        ..record(State::Blocked, None)
+    };
+    records.report("e".into(), asks(Kind::Auth));
+    records.report("f".into(), asks(Kind::Question));
+    assert_eq!(
+        shown(&records),
+        Some((State::Blocked, Some(Kind::Question)))
+    );
+    records.report("e".into(), asks(Kind::Auth));
+    assert_eq!(
+        shown(&records),
+        Some((State::Blocked, Some(Kind::Auth))),
+        "the last reported speaks"
+    );
+}
+
+#[test]
+fn a_record_without_an_app_takes_its_nearest_ancestor_s() {
+    let mut records = Records::default();
+    records.report("us/east".into(), record(State::Working, None));
+    assert_eq!(records.app("us/east"), None);
+    records.report(String::new(), record(State::Working, Some("deploy")));
+    records.report("us".into(), record(State::Working, Some("push")));
+    records.report("us/east/a".into(), record(State::Working, None));
+    records.report("eu/west".into(), record(State::Working, None));
+    assert_eq!(
+        records.app("us/east/a"),
+        Some("push"),
+        "past a parent without one"
+    );
+    assert_eq!(records.app("eu/west"), Some("deploy"), "the root's last");
+    assert_eq!(records.app(""), Some("deploy"));
+    assert_eq!(
+        records.app("usa"),
+        Some("deploy"),
+        "a sibling's name is no parent"
+    );
+    records.herdr(&[("herdr:w1:p1".into(), record(State::Working, None))]);
+    assert_eq!(
+        records.app("herdr:w1:p1"),
+        None,
+        "herdr's agents are no program's children"
+    );
+}
+
+#[test]
+fn typing_sees_done_and_error_but_herdr_s() {
+    let mut records = Records::default();
+    records.report("a".into(), record(State::Done, None));
+    records.report("b".into(), record(State::Error, None));
+    records.report("c".into(), record(State::Working, None));
+    assert!(records.herdr(&[("herdr:w1:p1".into(), record(State::Done, None))]));
+    assert!(records.seen());
+    let ids: Vec<&str> = records.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids, ["c", "herdr:w1:p1"]);
+    assert!(!records.seen(), "nothing more to see");
+}
