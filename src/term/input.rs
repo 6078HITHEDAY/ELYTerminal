@@ -77,8 +77,8 @@ impl TerminalView {
         }
         drop(term);
         self.pty.write(bytes);
-        if self.records.seen() && self.restate(cx) {
-            self.tell_state(cx);
+        if self.records.seen() {
+            self.restate(cx);
         }
         cx.notify();
     }

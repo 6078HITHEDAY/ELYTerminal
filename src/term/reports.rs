@@ -122,29 +122,26 @@ impl TerminalView {
         }
     }
 
-    /// Notes the state its row shows, and tells the owner of a change; true when it changed.
-    pub(super) fn restate(&mut self, cx: &mut Context<Self>) -> bool {
-        let changed = self.records.restate();
-        if changed {
+    /// Notes the state its row shows; a change goes to the owner, and one to waiting, done or error posts.
+    pub(super) fn restate(&mut self, cx: &mut Context<Self>) {
+        if self.records.restate() {
             let state = self.records.shows();
             log::info!("terminal {}: its row shows {state:?}", self.pty.pid);
             cx.emit(TerminalEvent::Shows(state));
+            self.tell_state(cx);
         }
-        changed
     }
 
     /// herdr's agents in place of the last ones; an open hover reads them, so the view draws again.
     pub(super) fn agents(&mut self, agents: &[(String, Record)], cx: &mut Context<Self>) {
         if self.records.herdr(agents) {
-            if self.restate(cx) {
-                self.tell_state(cx);
-            }
+            self.restate(cx);
             cx.notify();
         }
     }
 
     /// Posts the state its row shows when it turned to waiting, done or error.
-    pub(super) fn tell_state(&mut self, cx: &mut Context<Self>) {
+    fn tell_state(&mut self, cx: &mut Context<Self>) {
         let body = match self.records.shown() {
             Some((id, record))
                 if matches!(record.state, State::Blocked | State::Done | State::Error) =>

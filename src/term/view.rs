@@ -249,7 +249,6 @@ impl TerminalView {
         let drawn = events
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
-        let mut restated = false;
         for event in events {
             match event {
                 PtyEvent::Folder(folder) => {
@@ -262,26 +261,22 @@ impl TerminalView {
                 // A new prompt ends what was working, waiting or idle; done and error stay.
                 PtyEvent::Mark(Mark::Prompt) => {
                     self.records.prompt();
-                    restated |= self.restate(cx);
+                    self.restate(cx);
                 }
                 PtyEvent::Mark(_) => {}
                 PtyEvent::Status(status) => {
                     self.status(status);
-                    restated |= self.restate(cx);
+                    self.restate(cx);
                 }
                 PtyEvent::Ask(ask) => {
                     self.ask(ask, cx);
-                    restated |= self.restate(cx);
+                    self.restate(cx);
                 }
                 PtyEvent::Reset => {
                     self.records.reset();
-                    restated |= self.restate(cx);
+                    self.restate(cx);
                 }
             }
-        }
-        // A state a later change in the same output passed by posts nothing.
-        if restated {
-            self.tell_state(cx);
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
