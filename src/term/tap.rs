@@ -239,7 +239,7 @@ impl Osc {
                 }
                 (State::Osc, byte) => {
                     self.length += 1;
-                    if self.body.len() < MOST {
+                    if self.body.len() < self.most() {
                         self.body.push(byte);
                     } else {
                         self.overflow = true;
@@ -251,9 +251,18 @@ impl Osc {
         }
     }
 
+    /// The longest body kept: an OSC 99 holds a payload of 4096 bytes past its metadata.
+    fn most(&self) -> usize {
+        if self.body.starts_with(b"99;") {
+            notify::BODY
+        } else {
+            MOST
+        }
+    }
+
     fn finish(&mut self, end: usize, found: &mut impl FnMut(Found)) {
         if self.overflow {
-            log::warn!("pty: an OSC over {MOST} bytes dropped");
+            log::warn!("pty: an OSC over {} bytes dropped", self.most());
         } else {
             found(Found::Osc(&self.body, self.length + end));
         }

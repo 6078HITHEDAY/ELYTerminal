@@ -75,6 +75,13 @@ fn an_overlong_body_is_dropped() {
 }
 
 #[test]
+fn an_osc_99_body_holds_its_metadata_and_a_full_payload() {
+    let osc = |length: usize| [&b"\x1b]99;"[..], &vec![b'a'; length - 3], b"\x07"].concat();
+    assert_eq!(scan(&[&osc(notify::BODY)]).concat().len(), notify::BODY);
+    assert!(scan(&[&osc(notify::BODY + 1)]).is_empty());
+}
+
+#[test]
 fn mouse_modes_follow_private_modes_in_order_across_reads() {
     use crate::term::mouse::{Format, Tracking};
     let mut modes = MouseModes::default();

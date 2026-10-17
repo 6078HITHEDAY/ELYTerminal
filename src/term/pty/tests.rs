@@ -148,6 +148,20 @@ fn notifications_and_progress_reach_the_session_in_order() {
 }
 
 #[test]
+fn osc_99_gathers_a_full_encoded_chunk_and_the_lines_base64_carries() {
+    let ran = run(
+        "printf '\\033]99;i=m:d=0:e=1;'; yes YWFh | head -n 1024 | tr -d '\\n'; printf '\\033\\\\\\033]99;i=m:d=0:e=1;RU5E\\033\\\\\\033]99;i=m:p=body:e=1;TGluZSAxCkxpbmUgMg==\\007x'",
+        (40, 4),
+    );
+    let [Ask::Show(notice)] = ran.asks.as_slice() else {
+        panic!("one notification: {:?}", ran.asks);
+    };
+    assert_eq!(notice.title, format!("{}END", "a".repeat(3072)));
+    assert_eq!(notice.body, "Line 1\nLine 2");
+    assert_eq!(ran.text, "x");
+}
+
+#[test]
 fn a_long_escape_of_controls_keeps_the_pty_reading() {
     let ran = run(
         "printf '\\033'; head -c 3000000 /dev/zero; printf '[0mREADY'",

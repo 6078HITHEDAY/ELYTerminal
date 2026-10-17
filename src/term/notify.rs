@@ -151,18 +151,78 @@ pub fn alive(id: &str) -> String {
     format!("\x1b]99;i={id}:p=alive;\x1b\\")
 }
 
-/// An OSC 99 payload's most bytes: plain, and base64.
+/// An OSC 99 payload's most bytes: plain, and base64; and its metadata's.
 const PLAIN: usize = 2048;
 const ENCODED: usize = 4096;
+const METADATA: usize = 1024;
+
+/// The longest OSC 99 body the tap's scanner keeps: `99;`, metadata, `;` and a payload.
+pub(super) const BODY: usize = 3 + METADATA + 1 + ENCODED;
 
 /// The most text one notification gathers from its chunks, and how many gather at once.
 const GATHERED: usize = 16384;
 const PENDING: usize = 32;
 
+/// A payload gathering its chunks: its bytes so far, and base64 short of a whole group.
+#[derive(Default)]
+struct Text {
+    bytes: Vec<u8>,
+    rest: Vec<u8>,
+}
+
+impl Text {
+    /// Adds a chunk: plain text as it is, base64 by whole groups, so a program may chunk before encoding or after.
+    fn add(&mut self, payload: &[u8], encoded: bool) -> Result<(), String> {
+        // Plain text is UTF-8 without a control character; base64 holds any UTF-8, checked once whole.
+        if !encoded {
+            let text = std::str::from_utf8(payload).map_err(|_| "payload is not UTF-8")?;
+            if text.chars().any(char::is_control) {
+                return Err("payload holds a control character".into());
+            }
+            self.finish()?;
+            self.bytes.extend_from_slice(payload);
+            return Ok(());
+        }
+        self.rest.extend_from_slice(payload);
+        let whole = self.rest.len() / 4 * 4;
+        for group in self.rest[..whole].chunks(4) {
+            self.bytes.extend(decode(group)?);
+        }
+        self.rest.drain(..whole);
+        Ok(())
+    }
+
+    /// Decodes the base64 left, padded or not, as the last chunk may leave it.
+    fn finish(&mut self) -> Result<(), String> {
+        if !self.rest.is_empty() {
+            self.bytes.extend(decode(&self.rest)?);
+            self.rest.clear();
+        }
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.bytes.len() + self.rest.len()
+    }
+}
+
+fn decode(base64: &[u8]) -> Result<Vec<u8>, String> {
+    BASE64
+        .decode(base64)
+        .map_err(|error| format!("payload is no base64: {error}"))
+}
+
+/// A notification gathering its chunks.
+struct Gathering {
+    notice: Notice,
+    title: Text,
+    body: Text,
+}
+
 /// OSC 99 notifications gathered from their chunks, by id.
 #[derive(Default)]
 pub(crate) struct Kitty {
-    pending: Vec<(String, Notice)>,
+    pending: Vec<(String, Gathering)>,
 }
 
 impl Kitty {
@@ -180,6 +240,9 @@ impl Kitty {
             .position(|&byte| byte == b';')
             .ok_or("no payload")?;
         let (metadata, payload) = (&body[..at], &body[at + 1..]);
+        if metadata.len() > METADATA {
+            return Err(format!("metadata over {METADATA} bytes"));
+        }
         let mut options: Vec<(u8, &[u8])> = Vec::new();
         for pair in metadata
             .split(|&byte| byte == b':')
@@ -218,17 +281,6 @@ impl Kitty {
         if payload.len() > limit {
             return Err(format!("a payload over {limit} bytes"));
         }
-        let text = if encoded {
-            let bytes = BASE64
-                .decode(payload)
-                .map_err(|error| format!("payload is no base64: {error}"))?;
-            String::from_utf8(bytes).map_err(|_| "payload is not UTF-8")?
-        } else {
-            String::from_utf8(payload.to_vec()).map_err(|_| "payload is not UTF-8")?
-        };
-        if text.chars().any(char::is_control) {
-            return Err("payload holds a control character".into());
-        }
         // An answer names the asker's id, or 0 without one, as kitty's spec says.
         let named = || id.clone().unwrap_or_else(|| "0".into());
         match get(b'p').unwrap_or(b"title") {
@@ -251,26 +303,38 @@ impl Kitty {
                 return Err(format!("{PENDING} notifications gathering already"));
             }
             None => {
+                let notice = Notice {
+                    id: id.clone(),
+                    ..plain(String::new(), String::new())
+                };
+                let (title, body) = (Text::default(), Text::default());
                 self.pending.push((
-                    key.clone(),
-                    Notice {
-                        id: id.clone(),
-                        ..plain(String::new(), String::new())
+                    key,
+                    Gathering {
+                        notice,
+                        title,
+                        body,
                     },
                 ));
                 self.pending.len() - 1
             }
         };
-        let notice = &mut self.pending[at].1;
-        if get(b'p') == Some(b"body") {
-            notice.body.push_str(&text);
+        let gathering = &mut self.pending[at].1;
+        let text = if get(b'p') == Some(b"body") {
+            &mut gathering.body
         } else {
-            notice.title.push_str(&text);
+            &mut gathering.title
+        };
+        // A chunk that breaks the rules drops what its notification gathered.
+        if let Err(why) = text.add(payload, encoded) {
+            self.pending.remove(at);
+            return Err(why);
         }
-        if notice.title.len() + notice.body.len() > GATHERED {
+        if gathering.title.len() + gathering.body.len() > GATHERED {
             self.pending.remove(at);
             return Err(format!("a notification over {GATHERED} bytes"));
         }
+        let notice = &mut gathering.notice;
         if let Some(occasion) = get(b'o') {
             notice.occasion = match occasion {
                 b"unfocused" => Occasion::Unfocused,
@@ -303,7 +367,16 @@ impl Kitty {
         if get(b'd') == Some(b"0") {
             return Ok(None);
         }
-        let (_, mut notice) = self.pending.remove(at);
+        let (_, gathering) = self.pending.remove(at);
+        let Gathering {
+            mut notice,
+            mut title,
+            mut body,
+        } = gathering;
+        title.finish()?;
+        body.finish()?;
+        notice.title = String::from_utf8(title.bytes).map_err(|_| "title is not UTF-8")?;
+        notice.body = String::from_utf8(body.bytes).map_err(|_| "body is not UTF-8")?;
         if notice.title.is_empty() && notice.body.is_empty() {
             return Ok(None);
         }

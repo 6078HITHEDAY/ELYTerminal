@@ -122,6 +122,34 @@ fn osc_99_decodes_base64_and_takes_plain_text() {
 }
 
 #[test]
+fn osc_99_gathers_base64_chunked_before_or_after_encoding() {
+    let title = |chunks: &[&str]| {
+        let mut kitty = Kitty::default();
+        let (last, first) = chunks.split_last().expect("a chunk");
+        for chunk in first {
+            assert_eq!(kitty.read(format!("i=a:d=0:e=1;{chunk}").as_bytes()), None);
+        }
+        shown(kitty.read(format!("i=a:e=1;{last}").as_bytes())).title
+    };
+    assert_eq!(title(&["SGVsb", "G8="]), "Hello", "split inside a group");
+    assert_eq!(title(&["8J+Y", "gA=="]), "😀", "split inside a character");
+    assert_eq!(
+        title(&["SGVsbG8=", "IHdvcmxk"]),
+        "Hello world",
+        "each chunk padded"
+    );
+    assert_eq!(title(&["SGVsbG", "8"]), "Hello", "the last chunk unpadded");
+    let mut kitty = Kitty::default();
+    assert_eq!(kitty.read(b"i=n:d=0;Title"), None);
+    let notice = shown(kitty.read(b"i=n:p=body:e=1;TGluZSAxCkxpbmUgMg=="));
+    assert_eq!(
+        (notice.title.as_str(), notice.body.as_str()),
+        ("Title", "Line 1\nLine 2"),
+        "base64 carries any UTF-8"
+    );
+}
+
+#[test]
 fn osc_99_asks_to_close_and_what_is_alive_and_supported() {
     let mut kitty = Kitty::default();
     assert_eq!(kitty.read(b"i=x:p=close;"), Some(Ask::Close("x".into())));
@@ -158,8 +186,11 @@ fn osc_99_drops_what_breaks_its_rules() {
                 body.push(byte);
                 body
             }),
+        b";a\tb".to_vec(),
+        b"e=1;SGVsbG8gS".to_vec(),
         long(PLAIN + 1, ""),
         long(ENCODED + 4, "e=1"),
+        long(1, &"x".repeat(METADATA + 1)),
     ] {
         assert_eq!(
             kitty.read(&body),
@@ -168,6 +199,9 @@ fn osc_99_drops_what_breaks_its_rules() {
             String::from_utf8_lossy(&body)
         );
     }
+    assert_eq!(kitty.read(b"i=k:d=0;Hel"), None);
+    assert_eq!(kitty.read(b"i=k:d=0:e=1;!!!!"), None);
+    assert!(kitty.pending.is_empty(), "a bad chunk drops what gathered");
     for at in 0..PENDING {
         assert_eq!(kitty.read(format!("i=p{at}:d=0;x").as_bytes()), None);
     }
