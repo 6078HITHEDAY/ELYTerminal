@@ -47,6 +47,8 @@ struct Run {
     folders: Vec<PathBuf>,
     titles: Vec<String>,
     marks: Vec<Mark>,
+    /// Lines typed, each followed by a prompt of its own.
+    lines: usize,
     deadline: Instant,
 }
 
@@ -87,6 +89,7 @@ impl Run {
             folders: Vec::new(),
             titles: Vec::new(),
             marks: Vec::new(),
+            lines: 0,
             deadline: Instant::now() + Duration::from_secs(30),
         }
     }
@@ -122,6 +125,7 @@ impl Run {
     fn send(&mut self, line: &str) {
         self.until("line editor", |run| run.pty.reads_keys());
         self.pty.write(format!("{line}\r").into_bytes());
+        self.lines += 1;
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -156,11 +160,20 @@ impl Run {
         self.until("inner folder", |run| run.folders.contains(&inner));
     }
 
-    /// Types `line`, the last command sent, and waits for the marks it ends with.
+    /// Types `line` once the prompt before it is marked, then waits for the marks it ends with.
     fn ends(&mut self, line: &str, marks: &[Mark]) {
+        let prompts = self.lines + 1;
+        self.until("the prompt's marks", |run| {
+            run.marks
+                .iter()
+                .filter(|mark| **mark == Mark::Input)
+                .count()
+                >= prompts
+        });
+        let from = self.marks.len();
         self.send(line);
         self.until(&format!("the marks of {line}"), |run| {
-            run.marks.ends_with(marks)
+            run.marks[from..].ends_with(marks)
         });
     }
 
@@ -183,6 +196,25 @@ impl Run {
         drop(self);
         fs::remove_dir_all(&root).expect("cleanup");
     }
+}
+
+/// Whether this bash has PS0, 4.4 on, so it marks a command's start.
+fn bash_ps0(shell: &str) -> bool {
+    let version = std::process::Command::new(shell)
+        .args(["-c", "echo $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1]))"])
+        .output()
+        .expect("bash runs");
+    let version: u32 = String::from_utf8(version.stdout)
+        .expect("utf-8")
+        .trim()
+        .parse()
+        .expect("a version");
+    version >= 404
+}
+
+/// The marks a bash command that ends with `status` leaves; bash 3.2 marks no start.
+fn bash_ended(ps0: bool, status: i32) -> Vec<Mark> {
+    ended(status)[usize::from(!ps0)..].to_vec()
 }
 
 /// The marks a command that ends with `status` leaves: its output, its end, the next prompt.
@@ -250,35 +282,46 @@ fn zsh_reports_its_folder_byte_for_byte_and_its_titles() {
 
 #[test]
 fn bash_reports_its_folder_byte_for_byte_and_keeps_the_status() {
-    let status = r#"PROMPT_COMMAND='printf "USER_STATUS=%s\n" "$?"'"#;
+    let status = r#"PROMPT_COMMAND='printf "USER_STATUS=%s\n" "$?"'; shopt -s extdebug"#;
     let files = [(".bashrc", status), (".bash_profile", status)];
-    let mut run = Run::start(&installed("bash"), &files);
+    let shell = installed("bash");
+    let ps0 = bash_ps0(&shell);
+    let mut run = Run::start(&shell, &files);
     run.walk("declare -F _ely_prompt >/dev/null && echo ELY-LOAD''ED");
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
     });
-    run.ends("false", &ended(1));
+    run.ends("false", &bash_ended(ps0, 1));
     run.until("kept status", |run| run.shows("USER_STATUS=1"));
     assert!(run.shows("$ false"), "{}", run.screen());
-    // bash 3.2 traps no part of a lone subshell, so its C may not come.
-    run.ends(
-        "(exit 7)",
-        &[Mark::Done(Some(7)), Mark::Prompt, Mark::Input],
-    );
+    // Under extdebug a DEBUG trap that fails skips its command.
+    run.ends("touch ran", &bash_ended(ps0, 0));
+    assert!(run.start.join(INNER).join("ran").exists());
+    run.ends("(exit 7)", &bash_ended(ps0, 7));
     run.send(r#"ls / >/dev/null; echo "LAST=$_""#);
     run.until("the last argument", |run| run.shows("LAST=/\n"));
     run.finish();
 }
 
 #[test]
-fn bash_runs_the_user_s_debug_trap_beside_its_own() {
-    let trap = r#"_user_trap() { USER_TRAP=yes; }; trap '_user_trap "$_"' DEBUG"#;
-    let files = [(".bashrc", trap), (".bash_profile", trap)];
-    let mut run = Run::start(&installed("bash"), &files);
+fn bash_leaves_the_user_s_trap_and_keys_alone() {
+    let rc = r#"_user_trap() { USER_TRAP=yes; }; trap '_user_trap "$_"' DEBUG
+bind -x '"\C-t": :'"#;
+    let files = [(".bashrc", rc), (".bash_profile", rc)];
+    let shell = installed("bash");
+    let ps0 = bash_ps0(&shell);
+    let mut run = Run::start(&shell, &files);
     run.walk("declare -F _ely_prompt >/dev/null && echo ELY-LOAD''ED");
-    run.ends("false", &ended(1));
-    run.send(r#"echo "TRAP=$USER_TRAP""#);
-    run.until("the user's trap", |run| run.shows("TRAP=yes"));
+    run.ends("false", &bash_ended(ps0, 1));
+    // A key binding runs no command, so it marks none.
+    let from = run.marks.len();
+    run.pty.write(b"\x14".to_vec());
+    run.ends(r#"echo "TRAP=$USER_TRAP""#, &bash_ended(ps0, 0));
+    assert!(run.shows("TRAP=yes"), "{}", run.screen());
+    let starts = run.marks[from..]
+        .iter()
+        .filter(|mark| **mark == Mark::Output);
+    assert_eq!(starts.count(), usize::from(ps0), "{:?}", &run.marks[from..]);
     run.finish();
 }
 
@@ -313,12 +356,18 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     run.ends("/usr/bin/false", &ended(1));
     run.until("kept status", |run| run.shows("USER_SUCCESS=False"));
     assert!(run.shows("> /usr/bin/false"), "{}", run.screen());
-    // A cmdlet's failure leaves no error behind, and a native code may repeat.
+    // A cmdlet's failure leaves no error behind, a native code may repeat, and the line's last pipeline counts.
     run.ends("/usr/bin/true", &ended(0));
     run.ends("Get-Item ./missing -ErrorAction Ignore", &ended(1));
     run.ends("sh -c 'exit 3'", &ended(3));
     run.ends("sh -c 'exit 3'", &ended(3));
     run.ends("Get-Item ./missing", &ended(1));
+    run.ends("sh -c 'exit 7'; Get-Item ./missing", &ended(1));
+    run.ends(
+        "sh -c 'exit 7'; Get-Item ./missing -ErrorAction Ignore",
+        &ended(1),
+    );
+    run.ends("Get-Item ./missing; sh -c 'exit 7'", &ended(7));
     let native = "$PSNativeCommandUseErrorActionPreference = $true; sh -c 'exit 7'";
     run.ends(native, &ended(7));
     run.finish();
