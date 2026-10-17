@@ -24,6 +24,8 @@ pub struct Session {
     pub reports: bool,
     /// A bell rang while it was hidden.
     pub bell: bool,
+    /// The last command's exit status, as its shell reported it; none before one, or when it gave none.
+    pub status: Option<i32>,
     pub _events: Subscription,
 }
 

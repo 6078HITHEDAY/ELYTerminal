@@ -1,7 +1,7 @@
 use super::*;
 
 fn scan(chunks: &[&[u8]]) -> Vec<String> {
-    let mut scanner = Osc7::default();
+    let mut scanner = Osc::default();
     let mut found = Vec::new();
     for chunk in chunks {
         scanner.feed(chunk, &mut |body| {
@@ -12,17 +12,23 @@ fn scan(chunks: &[&[u8]]) -> Vec<String> {
 }
 
 #[test]
-fn finds_osc_7_ended_by_bel_or_st_across_reads() {
-    assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["file:///a"]);
-    assert_eq!(scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]), ["file:///b"]);
-    assert_eq!(scan(&[b"\x1b", b"]7;x\x07\x1b]7;y\x1b\\"]), ["x", "y"]);
+fn finds_each_osc_body_ended_by_bel_or_st_across_reads() {
+    assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["7;file:///a"]);
+    assert_eq!(
+        scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]),
+        ["7;file:///b"]
+    );
+    assert_eq!(
+        scan(&[b"\x1b", b"]133;A\x07\x1b]0;t\x1b\\"]),
+        ["133;A", "0;t"]
+    );
 }
 
 #[test]
 fn other_sequences_and_cancels_pass() {
-    assert!(scan(&[b"\x1b]0;title\x07\x1b[31m"]).is_empty());
+    assert!(scan(&[b"\x1b[31m\x1bc"]).is_empty());
     assert!(scan(&[b"\x1b]7;file:///a\x18\x07"]).is_empty());
-    assert_eq!(scan(&[b"\x1b]7;lost\x1b]7;kept\x07"]), ["kept"]);
+    assert_eq!(scan(&[b"\x1b]7;lost\x1b]133;D;1\x07"]), ["133;D;1"]);
 }
 
 #[test]
@@ -31,7 +37,7 @@ fn an_overlong_body_is_dropped() {
     long.extend(std::iter::repeat_n(b'a', MOST + 1));
     long.push(0x07);
     assert!(scan(&[&long]).is_empty());
-    assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["b"]);
+    assert_eq!(scan(&[&long, b"\x1b]7;b\x07"]), ["7;b"]);
 }
 
 #[test]

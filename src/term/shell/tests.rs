@@ -6,7 +6,7 @@ use futures::channel::mpsc::TryRecvError;
 use super::*;
 use crate::{
     settings::Settings,
-    term::{Events, Pty, PtyEvent, config, spawn},
+    term::{Events, Pty, PtyEvent, config, marks::Mark, spawn},
 };
 
 /// A folder name with a space, a percent, a bell and a newline.
@@ -43,6 +43,7 @@ struct Run {
     start: PathBuf,
     folders: Vec<PathBuf>,
     titles: Vec<String>,
+    marks: Vec<Mark>,
     deadline: Instant,
 }
 
@@ -79,6 +80,7 @@ impl Run {
             start,
             folders: Vec::new(),
             titles: Vec::new(),
+            marks: Vec::new(),
             deadline: Instant::now() + Duration::from_secs(30),
         }
     }
@@ -88,15 +90,17 @@ impl Run {
         while !done(self) {
             assert!(
                 Instant::now() < self.deadline,
-                "{}: no {what}; folders {:?}, titles {:?}, screen\n{}",
+                "{}: no {what}; folders {:?}, titles {:?}, marks {:?}, screen\n{}",
                 self.shell,
                 self.folders,
                 self.titles,
+                self.marks,
                 self.screen()
             );
             match self.events.try_recv() {
                 Ok(PtyEvent::Folder(folder)) => self.folders.push(folder),
                 Ok(PtyEvent::Term(Event::Title(title))) => self.titles.push(title),
+                Ok(PtyEvent::Mark(mark)) => self.marks.push(mark),
                 Ok(PtyEvent::Term(Event::PtyWrite(reply))) => self.pty.write(reply.into_bytes()),
                 Ok(PtyEvent::Term(Event::ChildExit(status))) => {
                     panic!("{} ended, {status}:\n{}", self.shell, self.screen())
@@ -140,6 +144,13 @@ impl Run {
         self.send("cd in*");
         let inner = start.join(INNER);
         self.until("inner folder", |run| run.folders.contains(&inner));
+    }
+
+    /// Types `line`, the last command sent, which fails with 1; its marks follow its earlier ones.
+    fn fails(&mut self, line: &str) {
+        self.send(line);
+        let after = [Mark::Output, Mark::Done(Some(1)), Mark::Prompt, Mark::Input];
+        self.until("marks of the failure", |run| run.marks.ends_with(&after));
     }
 
     fn finish(mut self) {
@@ -193,7 +204,10 @@ fn a_script_it_cannot_read_fails_the_install() {
 
 #[test]
 fn zsh_reports_its_folder_byte_for_byte_and_its_titles() {
-    let mut run = Run::start(&installed("zsh"), &[]);
+    // A theme that sets PS1 in its own hook, which runs after ours.
+    let theme =
+        "autoload -Uz add-zsh-hook\n_theme() { PS1='THEME %? > ' }\nadd-zsh-hook precmd _theme";
+    let mut run = Run::start(&installed("zsh"), &[(".zshrc", theme)]);
     run.walk("(( $+functions[_ely_precmd] )) && echo ELY-LOAD''ED");
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
@@ -203,6 +217,10 @@ fn zsh_reports_its_folder_byte_for_byte_and_its_titles() {
         "{:?}",
         run.titles
     );
+    run.fails("false");
+    run.until("the theme's prompt", |run| {
+        run.shows("THEME 0 > false") && run.shows("THEME 1 >")
+    });
     run.finish();
 }
 
@@ -215,8 +233,9 @@ fn bash_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
     });
-    run.send("false");
+    run.fails("false");
     run.until("kept status", |run| run.shows("USER_STATUS=1"));
+    assert!(run.shows("$ false"), "{}", run.screen());
     run.finish();
 }
 
@@ -228,6 +247,10 @@ fn fish_loads_its_script_and_restores_its_data_dirs() {
     run.send(r#"echo "DIRS[$ELY_FISH_XDG_DATA_DIRS][$XDG_DATA_DIRS]""#);
     let restored = format!("DIRS[][{previous}]");
     run.until("restored dirs", |run| run.shows(&restored));
+    // The prompt hears each command's own status, none failed so far.
+    assert!(!run.shows("[1]"), "{}", run.screen());
+    run.fails("false");
+    run.until("the failed status", |run| run.shows("[1]>"));
     run.finish();
 }
 
@@ -244,8 +267,9 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
     });
-    run.send("/usr/bin/false");
+    run.fails("/usr/bin/false");
     run.until("kept status", |run| run.shows("USER_SUCCESS=False"));
+    assert!(run.shows("> /usr/bin/false"), "{}", run.screen());
     run.finish();
 }
 

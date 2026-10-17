@@ -42,7 +42,7 @@ The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `tra
 ## What it does
 
 - The terminal runs on `alacritty_terminal`: 256 colors and truecolor, bold, dim, italic, five underline styles, wide characters and combining marks. Box drawing, block elements and powerline shapes are drawn as geometry, so lines join across cells. Keys follow xterm and the kitty keyboard protocol; input methods compose at the cursor; programs can track the mouse; pastes are bracketed when a program asks; OSC 8 and plain links open with the link press below; find searches the scrollback.
-- Shell integration for zsh, bash, fish and PowerShell: each prompt reports its folder and title.
+- Shell integration for zsh, bash, fish and PowerShell: each prompt reports its folder and title, and OSC 133 marks each prompt, each command and its exit status.
 - Sessions: new, close and switch. A bell marks a hidden session's row and makes no sound.
 - A button at each end of the title bar hides or shows its side column, and a drag on the border between a side column and the terminal resizes it; the window opens as it was left, at the size and widths it was left at. On Windows and Linux a gear beside the right one opens Settings.
 - Files shows the session's folder as a tree with Git's marks. Inside herdr the folder is that of herdr's focused pane.

@@ -22,6 +22,7 @@ use super::{
     frame::frame,
     ink::Ink,
     input::{self, Find},
+    marks::Mark,
     mouse::MouseMode,
     paint::{self, Look},
     pointer::Pointer,
@@ -48,6 +49,8 @@ pub enum TerminalEvent {
     Title(String),
     Folder(PathBuf),
     Bell,
+    /// A command the shell ran ended, with the status it gave.
+    Finished(Option<i32>),
     Exited(ExitStatus),
 }
 
@@ -218,6 +221,8 @@ impl TerminalView {
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
+                PtyEvent::Mark(Mark::Done(status)) => cx.emit(TerminalEvent::Finished(status)),
+                PtyEvent::Mark(_) => {}
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.

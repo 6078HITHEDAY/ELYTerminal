@@ -7,7 +7,7 @@ use alacritty_terminal::{
 use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
-use super::{mouse::MouseMode, pty::PtyEvent};
+use super::{marks, mouse::MouseMode, pty::PtyEvent};
 
 /// The longest OSC body kept; longer ones are dropped whole.
 const MOST: usize = 4096;
@@ -15,7 +15,7 @@ const MOST: usize = 4096;
 /// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
     pub inner: P,
-    scanner: Osc7,
+    scanner: Osc,
     mouse: MouseModes,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
@@ -26,7 +26,7 @@ impl<P> Tapped<P> {
     pub fn new(inner: P, events: UnboundedSender<PtyEvent>, pid: u32) -> Self {
         Self {
             inner,
-            scanner: Osc7::default(),
+            scanner: Osc::default(),
             mouse: MouseModes::default(),
             events,
             pid,
@@ -40,7 +40,14 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         let count = self.inner.reader().read(buf)?;
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         self.scanner.feed(&buf[..count], &mut |body| {
-            let Some(folder) = folder(body) else {
+            if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
+                log::debug!("pty {pid}: {mark:?}");
+                if events.unbounded_send(PtyEvent::Mark(mark)).is_err() {
+                    log::debug!("pty {pid}: a mark after its session closed");
+                }
+                return;
+            }
+            let Some(folder) = body.strip_prefix(b"7;").and_then(folder) else {
                 return;
             };
             if last.as_ref() == Some(&folder) {
@@ -114,15 +121,15 @@ enum State {
     OscEscape,
 }
 
-/// Finds `ESC ] 7 ; body` ended by BEL or `ESC \`, across reads.
+/// Finds each OSC body, `ESC ] body` ended by BEL or `ESC \`, across reads.
 #[derive(Default)]
-pub(crate) struct Osc7 {
+pub(crate) struct Osc {
     state: State,
     body: Vec<u8>,
     overflow: bool,
 }
 
-impl Osc7 {
+impl Osc {
     pub fn feed(&mut self, bytes: &[u8], found: &mut impl FnMut(&[u8])) {
         let mut rest = bytes;
         while !rest.is_empty() {
@@ -175,8 +182,8 @@ impl Osc7 {
     fn finish(&mut self, found: &mut impl FnMut(&[u8])) {
         if self.overflow {
             log::warn!("pty: an OSC over {MOST} bytes dropped");
-        } else if let Some(body) = self.body.strip_prefix(b"7;") {
-            found(body);
+        } else {
+            found(&self.body);
         }
         self.body.clear();
     }

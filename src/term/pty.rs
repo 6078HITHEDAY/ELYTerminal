@@ -11,7 +11,7 @@ use alacritty_terminal::{
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use super::{mouse::MouseMode, tap::Tapped};
+use super::{marks::Mark, mouse::MouseMode, tap::Tapped};
 use crate::settings::{CursorStyle, Settings};
 
 /// What a session hears from its pty.
@@ -20,6 +20,7 @@ pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
     Mouse(MouseMode),
+    Mark(Mark),
 }
 
 /// Hands the grid's events to the session; `pid` names the program in logs.
@@ -256,6 +257,7 @@ mod tests {
 
     struct Ran {
         folders: Vec<PathBuf>,
+        marks: Vec<Mark>,
         text: String,
         success: bool,
         pid: u32,
@@ -272,23 +274,25 @@ mod tests {
         };
         let (pty, mut events) =
             spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
-        let (folders, success) = futures::executor::block_on(async {
-            let (mut folders, mut success) = (Vec::new(), false);
+        let (folders, marks, success) = futures::executor::block_on(async {
+            let (mut folders, mut marks, mut success) = (Vec::new(), Vec::new(), false);
             while let Some(event) = events.next().await {
                 match event {
                     PtyEvent::Folder(folder) => folders.push(folder),
+                    PtyEvent::Mark(mark) => marks.push(mark),
                     PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                     PtyEvent::Term(Event::Exit) => break,
                     PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
                 }
             }
-            (folders, success)
+            (folders, marks, success)
         });
         let term = pty.term.lock();
         let row = &term.grid()[Line(0)];
         let text: String = (0..24).map(|column| row[Column(column)].c).collect();
         Ran {
             folders,
+            marks,
             text: text.trim_end().to_string(),
             success,
             pid: pty.pid,
@@ -312,6 +316,17 @@ mod tests {
         );
         assert_eq!(ran.folders, [PathBuf::from("/tmp/a b")]);
         assert_eq!(ran.text, "x");
+    }
+
+    #[test]
+    fn osc_133_reaches_the_session_as_marks() {
+        let ran = run(
+            "printf '\\033]133;A\\007>\\033]133;B\\007\\033]133;C\\033\\\\x\\033]133;D;3\\007'",
+            (40, 4),
+        );
+        let marks = [Mark::Prompt, Mark::Input, Mark::Output, Mark::Done(Some(3))];
+        assert_eq!(ran.marks, marks);
+        assert_eq!(ran.text, ">x");
     }
 
     #[test]

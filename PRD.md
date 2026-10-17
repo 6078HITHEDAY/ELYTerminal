@@ -42,7 +42,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `alacritty_terminal`; Ely's `Terminal` is a gallery widget without mouse reporting, IME, kitty keys or style settings.
 
-- PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC 7 scanner. The scanner reports the working directory.
+- PTY: alacritty's `tty` and event loop. The pty is wrapped so its reader passes bytes through an OSC scanner. The scanner reports the working directory and prompt marks.
 - Shell integration for zsh, bash, fish and PowerShell, injected at launch as Ghostty does: each prompt sends OSC 7 and a title. A shell without integration reports nothing, and the panels say so.
 - Prompt marks, OSC 133: the shell integration marks where each prompt starts (A) and ends (B), where a command starts (C), and where it ends with its exit status (D); the terminal reads any program's OSC 133. Cmd-Up and Cmd-Down, and Cmd-Shift-Up and Cmd-Shift-Down, on macOS, Ctrl-Shift-Up and Ctrl-Shift-Down elsewhere, scroll to the prompt before or after the view's top, as in Ghostty.
 - Program status, OSC 7501 revision 0.4: each terminal keeps the records programs report (state, id, kind, progress, app, title, msg), checked as the spec checks them; a new prompt drops working, blocked and idle records, a full reset drops them all; the terminal answers the support query with the states and kinds it takes.
@@ -150,4 +150,4 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 ## Deferred
 
-Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, OSC 133 prompt marks, session restore, push and pull, quick terminal.
+Splits, tabs inside a session, profiles, key rebinding, kitty graphics, sixel, session restore, push and pull, quick terminal.

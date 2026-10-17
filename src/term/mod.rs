@@ -8,6 +8,7 @@ pub mod keys;
 mod links;
 #[cfg(target_os = "macos")]
 pub mod mac;
+mod marks;
 pub mod mouse;
 mod paint;
 mod pointer;
