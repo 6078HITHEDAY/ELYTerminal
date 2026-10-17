@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::{Duration, Instant},
+};
 
 use alacritty_terminal::{event::Event, grid::Dimensions, index::Line};
 use futures::channel::mpsc::TryRecvError;
@@ -51,9 +54,12 @@ impl Run {
     /// Starts `shell` in a fresh folder; `files` go under its HOME first.
     fn start(shell: &str, files: &[(&str, &str)]) -> Self {
         crate::testlog::init();
+        // Two tests may run one shell at once.
+        static RUNS: AtomicUsize = AtomicUsize::new(0);
         let root = folder(&format!(
-            "shell-{}",
-            shell.rsplit('/').next().expect("a name")
+            "shell-{}-{}",
+            shell.rsplit('/').next().expect("a name"),
+            RUNS.fetch_add(1, Ordering::Relaxed)
         ));
         let (dir, home, start) = (
             root.join("integration"),
@@ -136,6 +142,10 @@ impl Run {
 
     /// The prompt's folder, the script loaded by `probe`, then a cd into the inner folder.
     fn walk(&mut self, probe: &str) {
+        let first = [Mark::Prompt, Mark::Input];
+        self.until("the first prompt's marks", |run| {
+            run.marks.starts_with(&first)
+        });
         let start = self.start.clone();
         self.send(probe);
         self.until("first folder", |run| run.folders.contains(&start));
@@ -146,11 +156,12 @@ impl Run {
         self.until("inner folder", |run| run.folders.contains(&inner));
     }
 
-    /// Types `line`, the last command sent, which fails with 1; its marks follow its earlier ones.
-    fn fails(&mut self, line: &str) {
+    /// Types `line`, the last command sent, and waits for the marks it ends with.
+    fn ends(&mut self, line: &str, marks: &[Mark]) {
         self.send(line);
-        let after = [Mark::Output, Mark::Done(Some(1)), Mark::Prompt, Mark::Input];
-        self.until("marks of the failure", |run| run.marks.ends_with(&after));
+        self.until(&format!("the marks of {line}"), |run| {
+            run.marks.ends_with(marks)
+        });
     }
 
     fn finish(mut self) {
@@ -172,6 +183,16 @@ impl Run {
         drop(self);
         fs::remove_dir_all(&root).expect("cleanup");
     }
+}
+
+/// The marks a command that ends with `status` leaves: its output, its end, the next prompt.
+fn ended(status: i32) -> [Mark; 4] {
+    [
+        Mark::Output,
+        Mark::Done(Some(status)),
+        Mark::Prompt,
+        Mark::Input,
+    ]
 }
 
 #[test]
@@ -217,10 +238,13 @@ fn zsh_reports_its_folder_byte_for_byte_and_its_titles() {
         "{:?}",
         run.titles
     );
-    run.fails("false");
+    run.ends("false", &ended(1));
     run.until("the theme's prompt", |run| {
         run.shows("THEME 0 > false") && run.shows("THEME 1 >")
     });
+    run.send("false | true");
+    run.send("echo PIPE=$pipestatus");
+    run.until("the pipeline's statuses", |run| run.shows("PIPE=1 0"));
     run.finish();
 }
 
@@ -233,9 +257,28 @@ fn bash_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
     });
-    run.fails("false");
+    run.ends("false", &ended(1));
     run.until("kept status", |run| run.shows("USER_STATUS=1"));
     assert!(run.shows("$ false"), "{}", run.screen());
+    // bash 3.2 traps no part of a lone subshell, so its C may not come.
+    run.ends(
+        "(exit 7)",
+        &[Mark::Done(Some(7)), Mark::Prompt, Mark::Input],
+    );
+    run.send(r#"ls / >/dev/null; echo "LAST=$_""#);
+    run.until("the last argument", |run| run.shows("LAST=/\n"));
+    run.finish();
+}
+
+#[test]
+fn bash_runs_the_user_s_debug_trap_beside_its_own() {
+    let trap = r#"_user_trap() { USER_TRAP=yes; }; trap '_user_trap "$_"' DEBUG"#;
+    let files = [(".bashrc", trap), (".bash_profile", trap)];
+    let mut run = Run::start(&installed("bash"), &files);
+    run.walk("declare -F _ely_prompt >/dev/null && echo ELY-LOAD''ED");
+    run.ends("false", &ended(1));
+    run.send(r#"echo "TRAP=$USER_TRAP""#);
+    run.until("the user's trap", |run| run.shows("TRAP=yes"));
     run.finish();
 }
 
@@ -249,7 +292,7 @@ fn fish_loads_its_script_and_restores_its_data_dirs() {
     run.until("restored dirs", |run| run.shows(&restored));
     // The prompt hears each command's own status, none failed so far.
     assert!(!run.shows("[1]"), "{}", run.screen());
-    run.fails("false");
+    run.ends("false", &ended(1));
     run.until("the failed status", |run| run.shows("[1]>"));
     run.finish();
 }
@@ -267,9 +310,17 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     run.until("title", |run| {
         run.titles.iter().any(|title| title == "in ner%xy")
     });
-    run.fails("/usr/bin/false");
+    run.ends("/usr/bin/false", &ended(1));
     run.until("kept status", |run| run.shows("USER_SUCCESS=False"));
     assert!(run.shows("> /usr/bin/false"), "{}", run.screen());
+    // A cmdlet's failure leaves no error behind, and a native code may repeat.
+    run.ends("/usr/bin/true", &ended(0));
+    run.ends("Get-Item ./missing -ErrorAction Ignore", &ended(1));
+    run.ends("sh -c 'exit 3'", &ended(3));
+    run.ends("sh -c 'exit 3'", &ended(3));
+    run.ends("Get-Item ./missing", &ended(1));
+    let native = "$PSNativeCommandUseErrorActionPreference = $true; sh -c 'exit 7'";
+    run.ends(native, &ended(7));
     run.finish();
 }
 

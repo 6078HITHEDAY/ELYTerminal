@@ -8,6 +8,7 @@ fi
 [[ -r "${ZDOTDIR:-$HOME}/.zshenv" ]] && builtin source "${ZDOTDIR:-$HOME}/.zshenv"
 if [[ -o interactive ]]; then
   _ely_ran=
+  _ely_first=1
   _ely_precmd() {
     builtin local ret=$? LC_ALL=C char url=
     if [[ -n $_ely_ran ]]; then
@@ -21,14 +22,20 @@ if [[ -o interactive ]]; then
       url+=$char
     done
     builtin printf '\e]7;file://%s\a\e]2;%s\a' "$url" "${${${PWD:t}:-/}//[[:cntrl:]]/}"
-    # Themes set PS1 in later hooks; from the next prompt the marks go on after them.
+    # Themes set PS1 in later hooks: the marks go on after them, at the first prompt through sched.
     precmd_functions=(${precmd_functions:#_ely_mark} _ely_mark)
+    if (( _ely_first )); then
+      _ely_first=0
+      builtin zmodload zsh/sched && builtin sched +0 _ely_mark $ret
+    fi
     builtin return ret
   }
   _ely_mark() {
     if [[ -o prompt_percent && $PS1 != *$'\e]133;A'* ]]; then
       PS1=$'%{\e]133;A\a%}'$PS1$'%{\e]133;B\a%}'
     fi
+    # sched's command leaves its status for the prompt.
+    builtin return ${1:-0}
   }
   _ely_preexec() {
     _ely_ran=1

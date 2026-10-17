@@ -6,11 +6,12 @@ function global:prompt {
     $ok = $?
     $esc, $bel = [char]27, [char]7
     if ($global:ElyRan) {
-        $code = 1
-        if ($ok) { $code = 0 }
-        elseif ($Error.Count -eq 0 -or [object]::ReferenceEquals($Error[0], $global:ElyError)) {
-            # No new error: a native program failed. Strict mode refuses an unset variable.
-            $code = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
+        $code = 0
+        if (-not $ok) {
+            # Each native run sets a new $LASTEXITCODE, equal or not; strict mode refuses an unset one.
+            $exit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
+            $ran = $null -ne $exit -and -not [object]::ReferenceEquals($exit, $global:ElyExit)
+            $code = if ($ran -and $exit -ne 0) { $exit } else { 1 }
         }
         [Console]::Write("$esc]133;D;$code$bel")
         $global:ElyRan = $false
@@ -36,7 +37,7 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
         $line = & $global:ElyReadLine
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             $global:ElyRan = $true
-            $global:ElyError = if ($Error.Count) { $Error[0] }
+            $global:ElyExit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
             [Console]::Write("$([char]27)]133;C$([char]7)")
         }
         $line
