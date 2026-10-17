@@ -87,7 +87,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 19. Column widths
 
-- [ ] T33 The sessions and right columns resize by a drag on their border toward the terminal, on macOS, Windows and Linux, which the owner asked for: in Ely, a `ShellColumn` resizable between a least and a greatest width; the two widths kept in the settings.
+- [x] T33 The sessions and right columns resize by a drag on their border toward the terminal, on macOS, Windows and Linux, which the owner asked for: in Ely, a `ShellColumn` resizable between a least and a greatest width; the two widths kept in the settings.
 
 ## 20. Prompts, program status and notifications
 
