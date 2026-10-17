@@ -12,7 +12,7 @@ fn scan(chunks: &[&[u8]]) -> Vec<String> {
 }
 
 #[test]
-fn finds_each_osc_body_ended_by_bel_or_st_across_reads() {
+fn finds_each_osc_body_across_reads_ended_as_vte_ends_it() {
     assert_eq!(scan(&[b"ab\x1b]7;file:///a\x07cd"]), ["7;file:///a"]);
     assert_eq!(
         scan(&[b"\x1b]7;file:", b"///b\x1b", b"\\"]),
@@ -22,13 +22,15 @@ fn finds_each_osc_body_ended_by_bel_or_st_across_reads() {
         scan(&[b"\x1b", b"]133;A\x07\x1b]0;t\x1b\\"]),
         ["133;A", "0;t"]
     );
+    assert_eq!(scan(&[b"\x1b]7;x\x18\x1b]7;y\x1a"]), ["7;x", "7;y"]);
+    assert_eq!(scan(&[b"\x1b]7;cut\x1b]133;D;1\x07"]), ["7;cut", "133;D;1"]);
+    assert_eq!(scan(&[b"\x1b]0;t\x1b[31m"]), ["0;t"]);
 }
 
 #[test]
-fn other_sequences_and_cancels_pass() {
+fn controls_vte_skips_stay_out_of_a_body() {
+    assert_eq!(scan(&[b"\x1b\x00]1\x0033;\x1fA\x07"]), ["133;A"]);
     assert!(scan(&[b"\x1b[31m\x1bc"]).is_empty());
-    assert!(scan(&[b"\x1b]7;file:///a\x18\x07"]).is_empty());
-    assert_eq!(scan(&[b"\x1b]7;lost\x1b]133;D;1\x07"]), ["133;D;1"]);
 }
 
 #[test]

@@ -12,6 +12,7 @@ mod marks;
 pub mod mouse;
 mod paint;
 mod pointer;
+mod prompts;
 mod pty;
 pub mod shell;
 mod tap;

@@ -7,7 +7,7 @@ use alacritty_terminal::{
 use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
-use super::{marks, mouse::MouseMode, pty::PtyEvent};
+use super::{marks, mouse::MouseMode, prompts::Prompts, pty::PtyEvent};
 
 /// The longest OSC body kept; longer ones are dropped whole.
 const MOST: usize = 4096;
@@ -17,6 +17,7 @@ pub(crate) struct Tapped<P> {
     pub inner: P,
     scanner: Osc,
     mouse: MouseModes,
+    prompts: Prompts,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -28,6 +29,7 @@ impl<P> Tapped<P> {
             inner,
             scanner: Osc::default(),
             mouse: MouseModes::default(),
+            prompts: Prompts::default(),
             events,
             pid,
             last: None,
@@ -37,9 +39,15 @@ impl<P> Tapped<P> {
 
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let count = self.inner.reader().read(buf)?;
+        let held = self.prompts.held();
+        // A buffer with no room past the held bytes waits for the parser to empty it.
+        if buf.len() <= held {
+            return Ok(0);
+        }
+        let count = self.inner.reader().read(&mut buf[held..])?;
+        let read = &buf[held..held + count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
-        self.scanner.feed(&buf[..count], &mut |body| {
+        self.scanner.feed(read, &mut |body| {
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
                 log::debug!("pty {pid}: {mark:?}");
                 if events.unbounded_send(PtyEvent::Mark(mark)).is_err() {
@@ -60,13 +68,13 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
                 log::debug!("pty {pid}: a folder report after its session closed");
             }
         });
-        if let Some(mode) = self.mouse.feed(&buf[..count]) {
+        if let Some(mode) = self.mouse.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
             }
         }
-        Ok(count)
+        Ok(self.prompts.pass(buf, count))
     }
 }
 
@@ -118,10 +126,9 @@ enum State {
     Ground,
     Escape,
     Osc,
-    OscEscape,
 }
 
-/// Finds each OSC body, `ESC ] body` ended by BEL or `ESC \`, across reads.
+/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB.
 #[derive(Default)]
 pub(crate) struct Osc {
     state: State,
@@ -151,21 +158,19 @@ impl Osc {
                     self.overflow = false;
                     State::Osc
                 }
-                (State::Escape, 0x1b) => State::Escape,
+                // vte runs controls in an escape and stays there.
+                (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f) => State::Escape,
                 (State::Escape, _) => State::Ground,
-                (State::Osc, 0x07) | (State::OscEscape, b'\\') => {
+                (State::Osc, 0x07 | 0x18 | 0x1a) => {
                     self.finish(found);
                     State::Ground
                 }
-                (State::Osc | State::OscEscape, 0x18 | 0x1a) => State::Ground,
-                (State::Osc, 0x1b) => State::OscEscape,
-                (State::OscEscape, b']') => {
-                    self.body.clear();
-                    self.overflow = false;
-                    State::Osc
+                // ESC ends the body, then reads as an escape: `\` makes ST.
+                (State::Osc, 0x1b) => {
+                    self.finish(found);
+                    State::Escape
                 }
-                (State::OscEscape, 0x1b) => State::Escape,
-                (State::OscEscape, _) => State::Ground,
+                (State::Osc, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f) => State::Osc,
                 (State::Osc, byte) => {
                     if self.body.len() < MOST {
                         self.body.push(byte);

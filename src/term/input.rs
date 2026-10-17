@@ -12,7 +12,7 @@ use super::{
     view::TerminalView,
 };
 
-actions!(elyterminal, [Find, FindNewer]);
+actions!(elyterminal, [Find, FindNewer, PreviousPrompt, NextPrompt]);
 
 /// The key context a terminal's root sets.
 pub const CONTEXT: &str = "Terminal";
@@ -32,6 +32,20 @@ pub fn bind_keys(cx: &mut App) {
             "ctrl-shift-f",
         )
     };
+    // Ghostty's jumps: Cmd with or without Shift on macOS, Ctrl-Shift elsewhere.
+    let (up, down): (&[&str], &[&str]) = if cfg!(target_os = "macos") {
+        (&["cmd-up", "cmd-shift-up"], &["cmd-down", "cmd-shift-down"])
+    } else {
+        (&["ctrl-shift-up"], &["ctrl-shift-down"])
+    };
+    cx.bind_keys(
+        up.iter()
+            .map(|key| KeyBinding::new(key, PreviousPrompt, Some(CONTEXT))),
+    );
+    cx.bind_keys(
+        down.iter()
+            .map(|key| KeyBinding::new(key, NextPrompt, Some(CONTEXT))),
+    );
     cx.bind_keys([
         KeyBinding::new(copy, Copy, Some(CONTEXT)),
         KeyBinding::new(paste, Paste, Some(CONTEXT)),

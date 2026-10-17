@@ -259,6 +259,8 @@ mod tests {
         folders: Vec<PathBuf>,
         marks: Vec<Mark>,
         text: String,
+        /// The first line's cells that carry a prompt's link.
+        prompt: Vec<usize>,
         success: bool,
         pid: u32,
         columns: usize,
@@ -290,10 +292,16 @@ mod tests {
         let term = pty.term.lock();
         let row = &term.grid()[Line(0)];
         let text: String = (0..24).map(|column| row[Column(column)].c).collect();
+        let prompt = (0..24).filter(|&column| {
+            row[Column(column)]
+                .hyperlink()
+                .is_some_and(|link| link.uri() == crate::term::prompts::LINK)
+        });
         Ran {
             folders,
             marks,
             text: text.trim_end().to_string(),
+            prompt: prompt.collect(),
             success,
             pid: pty.pid,
             columns: term.columns(),
@@ -327,6 +335,7 @@ mod tests {
         let marks = [Mark::Prompt, Mark::Input, Mark::Output, Mark::Done(Some(3))];
         assert_eq!(ran.marks, marks);
         assert_eq!(ran.text, ">x");
+        assert_eq!(ran.prompt, [0], "the prompt's cell, not the output's");
     }
 
     #[test]

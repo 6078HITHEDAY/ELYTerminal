@@ -21,7 +21,7 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Find},
+    input::{self, Find, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
     paint::{self, Look},
@@ -370,6 +370,10 @@ impl Render for TerminalView {
             .on_action(cx.listener(|view, _: &Paste, _, cx| view.paste(cx)))
             .on_action(cx.listener(|view, _: &SelectAll, _, cx| view.select_all(cx)))
             .on_action(cx.listener(|view, _: &Find, window, cx| view.find(window, cx)))
+            .on_action(
+                cx.listener(|view, _: &PreviousPrompt, _, cx| view.scroll_to_prompt(true, cx)),
+            )
+            .on_action(cx.listener(|view, _: &NextPrompt, _, cx| view.scroll_to_prompt(false, cx)))
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::wheel))
