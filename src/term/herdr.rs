@@ -76,12 +76,7 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                         "terminal {pid}: herdr left the foreground, its agents' records with it"
                     );
                     states.clear();
-                    let gone = view.update(cx, |view, cx| {
-                        if view.records.herdr(&[]) && view.restate(cx) {
-                            view.tell_state(cx);
-                        }
-                    });
-                    if gone.is_err() {
+                    if view.update(cx, |view, cx| view.agents(&[], cx)).is_err() {
                         break;
                     }
                 }
@@ -127,9 +122,7 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
             let Ok(still) = view.update(cx, |view, cx| {
                 let still = view.reports == reports;
                 if still {
-                    if view.records.herdr(&agents) && view.restate(cx) {
-                        view.tell_state(cx);
-                    }
+                    view.agents(&agents, cx);
                     if let Some(folder) = report.clone() {
                         cx.emit(TerminalEvent::Folder(folder));
                     }

@@ -4,7 +4,7 @@ use gpui::{Context, SharedString, SystemNotification};
 
 use super::{
     notify::{self, Ask, CLOSES, Notice},
-    status::{self, State, Status},
+    status::{self, Record, State, Status},
     view::{TerminalEvent, TerminalView},
 };
 use crate::{
@@ -131,6 +131,16 @@ impl TerminalView {
             cx.emit(TerminalEvent::Shows(state));
         }
         changed
+    }
+
+    /// herdr's agents in place of the last ones; an open hover reads them, so the view draws again.
+    pub(super) fn agents(&mut self, agents: &[(String, Record)], cx: &mut Context<Self>) {
+        if self.records.herdr(agents) {
+            if self.restate(cx) {
+                self.tell_state(cx);
+            }
+            cx.notify();
+        }
     }
 
     /// Posts the state its row shows when it turned to waiting, done or error.

@@ -37,14 +37,12 @@ impl Workspace {
                 session.bell = true;
             }
             TerminalEvent::Bell => {}
-            TerminalEvent::Shows(state) => {
-                let now = session.terminal.read(cx).records().shows();
-                // A hidden session that starts waiting, and still waits, marks its row until it is shown.
-                if *state == Some(State::Blocked) && now == *state && index != self.active {
-                    log::debug!("app: hidden session {} waits", index + 1);
-                    session.waiting = true;
-                }
+            // A hidden session that starts waiting marks its row until it is shown.
+            TerminalEvent::Shows(Some(State::Blocked)) if index != self.active => {
+                log::debug!("app: hidden session {} waits", index + 1);
+                session.waiting = true;
             }
+            TerminalEvent::Shows(_) => {}
             TerminalEvent::Exited(status) => {
                 let pid = session.terminal.read(cx).pid();
                 log::info!("app: session {pid}'s program ended, {status}");
