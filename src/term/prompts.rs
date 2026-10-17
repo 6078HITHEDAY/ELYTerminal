@@ -1,159 +1,264 @@
 use alacritty_terminal::{
-    grid::{Dimensions, Scroll},
+    grid::{Dimensions, Row, Scroll},
     index::Line,
-    term::{
-        Term,
-        cell::{Cell, Hyperlink},
-    },
+    term::{Term, cell::Cell},
 };
 use gpui::Context;
 
-use super::view::TerminalView;
+use super::{tap::MOST, view::TerminalView};
 
-/// The target of the OSC 8 link each prompt mark becomes; no program names a link so.
+/// The target of the OSC 8 links prompts become, each named by its prompt's number; no program names a link so.
 pub(crate) const LINK: &str = "\u{7f}";
 
-/// The most bytes a mark's start may span, ignored controls in it too.
-const MOST: usize = 64;
+/// What ends a prompt's link.
+const CLOSE: &[u8] = b"\x1b]8;;\x07";
 
 const ESC: u8 = 0x1b;
+
+/// Controls vte skips inside an OSC.
+fn ignored(byte: u8) -> bool {
+    matches!(byte, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f)
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum State {
     #[default]
     Ground,
-    /// An ESC at this index, which may start a mark.
-    Escape(usize),
-    /// Inside `ESC ]` from this index, with this much of `133;` matched.
-    Body(usize, usize),
-    /// Past a rewritten mark's letter, its options blanked to the end.
-    Options,
+    /// After an ESC, held until the next byte says whether an OSC starts.
+    Escape,
+    /// An OSC held whole, since it may be a mark or a link to rewrite.
+    Held,
+    /// An OSC passed on as it comes.
+    Passing,
 }
 
-/// Turns each OSC 133 mark into an OSC 8 link as it passes to the parser, so the parser marks the cells each prompt prints.
+/// Rewrites what goes to the parser so it stamps each prompt's cells with a link of its own, numbered per prompt.
 #[derive(Default)]
 pub(crate) struct Prompts {
     state: State,
-    /// A mark's start, held from the parser until its letter shows.
+    /// The escape or OSC held, from its ESC.
     held: Vec<u8>,
-}
-
-/// Controls vte skips inside a sequence.
-fn ignored(byte: u8) -> bool {
-    matches!(byte, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f)
+    /// The OSC's body as vte reads it, the controls it skips left out.
+    body: Vec<u8>,
+    /// The body passed the scanner's bound, so it counts for nothing.
+    overflow: bool,
+    /// The prompt open now, from its start mark to its end.
+    prompt: Option<u32>,
+    /// A program's own link is open.
+    user: bool,
+    /// The last prompt's number.
+    count: u32,
+    /// What goes to the parser from the last read.
+    out: Vec<u8>,
 }
 
 impl Prompts {
-    /// The bytes held from the last read, which go before the next.
+    /// The bytes held from earlier reads.
     pub fn held(&self) -> usize {
         self.held.len()
     }
 
-    /// Rewrites the marks in `buf[..held + read]`, the held bytes put first; returns how many bytes go on.
-    pub fn pass(&mut self, buf: &mut [u8], read: usize) -> usize {
-        let from = self.held.len();
-        buf[..from].copy_from_slice(&self.held);
-        self.held.clear();
-        let end = from + read;
-        for at in from..end {
-            let byte = buf[at];
-            self.state = match self.state {
-                State::Ground if byte == ESC => State::Escape(at),
-                State::Ground => State::Ground,
-                State::Escape(start) => match byte {
-                    b']' => State::Body(start, 0),
-                    ESC => State::Escape(at),
-                    // vte runs these and stays in the escape.
-                    byte if byte == 0x07 || ignored(byte) => State::Escape(start),
-                    _ => State::Ground,
-                },
-                State::Body(start, seen) => match byte {
-                    ESC => State::Escape(at),
-                    0x07 | 0x18 | 0x1a => State::Ground,
-                    byte if ignored(byte) => State::Body(start, seen),
-                    byte if seen < 4 && byte == b"133;"[seen] => State::Body(start, seen + 1),
-                    byte if seen == 4 => match byte {
-                        b'A' | b'N' => link(&mut buf[start..=at], true),
-                        b'B' | b'I' | b'C' | b'D' => link(&mut buf[start..=at], false),
-                        _ => State::Ground,
-                    },
-                    _ => State::Ground,
-                },
-                State::Options => match byte {
-                    ESC => State::Escape(at),
-                    0x07 | 0x18 | 0x1a => State::Ground,
-                    byte if ignored(byte) => State::Options,
-                    _ => {
-                        buf[at] = 0;
-                        State::Options
-                    }
-                },
-            };
+    /// What goes to the parser for `read`: marks become links, and a held start waits for its end.
+    pub fn pass(&mut self, read: &[u8]) -> &[u8] {
+        self.out.clear();
+        for &byte in read {
+            self.step(byte);
         }
-        match self.state {
-            State::Escape(start) | State::Body(start, _) if end - start <= MOST => {
-                self.held.extend_from_slice(&buf[start..end]);
-                self.state = match self.state {
-                    State::Body(_, seen) => State::Body(0, seen),
-                    _ => State::Escape(0),
-                };
-                start
+        &self.out
+    }
+
+    fn step(&mut self, byte: u8) {
+        self.state = match (self.state, byte) {
+            (State::Ground, ESC) => {
+                self.held.push(ESC);
+                State::Escape
             }
-            State::Escape(_) | State::Body(..) => {
-                log::warn!("pty: a mark's start over {MOST} bytes passes as it came");
-                self.state = State::Ground;
-                end
+            (State::Ground, _) => {
+                self.out.push(byte);
+                State::Ground
             }
-            State::Ground | State::Options => end,
+            (State::Escape, b']') => {
+                // Controls vte ran inside the escape go on first, as it ran them.
+                self.out.extend(self.held.drain(1..));
+                self.held.push(byte);
+                self.body.clear();
+                self.overflow = false;
+                State::Held
+            }
+            (State::Escape, ESC) => {
+                self.release();
+                self.held.push(ESC);
+                State::Escape
+            }
+            // vte runs these and stays in the escape.
+            (State::Escape, _) if byte == 0x07 || ignored(byte) => {
+                self.held.push(byte);
+                State::Escape
+            }
+            (State::Escape, _) => {
+                // A full reset clears the link the parser writes with.
+                if byte == b'c' {
+                    (self.prompt, self.user) = (None, false);
+                }
+                self.held.push(byte);
+                self.release();
+                State::Ground
+            }
+            (State::Held | State::Passing, 0x07 | 0x18 | 0x1a) => {
+                self.end(Some(byte));
+                State::Ground
+            }
+            (State::Held | State::Passing, ESC) => {
+                self.end(None);
+                self.held.push(ESC);
+                State::Escape
+            }
+            (State::Held, _) => {
+                self.held.push(byte);
+                self.read(byte);
+                if self.wanted() {
+                    State::Held
+                } else {
+                    self.release();
+                    State::Passing
+                }
+            }
+            (State::Passing, _) => {
+                self.out.push(byte);
+                self.read(byte);
+                State::Passing
+            }
+        };
+    }
+
+    /// Adds `byte` to the body as the tap's scanner does; skipped controls bound the bytes held too.
+    fn read(&mut self, byte: u8) {
+        if self.held.len() > 2 * MOST {
+            self.overflow = true;
+        }
+        if ignored(byte) {
+            return;
+        }
+        if self.body.len() < MOST {
+            self.body.push(byte);
+        } else {
+            self.overflow = true;
+        }
+    }
+
+    /// Whether the OSC held may be a mark, or a link that ends inside a prompt, within the scanner's bounds.
+    fn wanted(&self) -> bool {
+        let fits = |prefix: &[u8]| {
+            let length = self.body.len().min(prefix.len());
+            self.body[..length] == prefix[..length]
+        };
+        !self.overflow && (fits(b"133;") || (self.prompt.is_some() && fits(b"8;")))
+    }
+
+    fn release(&mut self) {
+        self.out.append(&mut self.held);
+    }
+
+    /// The OSC ends at `end`, BEL, CAN or SUB, or at an ESC when none.
+    fn end(&mut self, end: Option<u8>) {
+        let rewrite = if self.overflow {
+            None
+        } else if let Some(opens) = self.body.strip_prefix(b"133;").and_then(mark) {
+            if opens {
+                self.count = self.count.wrapping_add(1);
+                self.prompt = Some(self.count);
+                (!self.user).then(|| link(self.count))
+            } else {
+                let closes = self.prompt.take().is_some() && !self.user;
+                closes.then(|| CLOSE.to_vec())
+            }
+        } else if let Some(opens) = user(&self.body) {
+            self.user = opens;
+            // The program's link ends inside a prompt: the prompt's link takes up again.
+            self.prompt.filter(|_| !opens).map(link)
+        } else {
+            None
+        };
+        match (rewrite, self.state) {
+            (Some(bytes), State::Held) => {
+                self.held.clear();
+                self.out.extend_from_slice(&bytes);
+                // CAN and SUB end the OSC and run as well.
+                self.out.extend(end.filter(|&byte| byte != 0x07));
+            }
+            (_, State::Held) => {
+                self.held.extend(end);
+                self.release();
+            }
+            _ => self.out.extend(end),
         }
     }
 }
 
-/// Makes `ESC ] 133;X` an OSC 8 link of the terminal's own: opened at a prompt's start, else closed.
-fn link(span: &mut [u8], open: bool) -> State {
-    let bytes = [b'8', b';', b';', if open { 0x7f } else { 0 }, 0];
-    let body = span
-        .iter()
-        .position(|&byte| byte == b']')
-        .expect("a mark holds its ]")
-        + 1;
-    let mut next = bytes.into_iter();
-    for byte in span[body..].iter_mut().filter(|byte| !ignored(**byte)) {
-        *byte = next.next().expect("a mark's five bytes");
+/// Whether a mark's body opens a prompt or ends one, as `marks::read` reads its letter; none for neither.
+fn mark(body: &[u8]) -> Option<bool> {
+    let (&letter, rest) = body.split_first()?;
+    if !rest.is_empty() && rest[0] != b';' {
+        return None;
     }
-    State::Options
+    match letter {
+        b'A' | b'N' => Some(true),
+        b'B' | b'I' | b'C' | b'D' => Some(false),
+        _ => None,
+    }
 }
 
-/// The prompt link a cell carries.
-fn prompt_link(cell: &Cell) -> Option<Hyperlink> {
-    cell.hyperlink().filter(|link| link.uri() == LINK)
+/// Whether an OSC 8 body opens a program's link, as alacritty reads its target; none for no link at all.
+fn user(body: &[u8]) -> Option<bool> {
+    let rest = body.strip_prefix(b"8;")?;
+    let target = &rest[rest.iter().position(|&byte| byte == b';')? + 1..];
+    // alacritty joins the target's parts with `;`, each one empty when it is not UTF-8.
+    Some(
+        target.contains(&b';')
+            || std::str::from_utf8(target).is_ok_and(|target| !target.is_empty()),
+    )
 }
 
-/// The prompt `line` shows.
-fn prompt<T>(term: &Term<T>, line: Line) -> Option<Hyperlink> {
-    term.grid()[line].into_iter().find_map(prompt_link)
+/// The OSC 8 link that marks prompt `number`'s cells.
+fn link(number: u32) -> Vec<u8> {
+    format!("\x1b]8;id={number};{LINK}\x07").into_bytes()
 }
 
-/// Whether `line` starts a prompt: it shows one the line above does not.
-fn starts<T>(term: &Term<T>, line: Line) -> bool {
-    prompt(term, line).is_some_and(|link| {
-        line == term.topmost_line() || prompt(term, line - 1).as_ref() != Some(&link)
+/// The number of the prompt `row` shows, as its link names it.
+fn prompt(row: &Row<Cell>) -> Option<u32> {
+    row.into_iter().find_map(|cell| {
+        let link = cell.hyperlink().filter(|link| link.uri() == LINK)?;
+        link.id().parse().ok()
     })
 }
 
 /// The display offset that puts the prompt before or after the view's top at the top, as Ghostty jumps.
 pub fn jump<T>(term: &Term<T>, up: bool) -> Option<usize> {
-    let top = Line(-(term.grid().display_offset() as i32));
-    // ponytail: a scan of every row on the way; index prompt rows if long histories lag.
+    let top = -(term.grid().display_offset() as i32);
+    let (first, last) = (term.topmost_line().0, term.bottommost_line().0);
+    let number = |line: i32| prompt(&term.grid()[Line(line)]);
+    // ponytail: a scan of the rows on the way; index prompt rows if long histories lag.
     let found = if up {
-        let mut lines = (term.topmost_line().0..top.0).rev().map(Line);
-        lines.find(|&line| starts(term, line))
+        // The nearest prompt above the view's top, then its first row, blank rows within it passed.
+        let (line, own) = (first..top)
+            .rev()
+            .find_map(|line| number(line).map(|own| (line, own)))?;
+        let mut start = line;
+        for above in (first..line).rev() {
+            match number(above) {
+                Some(other) if other != own => break,
+                Some(_) => start = above,
+                None => {}
+            }
+        }
+        start
     } else {
-        let mut lines = (top.0 + 1..=term.bottommost_line().0).map(Line);
-        lines.find(|&line| starts(term, line))
-    }?;
+        // The prompt at or above the view's top may go on below it; the next one starts.
+        let here = (first..=top).rev().find_map(number);
+        (top + 1..=last).find(|&line| number(line).is_some_and(|other| Some(other) != here))?
+    };
     // A prompt on the screen means the bottom, which the view cannot pass.
-    Some((-found.0).max(0) as usize)
+    Some((-found).max(0) as usize)
 }
 
 impl TerminalView {

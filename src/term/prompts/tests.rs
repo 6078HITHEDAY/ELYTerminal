@@ -6,37 +6,72 @@ use alacritty_terminal::{
 };
 
 use super::*;
+use crate::term::marks::{self, Mark};
 
 /// What the parser gets from `chunks`, each one read.
 fn passed(chunks: &[&[u8]]) -> Vec<u8> {
     let mut prompts = Prompts::default();
     let mut out = Vec::new();
     for chunk in chunks {
-        let held = prompts.held();
-        let mut buf = vec![0; held + chunk.len()];
-        buf[held..].copy_from_slice(chunk);
-        let count = prompts.pass(&mut buf, chunk.len());
-        out.extend_from_slice(&buf[..count]);
+        out.extend_from_slice(prompts.pass(chunk));
     }
     out
 }
 
-#[test]
-fn a_mark_becomes_a_link_of_the_same_length() {
-    assert_eq!(passed(&[b"\x1b]133;A\x07"]), b"\x1b]8;;\x7f\0\x07");
-    assert_eq!(passed(&[b"\x1b]133;N\x07"]), b"\x1b]8;;\x7f\0\x07");
-    assert_eq!(passed(&[b"\x1b]133;B\x1b\\"]), b"\x1b]8;;\0\0\x1b\\");
-    assert_eq!(passed(&[b"\x1b]133;D;1\x07"]), b"\x1b]8;;\0\0\0\0\x07");
-    assert_eq!(
-        passed(&[b"\x1b]133;A;k=i\x07x"]),
-        b"\x1b]8;;\x7f\0\0\0\0\0\x07x"
+/// A terminal `columns` wide and `lines` high after `bytes` passed through the rewrite.
+fn parsed(bytes: &[u8], columns: usize, lines: usize) -> Term<VoidListener> {
+    let mut term = Term::new(
+        Config::default(),
+        &TermSize::new(columns, lines),
+        VoidListener,
     );
-    assert_eq!(passed(&[b"\x1b]1\x0033;C\x07"]), b"\x1b]8\x00;;\0\0\x07");
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut term, &passed(&[bytes]));
+    term
+}
+
+/// The target of the link at a cell.
+fn target(term: &Term<VoidListener>, line: i32, column: usize) -> Option<String> {
+    let cell = &term.grid()[Line(line)][Column(column)];
+    cell.hyperlink().map(|link| link.uri().to_string())
 }
 
 #[test]
-fn a_mark_split_across_reads_waits_for_its_letter() {
-    let whole: &[u8] = b"a\x1b]133;A;k=i\x07$ \x1b]133;B\x1b\\b";
+fn a_mark_becomes_its_prompt_s_numbered_link() {
+    assert_eq!(
+        passed(&[b"\x1b]133;A\x07$ \x1b]133;B\x1b\\x"]),
+        b"\x1b]8;id=1;\x7f\x07$ \x1b]8;;\x07\x1b\\x"
+    );
+    assert_eq!(
+        passed(&[b"\x1b]133;A;k=i\x07\x1b]133;D;1\x18"]),
+        b"\x1b]8;id=1;\x7f\x07\x1b]8;;\x07\x18"
+    );
+    assert_eq!(
+        passed(&[b"\x1b]133;N\x07\x1b]133;C\x07\x1b]133;A\x07"]),
+        b"\x1b]8;id=1;\x7f\x07\x1b]8;;\x07\x1b]8;id=2;\x7f\x07"
+    );
+    assert_eq!(
+        passed(&[b"\x1b]133;D;0\x07"]),
+        b"\x1b]133;D;0\x07",
+        "an end with no prompt open passes"
+    );
+}
+
+#[test]
+fn the_rewrite_reads_a_mark_as_the_session_hears_it() {
+    let bodies = [
+        "A", "A;k=i", "N", "B", "I", "C;x", "D;1", "D;abc", "D", "", "AB", "L", "P;k=i", "Q", "a",
+    ];
+    for body in bodies {
+        let heard = marks::read(body.as_bytes()).map(|mark| mark == Mark::Prompt);
+        assert_eq!(mark(body.as_bytes()), heard, "{body}");
+    }
+}
+
+#[test]
+fn a_mark_split_across_reads_comes_out_whole() {
+    let whole: &[u8] =
+        b"a\x1b]133;A;k=i\x07\x1b]8;;file:///w\x1b\\w\x1b]8;;\x1b\\$ \x1b]133;B\x1b\\b";
     let once = passed(&[whole]);
     for cut in 0..=whole.len() {
         let (first, second) = whole.split_at(cut);
@@ -49,65 +84,74 @@ fn a_mark_split_across_reads_waits_for_its_letter() {
 #[test]
 fn other_sequences_pass_as_they_came() {
     for bytes in [
-        &b"\x1b]1337;A\x07"[..],
-        b"\x1b]13;A\x07",
-        b"\x1b]133;P;k=i\x07",
-        b"\x1b]133;L\x07",
-        b"\x1b]133;\x07",
-        b"\x1b]133\x18;A\x07",
-        b"\x1b]0;133;A\x07",
-        b"\x1b[31m\x1bc",
-        b"text",
+        "\x1b]133;AB\x07x",
+        "\x1b]1337;A\x07",
+        "\x1b]133;P;k=i\x07",
+        "\x1b]133;\x07",
+        "\x1b]0;133;A\x07",
+        "\x1b[31m\x1bc",
+        "\x1b]8;;file:///x\x07x\x1b]8;;\x07",
+        "text",
     ] {
-        assert_eq!(
-            passed(&[bytes]),
-            bytes,
-            "{}",
-            String::from_utf8_lossy(bytes)
-        );
+        assert_eq!(passed(&[bytes.as_bytes()]), bytes.as_bytes(), "{bytes:?}");
     }
-}
-
-#[test]
-fn a_mark_s_start_waits_no_longer_than_its_cap() {
-    let mut long = b"\x1b]".to_vec();
-    long.extend([0u8; MOST]);
-    assert_eq!(passed(&[&long]), long);
-}
-
-/// A terminal `columns` wide and two lines high after `bytes` passed through the rewrite.
-fn parsed(bytes: &[u8], columns: usize) -> Term<VoidListener> {
-    let mut term = Term::new(Config::default(), &TermSize::new(columns, 2), VoidListener);
-    let mut parser: Processor = Processor::new();
-    parser.advance(&mut term, &passed(&[bytes]));
-    term
-}
-
-#[test]
-fn a_prompt_s_cells_carry_its_link_and_its_input_none() {
-    let term = parsed(b"x\r\n\x1b]133;A\x07\x1b[31m$\x1b[0m \x1b]133;B\x07ls", 8);
-    let cell = |line, column| prompt_link(&term.grid()[Line(line)][Column(column)]);
-    assert!(cell(0, 0).is_none());
-    assert!(
-        cell(1, 0).is_some(),
-        "a prompt keeps its link through SGR 0"
+    let mut long = b"\x1b]133;A;".to_vec();
+    long.extend([b'x'; MOST]);
+    long.push(0x07);
+    assert_eq!(passed(&[&long]), long, "past the scanner's bound");
+    let mut skipped = b"\x1b]133;A".to_vec();
+    skipped.extend([0; 3 * MOST]);
+    skipped.push(0x07);
+    assert_eq!(
+        passed(&[&skipped]),
+        skipped,
+        "skipped controls bound the bytes held"
     );
-    assert_eq!(cell(1, 0), cell(1, 1));
-    assert!(cell(1, 2).is_none(), "input");
-    assert!(starts(&term, Line(1)));
-    assert!(!starts(&term, Line(0)));
 }
 
 #[test]
-fn a_prompt_over_two_rows_starts_at_its_first() {
-    let term = parsed(b"\x1b]133;A\x07~/dir\r\n> \x1b]133;B\x07", 8);
-    assert!(starts(&term, Line(0)));
-    assert!(!starts(&term, Line(1)), "the same prompt goes on");
-    let next = parsed(b"\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;A\x07$ ", 8);
-    assert!(
-        starts(&next, Line(1)),
-        "an empty line's next prompt is its own"
+fn controls_vte_runs_inside_an_escape_go_on_before_the_link() {
+    assert_eq!(
+        passed(&[b"\x1b\n\x07]133;A\x07$"]),
+        b"\n\x07\x1b]8;id=1;\x7f\x07$"
     );
+}
+
+#[test]
+fn a_prompt_s_cells_carry_its_link_through_sgr_0_and_its_input_none() {
+    let term = parsed(
+        b"x\r\n\x1b]133;A\x07\x1b[31m$\x1b[0m \x1b]133;B\x07ls",
+        8,
+        2,
+    );
+    assert_eq!(prompt(&term.grid()[Line(0)]), None);
+    assert_eq!(prompt(&term.grid()[Line(1)]), Some(1));
+    assert_eq!(target(&term, 1, 1).as_deref(), Some(LINK));
+    assert_eq!(target(&term, 1, 2), None, "input");
+}
+
+#[test]
+fn a_program_s_own_link_and_the_prompt_s_keep_each_other() {
+    let term = parsed(
+        b"\x1b]133;A\x07\x1b]8;;file:///work\x1b\\/work\x1b]8;;\x1b\\ $ \x1b]133;B\x07",
+        12,
+        2,
+    );
+    assert_eq!(target(&term, 0, 0).as_deref(), Some("file:///work"));
+    assert_eq!(target(&term, 0, 6).as_deref(), Some(LINK));
+    assert_eq!(prompt(&term.grid()[Line(0)]), Some(1));
+    let term = parsed(
+        b"\x1b]8;;file:///x\x1b\\x\x1b]133;A\x07y\x1b]8;;\x1b\\z\x1b]133;B\x07",
+        12,
+        2,
+    );
+    assert_eq!(target(&term, 0, 0).as_deref(), Some("file:///x"));
+    assert_eq!(
+        target(&term, 0, 1).as_deref(),
+        Some("file:///x"),
+        "a prompt inside a link keeps it"
+    );
+    assert_eq!(target(&term, 0, 2).as_deref(), Some(LINK));
 }
 
 /// Prompts on lines 0, 3 and 6 of a history four lines high, the last on the screen.
@@ -119,17 +163,14 @@ fn history() -> Term<VoidListener> {
         );
     }
     bytes.extend_from_slice(b"\x1b]133;A\x07$ \x1b]133;B\x07");
-    let mut term = Term::new(Config::default(), &TermSize::new(8, 4), VoidListener);
-    let mut parser: Processor = Processor::new();
-    parser.advance(&mut term, &passed(&[&bytes]));
-    term
+    parsed(&bytes, 8, 4)
 }
 
 #[test]
 fn up_and_down_go_to_the_prompts_beside_the_view_s_top() {
     let mut term = history();
     assert_eq!(term.grid().history_size(), 6);
-    // From the bottom: the prompt at the view's top (line 0) is passed, the one before it found.
+    // From the bottom: the prompt at the view's top is passed, the one before it found.
     assert_eq!(jump(&term, true), Some(3));
     term.scroll_display(Scroll::Delta(3));
     assert_eq!(jump(&term, true), Some(6));
@@ -145,16 +186,36 @@ fn up_and_down_go_to_the_prompts_beside_the_view_s_top() {
 }
 
 #[test]
+fn a_prompt_over_rows_starts_at_its_first_blank_rows_within_it_too() {
+    let bytes = b"\x1b]133;A\x07FIRST\r\n\r\nLAST $ \x1b]133;B\x07\r\nout1\r\nout2\r\nout3\r\nout4";
+    let mut term = parsed(bytes, 8, 3);
+    assert_eq!(term.grid().history_size(), 4);
+    assert_eq!(jump(&term, true), Some(4), "FIRST, not LAST");
+    term.scroll_display(Scroll::Delta(4));
+    assert_eq!(jump(&term, false), None, "LAST is the same prompt");
+    let next = parsed(b"\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;A\x07$ ", 8, 2);
+    assert_eq!(
+        (prompt(&next.grid()[Line(0)]), prompt(&next.grid()[Line(1)])),
+        (Some(1), Some(2)),
+        "an empty line's next prompt is its own"
+    );
+}
+
+#[test]
 fn a_prompt_keeps_its_start_through_a_resize() {
-    let bytes = b"\x1b]133;A\x07~/folder $ \x1b]133;B\x07ls\r\nout\r\n\x1b]133;A\x07$ ";
-    let mut term = Term::new(Config::default(), &TermSize::new(12, 4), VoidListener);
-    let mut parser: Processor = Processor::new();
-    parser.advance(&mut term, &passed(&[bytes]));
-    term.resize(TermSize::new(6, 4));
-    let lines = term.topmost_line().0..=term.bottommost_line().0;
-    let starts: Vec<i32> = lines.filter(|&line| starts(&term, Line(line))).collect();
-    // The first prompt wraps over two rows and starts at its first; the last starts two below.
-    let first = starts.first().copied().expect("a prompt");
-    assert_eq!(starts.len(), 2, "{starts:?}");
-    assert!(!starts.contains(&(first + 1)), "{starts:?}");
+    let bytes =
+        b"\x1b]133;A\x07~/folder $ \x1b]133;B\x07ls\r\nout\r\nout\r\nout\r\n\x1b]133;A\x07$ ";
+    let mut term = parsed(bytes, 12, 3);
+    term.resize(TermSize::new(6, 3));
+    let rows = term.topmost_line().0..=term.bottommost_line().0;
+    let numbers: Vec<Option<u32>> = rows.map(|line| prompt(&term.grid()[Line(line)])).collect();
+    let first = numbers.iter().position(|number| *number == Some(1));
+    // The first prompt wraps over two rows; the view jumps to the first of them.
+    assert_eq!(
+        numbers.iter().filter(|number| **number == Some(1)).count(),
+        2
+    );
+    let offset = jump(&term, true).expect("a prompt above");
+    let top = term.topmost_line().0 + first.expect("prompt 1") as i32;
+    assert_eq!(offset as i32, -top);
 }

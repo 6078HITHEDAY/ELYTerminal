@@ -10,7 +10,7 @@ use polling::{Event, PollMode, Poller};
 use super::{marks, mouse::MouseMode, prompts::Prompts, pty::PtyEvent};
 
 /// The longest OSC body kept; longer ones are dropped whole.
-const MOST: usize = 4096;
+pub(super) const MOST: usize = 4096;
 
 /// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
@@ -39,13 +39,13 @@ impl<P> Tapped<P> {
 
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let held = self.prompts.held();
-        // A buffer with no room past the held bytes waits for the parser to empty it.
-        if buf.len() <= held {
+        // A rewrite adds 14 bytes at most to a sequence of 6 or more, so a quarter of the room is read.
+        let take = buf.len().saturating_sub(self.prompts.held() + 64) / 4;
+        if take == 0 {
             return Ok(0);
         }
-        let count = self.inner.reader().read(&mut buf[held..])?;
-        let read = &buf[held..held + count];
+        let count = self.inner.reader().read(&mut buf[..take])?;
+        let read = &buf[..count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         self.scanner.feed(read, &mut |body| {
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
@@ -74,7 +74,9 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
                 log::debug!("pty {pid}: a mouse mode after its session closed");
             }
         }
-        Ok(self.prompts.pass(buf, count))
+        let out = self.prompts.pass(&buf[..count]);
+        buf[..out.len()].copy_from_slice(out);
+        Ok(out.len())
     }
 }
 
