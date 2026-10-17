@@ -19,6 +19,7 @@ mod reports;
 pub mod shell;
 mod status;
 mod tap;
+mod titles;
 #[cfg(unix)]
 mod unix;
 mod view;

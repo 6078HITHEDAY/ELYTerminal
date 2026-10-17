@@ -14,6 +14,7 @@ use super::{
     prompts::{self, Prompts},
     pty::PtyEvent,
     status,
+    titles::Titles,
 };
 
 /// The longest OSC body kept; longer ones are dropped whole.
@@ -26,6 +27,7 @@ pub(crate) struct Tapped<P> {
     mouse: MouseModes,
     prompts: Prompts,
     kitty: Kitty,
+    titles: Titles,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -39,6 +41,7 @@ impl<P> Tapped<P> {
             mouse: MouseModes::default(),
             prompts: Prompts::default(),
             kitty: Kitty::default(),
+            titles: Titles::default(),
             events,
             pid,
             last: None,
@@ -58,9 +61,11 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         }
         let count = self.inner.reader().read(&mut buf[..take])?;
         let read = &buf[..count];
-        let (events, pid, last, kitty) = (&self.events, self.pid, &mut self.last, &mut self.kitty);
-        self.scanner
-            .feed(read, &mut |found| report(found, events, pid, last, kitty));
+        let (events, pid, last) = (&self.events, self.pid, &mut self.last);
+        let (kitty, titles) = (&mut self.kitty, &mut self.titles);
+        self.scanner.feed(read, &mut |found| {
+            report(found, events, pid, last, kitty, titles)
+        });
         if let Some(mode) = self.mouse.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
@@ -73,19 +78,29 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
     }
 }
 
-/// Sends the session what the scanner found: a full reset, a mark, a program's status or ask, or a folder.
+/// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask, or a folder.
 fn report(
     found: Found,
     events: &UnboundedSender<PtyEvent>,
     pid: u32,
     last: &mut Option<PathBuf>,
     kitty: &mut Kitty,
+    titles: &mut Titles,
 ) {
     let event = match found {
         Found::Reset => {
             log::debug!("pty {pid}: a full reset");
+            titles.reset();
             PtyEvent::Reset
         }
+        Found::Push => {
+            titles.push();
+            return;
+        }
+        Found::Pop => match titles.pop() {
+            Some(title) => PtyEvent::Title(title),
+            None => return,
+        },
         Found::Osc(body, length) => {
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
                 log::debug!("pty {pid}: {mark:?}");
@@ -107,6 +122,11 @@ fn report(
                     *last = Some(folder.clone());
                 }
                 PtyEvent::Folder(folder)
+            } else if let Some(rest) = body
+                .strip_prefix(b"0;")
+                .or_else(|| body.strip_prefix(b"2;"))
+            {
+                PtyEvent::Title(titles.set(rest))
             } else {
                 return;
             }
@@ -176,15 +196,18 @@ enum State {
     Ground,
     Escape,
     Osc,
+    Csi,
 }
 
-/// What the scanner finds: an OSC's body with the sequence's length from OSC through ST, or a full reset.
+/// What the scanner finds: an OSC's body with the sequence's length from OSC through ST, a full reset, or the title stack's push and pop.
 pub(crate) enum Found<'a> {
     Osc(&'a [u8], usize),
     Reset,
+    Push,
+    Pop,
 }
 
-/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB, and each full reset.
+/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB, each full reset, and CSI 22 t and 23 t.
 #[derive(Default)]
 pub(crate) struct Osc {
     state: State,
@@ -192,6 +215,9 @@ pub(crate) struct Osc {
     /// The sequence's bytes so far, the controls the body leaves out too.
     length: usize,
     overflow: bool,
+    /// A CSI's first parameter while it reads as a plain number, and its fields so far.
+    first: Option<u32>,
+    fields: usize,
 }
 
 impl Osc {
@@ -221,6 +247,11 @@ impl Osc {
                     found(Found::Reset);
                     State::Ground
                 }
+                (State::Escape, b'[') => {
+                    self.first = Some(0);
+                    self.fields = 1;
+                    State::Csi
+                }
                 // vte runs controls in an escape, passes DEL and high bytes by, and stays there.
                 (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f | 0x7f..=0xff) => State::Escape,
                 (State::Escape, _) => State::Ground,
@@ -245,6 +276,38 @@ impl Osc {
                         self.overflow = true;
                     }
                     State::Osc
+                }
+                // In a CSI, as in vte: CAN and SUB cancel, ESC restarts, controls run, DEL and high bytes pass by.
+                (State::Csi, 0x18 | 0x1a) => State::Ground,
+                (State::Csi, 0x1b) => State::Escape,
+                (State::Csi, 0x00..=0x1f | 0x7f..=0xff) => State::Csi,
+                (State::Csi, b'0'..=b'9') => {
+                    if self.fields == 1 {
+                        self.first = self.first.map(|first| {
+                            first
+                                .saturating_mul(10)
+                                .saturating_add(u32::from(byte - b'0'))
+                        });
+                    }
+                    State::Csi
+                }
+                (State::Csi, b';' | b':') => {
+                    self.fields += 1;
+                    State::Csi
+                }
+                (State::Csi, b't') => {
+                    match self.first.filter(|_| self.fields <= PARAMS) {
+                        Some(22) => found(Found::Push),
+                        Some(23) => found(Found::Pop),
+                        _ => {}
+                    }
+                    State::Ground
+                }
+                (State::Csi, 0x40..=0x7e) => State::Ground,
+                // A private marker or an intermediate makes another sequence.
+                (State::Csi, _) => {
+                    self.first = None;
+                    State::Csi
                 }
                 (State::Ground, _) => unreachable!("ground scans by position"),
             };

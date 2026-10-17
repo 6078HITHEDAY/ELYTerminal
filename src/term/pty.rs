@@ -25,6 +25,8 @@ pub enum PtyEvent {
     Status(Status),
     /// A notification or progress, OSC 9, 777 or 99.
     Ask(Ask),
+    /// A title a program set, in the output's order: OSC 0 or 2, or the title stack's pop.
+    Title(String),
     /// A full reset, `ESC c`.
     Reset,
 }

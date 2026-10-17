@@ -17,6 +17,8 @@ struct Ran {
     statuses: Vec<Option<Status>>,
     /// Notifications and progress programs asked for.
     asks: Vec<Ask>,
+    /// Titles, notifications and full resets, in the output's order.
+    said: Vec<String>,
     text: String,
     /// The first line's cells that carry a prompt's link.
     prompt: Vec<usize>,
@@ -35,22 +37,37 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
     };
     let (pty, mut events) =
         spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
-    let (folders, marks, statuses, asks, success) = futures::executor::block_on(async {
-        let (mut folders, mut marks, mut statuses, mut asks, mut success) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), false);
+    let (folders, marks, statuses, asks, said, success) = futures::executor::block_on(async {
+        let (mut folders, mut marks, mut statuses, mut asks, mut said, mut success) = (
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+        );
         while let Some(event) = events.next().await {
             match event {
                 PtyEvent::Folder(folder) => folders.push(folder),
                 PtyEvent::Mark(mark) => marks.push(mark),
                 PtyEvent::Status(status) => statuses.push(Some(status)),
-                PtyEvent::Reset => statuses.push(None),
-                PtyEvent::Ask(ask) => asks.push(ask),
+                PtyEvent::Reset => {
+                    said.push("reset".to_string());
+                    statuses.push(None);
+                }
+                PtyEvent::Title(title) => said.push(format!("title {title}")),
+                PtyEvent::Ask(ask) => {
+                    if let Ask::Show(notice) = &ask {
+                        said.push(format!("show {}", notice.title));
+                    }
+                    asks.push(ask);
+                }
                 PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                 PtyEvent::Term(Event::Exit) => break,
                 PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
             }
         }
-        (folders, marks, statuses, asks, success)
+        (folders, marks, statuses, asks, said, success)
     });
     let term = pty.term.lock();
     let row = &term.grid()[Line(0)];
@@ -65,6 +82,7 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
         marks,
         statuses,
         asks,
+        said,
         text: text.trim_end().to_string(),
         prompt: prompt.collect(),
         success,
@@ -159,6 +177,38 @@ fn osc_99_gathers_a_full_encoded_chunk_and_the_lines_base64_carries() {
     assert_eq!(notice.title, format!("{}END", "a".repeat(3072)));
     assert_eq!(notice.body, "Line 1\nLine 2");
     assert_eq!(ran.text, "x");
+}
+
+#[test]
+fn titles_reach_the_session_in_their_place_among_notifications() {
+    let parts = [
+        "\\033]2;Old\\007",
+        "\\033[22t",
+        "\\033]2;New\\007",
+        "\\033]9;a\\007",
+        "\\033[23t",
+        "\\033]9;b\\007",
+        "\\033c",
+        "\\033]9;c\\007",
+    ];
+    let whole = run(&format!("printf '{}x'", parts.concat()), (40, 4));
+    let split: Vec<String> = parts
+        .iter()
+        .map(|part| format!("printf '{part}'; sleep 0.1"))
+        .collect();
+    let split = run(&format!("{}; printf x", split.join("; ")), (40, 4));
+    let said = [
+        "title Old",
+        "title New",
+        "show a",
+        "title Old",
+        "show b",
+        "reset",
+        "show c",
+    ];
+    assert_eq!(whole.said, said, "one write");
+    assert_eq!(split.said, said, "a write a sequence");
+    assert_eq!((whole.text.as_str(), split.text.as_str()), ("x", "x"));
 }
 
 #[test]

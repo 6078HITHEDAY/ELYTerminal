@@ -276,8 +276,10 @@ impl TerminalView {
                     self.ask(ask, cx);
                     self.restate(cx);
                 }
+                PtyEvent::Title(title) => self.title = title,
                 PtyEvent::Reset => {
                     self.records.reset();
+                    self.title.clear();
                     self.restate(cx);
                 }
             }

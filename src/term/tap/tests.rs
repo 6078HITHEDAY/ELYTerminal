@@ -9,6 +9,8 @@ fn scan(chunks: &[&[u8]]) -> Vec<String> {
             found.push(match thing {
                 Found::Osc(body, _) => String::from_utf8(body.to_vec()).expect("utf-8"),
                 Found::Reset => "RESET".into(),
+                Found::Push => "PUSH".into(),
+                Found::Pop => "POP".into(),
             })
         });
     }
@@ -224,4 +226,36 @@ fn the_tap_reads_mouse_modes_as_vte_does_byte_by_byte() {
             assert_eq!(modes.mode, parsed(&case[..end]), "{case:?} to byte {end}");
         }
     }
+}
+
+#[test]
+fn finds_the_title_stack_s_push_and_pop_as_vte_reads_them() {
+    assert_eq!(scan(&[b"\x1b[22;0t\x1b[23;2t"]), ["PUSH", "POP"]);
+    assert_eq!(
+        scan(&[b"\x1b[2", b"2:1\x07t\x1b[23t"]),
+        ["PUSH", "POP"],
+        "across reads, a control run"
+    );
+    for other in [
+        &b"\x1b[?22t"[..],
+        b"\x1b[22$t",
+        b"\x1b[1;22t",
+        b"\x1b[t",
+        b"\x1b[22\x18t",
+        b"\x1b[24t",
+    ] {
+        assert!(
+            scan(&[other]).is_empty(),
+            "{}",
+            String::from_utf8_lossy(other)
+        );
+    }
+    let mut many = b"\x1b[22".to_vec();
+    many.extend(std::iter::repeat_n(&b";1"[..], 32).flatten());
+    many.push(b't');
+    assert!(scan(&[&many]).is_empty(), "vte drops one past 32 fields");
+    assert_eq!(
+        scan(&[b"\x1b[22t\x1b]2;t\x07\x1b[23t"]),
+        ["PUSH", "2;t", "POP"]
+    );
 }
