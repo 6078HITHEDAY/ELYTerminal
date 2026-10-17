@@ -371,3 +371,21 @@ fn typing_sees_done_and_error_but_herdr_s() {
     assert_eq!(ids, ["c", "herdr:w1:p1"]);
     assert!(!records.seen(), "nothing more to see");
 }
+
+#[test]
+fn each_change_of_the_state_a_row_shows_is_noted() {
+    let mut records = Records::default();
+    assert!(!records.restate(), "none shows yet");
+    records.report(String::new(), record(State::Blocked, None));
+    assert!(records.restate());
+    records.report(String::new(), record(State::Working, None));
+    assert!(records.restate());
+    records.report(String::new(), record(State::Blocked, None));
+    assert!(records.restate(), "waiting again after work in one output");
+    assert_eq!(records.shows(), Some(State::Blocked));
+    records.report("b".into(), record(State::Working, None));
+    assert!(!records.restate(), "the row shows what it showed");
+    records.reset();
+    assert!(records.restate());
+    assert_eq!(records.shows(), None);
+}

@@ -198,6 +198,8 @@ pub struct Records {
     clock: u64,
     /// A program has reported through OSC 7501 since the last full reset, so OSC 9;4 maps no more.
     reported: bool,
+    /// The state a row showed at the last note.
+    shows: Option<State>,
 }
 
 impl Records {
@@ -315,6 +317,19 @@ impl Records {
                 .max_by_key(|(.., at)| *at)
                 .map(|(_, record, _)| record)
         })
+    }
+
+    /// Notes the state a row shows now; true when it changed since the last note.
+    pub fn restate(&mut self) -> bool {
+        let now = self.shown().map(|record| record.state);
+        let changed = now != self.shows;
+        self.shows = now;
+        changed
+    }
+
+    /// The state a row showed at the last note.
+    pub fn shows(&self) -> Option<State> {
+        self.shows
     }
 
     /// Each record with its id, in the order first reported.

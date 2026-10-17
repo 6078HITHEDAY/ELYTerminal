@@ -78,7 +78,7 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                     states.clear();
                     let gone = view.update(cx, |view, cx| {
                         if view.records.herdr(&[]) {
-                            cx.emit(TerminalEvent::Records);
+                            view.restate(cx);
                         }
                     });
                     if gone.is_err() {
@@ -128,7 +128,7 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                 let still = view.reports == reports;
                 if still {
                     if view.records.herdr(&agents) {
-                        cx.emit(TerminalEvent::Records);
+                        view.restate(cx);
                     }
                     if let Some(folder) = report.clone() {
                         cx.emit(TerminalEvent::Folder(folder));

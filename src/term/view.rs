@@ -28,7 +28,7 @@ use super::{
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
-    status::{self, Records, Status},
+    status::{self, Records, State, Status},
     zoom,
 };
 use crate::{
@@ -55,8 +55,8 @@ pub enum TerminalEvent {
     Finished(Option<i32>),
     /// A notification to show or close, OSC 9, 777 or 99.
     Notice(Ask),
-    /// Its records may have changed.
-    Records,
+    /// The state its row shows changed, to this one.
+    Shows(Option<State>),
     Exited(ExitStatus),
 }
 
@@ -79,6 +79,8 @@ pub struct TerminalView {
     pub(super) reports: u64,
     /// What programs say they are doing, OSC 7501.
     pub(super) records: Records,
+    /// The status its shell's last command ended with; none before one, or when it gave none.
+    ended: Option<i32>,
     cell: (u16, u16),
     /// Focused in an active window, as the program last heard.
     focused: bool,
@@ -127,6 +129,7 @@ impl TerminalView {
             size,
             reports: 0,
             records: Records::default(),
+            ended: None,
             cell: (8, 16),
             focused: false,
             blinking: false,
@@ -153,6 +156,30 @@ impl TerminalView {
     /// What programs in this terminal say they are doing.
     pub fn records(&self) -> &Records {
         &self.records
+    }
+
+    /// The status its shell's last command ended with.
+    pub fn ended(&self) -> Option<i32> {
+        self.ended
+    }
+
+    /// Notes the state its row shows, and tells the owner of each change.
+    pub(super) fn restate(&mut self, cx: &mut Context<Self>) {
+        if self.records.restate() {
+            let state = self.records.shows();
+            log::info!("terminal {}: its row shows {state:?}", self.pty.pid);
+            cx.emit(TerminalEvent::Shows(state));
+        }
+    }
+
+    /// A command the shell ran ended with `status`.
+    fn finished(&mut self, status: Option<i32>, cx: &mut Context<Self>) {
+        if self.ended != status {
+            let ended = status.map_or("with no status".into(), |code| format!("with {code}"));
+            log::info!("terminal {}: its last command ended {ended}", self.pty.pid);
+        }
+        self.ended = status;
+        cx.emit(TerminalEvent::Finished(status));
     }
 
     fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
@@ -227,15 +254,6 @@ impl TerminalView {
         let drawn = events
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
-        let restated = events.iter().any(|event| {
-            matches!(
-                event,
-                PtyEvent::Mark(Mark::Prompt)
-                    | PtyEvent::Status(Status::Report(..) | Status::Clear(_))
-                    | PtyEvent::Ask(Ask::Progress(_))
-                    | PtyEvent::Reset
-            )
-        });
         for event in events {
             match event {
                 PtyEvent::Folder(folder) => {
@@ -244,21 +262,30 @@ impl TerminalView {
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
-                PtyEvent::Mark(Mark::Done(status)) => cx.emit(TerminalEvent::Finished(status)),
+                PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
                 // A new prompt ends what was working, waiting or idle; done and error stay.
-                PtyEvent::Mark(Mark::Prompt) => self.records.prompt(),
+                PtyEvent::Mark(Mark::Prompt) => {
+                    self.records.prompt();
+                    self.restate(cx);
+                }
                 PtyEvent::Mark(_) => {}
-                PtyEvent::Status(status) => self.status(status),
-                PtyEvent::Ask(ask) => self.ask(ask, cx),
-                PtyEvent::Reset => self.records.reset(),
+                PtyEvent::Status(status) => {
+                    self.status(status);
+                    self.restate(cx);
+                }
+                PtyEvent::Ask(ask) => {
+                    self.ask(ask, cx);
+                    self.restate(cx);
+                }
+                PtyEvent::Reset => {
+                    self.records.reset();
+                    self.restate(cx);
+                }
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
             self.search(false, cx);
-        }
-        if restated {
-            cx.emit(TerminalEvent::Records);
         }
         cx.notify();
     }

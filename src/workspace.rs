@@ -155,8 +155,6 @@ impl Workspace {
             reports: launch.reports,
             bell: false,
             waiting: false,
-            status: None,
-            state: None,
             _events: events,
         });
     }

@@ -7,7 +7,7 @@ use ely_gpui_component::{
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize},
 };
-use gpui::{AnyElement, App, Entity, Hsla, SharedString, Subscription, div, prelude::*};
+use gpui::{AnyElement, App, Entity, Hsla, SharedString, Subscription, div, prelude::*, rems};
 
 use crate::{
     term::{Kind, Record, Records, State, TerminalView},
@@ -27,10 +27,6 @@ pub struct Session {
     pub bell: bool,
     /// It started waiting on the user while hidden.
     pub waiting: bool,
-    /// The last command's exit status, as its shell reported it; none before one, or when it gave none.
-    pub status: Option<i32>,
-    /// The state its mark shows, as its records last said.
-    pub state: Option<State>,
     pub _events: Subscription,
 }
 
@@ -100,7 +96,7 @@ pub fn row(
                     close.update(cx, |this, cx| this.close(index, window, cx))
                 }),
         );
-    let mark = mark(pid, terminal.records(), session.status, cx);
+    let mark = mark(&session.terminal, cx);
     let bell = session
         .bell
         .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
@@ -118,11 +114,13 @@ pub fn row(
 }
 
 /// The mark of what the session's records say, else of its last command's failure; hover lists them.
-fn mark(pid: usize, records: &Records, status: Option<i32>, cx: &App) -> Option<AnyElement> {
+fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
     let theme = cx.theme();
     let colors = &theme.colors;
+    let view = terminal.read(cx);
+    let (pid, records) = (view.pid() as usize, view.records());
     let icon = |name: IconName, color: Hsla| Icon::new(name).color(color).into_any_element();
-    let failed = status.filter(|&code| code != 0);
+    let failed = view.ended().filter(|&code| code != 0);
     let mark = match (records.shown(), failed) {
         (
             Some(Record {
@@ -156,6 +154,12 @@ fn mark(pid: usize, records: &Records, status: Option<i32>, cx: &App) -> Option<
             _,
         ) => ProgressRing::new(("session-progress", pid), f32::from(*value) / 100.0)
             .size(theme.icon_size(IconSize::Xl))
+            // The track takes the border's color, which a selected row's ground may match.
+            .inside(
+                Icon::new(IconName::LoaderCircle)
+                    .size(IconSize::Xs)
+                    .color(colors.info),
+            )
             .into_any_element(),
         // A turning spinner would draw the window at every frame while the program works.
         (
@@ -180,12 +184,21 @@ fn mark(pid: usize, records: &Records, status: Option<i32>, cx: &App) -> Option<
         ) => icon(IconName::Circle, colors.fg_muted),
         (None, None) => return None,
     };
-    let lines = hover(records, failed);
-    let tip = Tooltip::rich(move |_, _| {
+    // Hover reads the records as they stand, so an open one follows them, and scrolls within the window.
+    let watched = terminal.downgrade();
+    let tip = Tooltip::rich(move |window, cx| {
+        let lines = watched.upgrade().map_or_else(Vec::new, |terminal| {
+            let view = terminal.read(cx);
+            hover(view.records(), view.ended().filter(|&code| code != 0))
+        });
+        let room = window.viewport_size().height - rems(3.).to_pixels(window.rem_size());
         div()
+            .id("session-hover")
+            .max_h(room)
+            .overflow_y_scroll()
             .flex()
             .flex_col()
-            .children(lines.iter().cloned())
+            .children(lines)
             .into_any_element()
     });
     // Every mark takes the ring's box, so the title stays put as the state changes.
@@ -196,7 +209,7 @@ fn mark(pid: usize, records: &Records, status: Option<i32>, cx: &App) -> Option<
             .flex()
             .items_center()
             .justify_center()
-            .tooltip(tip)
+            .hoverable_tooltip(tip)
             .child(mark)
             .into_any_element(),
     )

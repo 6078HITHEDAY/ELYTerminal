@@ -9,7 +9,7 @@ use gpui::{
 
 use super::{
     keys::{self, Action, Key, Kitty},
-    view::{TerminalEvent, TerminalView},
+    view::TerminalView,
 };
 
 actions!(elyterminal, [Find, FindNewer, PreviousPrompt, NextPrompt]);
@@ -78,7 +78,7 @@ impl TerminalView {
         drop(term);
         self.pty.write(bytes);
         if self.records.seen() {
-            cx.emit(TerminalEvent::Records);
+            self.restate(cx);
         }
         cx.notify();
     }
