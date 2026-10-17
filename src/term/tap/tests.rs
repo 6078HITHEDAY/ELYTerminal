@@ -259,3 +259,22 @@ fn finds_the_title_stack_s_push_and_pop_as_vte_reads_them() {
         ["PUSH", "2;t", "POP"]
     );
 }
+
+#[test]
+fn a_title_s_body_holds_65536_bytes_and_another_s_4096() {
+    let osc = |number: &str, length: usize| {
+        [
+            format!("\x1b]{number};").as_bytes(),
+            &vec![b'a'; length],
+            b"\x07",
+        ]
+        .concat()
+    };
+    let longest = scan(&[&osc("2", titles::LONGEST - 2)]);
+    assert_eq!(longest.concat().len(), titles::LONGEST);
+    assert!(scan(&[&osc("0", titles::LONGEST - 1)]).is_empty());
+    assert!(
+        scan(&[&osc("7", MOST - 1)]).is_empty(),
+        "another stays at 4096"
+    );
+}

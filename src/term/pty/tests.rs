@@ -181,15 +181,20 @@ fn osc_99_gathers_a_full_encoded_chunk_and_the_lines_base64_carries() {
 
 #[test]
 fn titles_reach_the_session_in_their_place_among_notifications() {
+    let long = "y".repeat(5000);
+    let many: Vec<String> = (1..=17).map(|at| at.to_string()).collect();
     let parts = [
-        "\\033]2;Old\\007",
-        "\\033[22t",
-        "\\033]2;New\\007",
-        "\\033]9;a\\007",
-        "\\033[23t",
-        "\\033]9;b\\007",
-        "\\033c",
-        "\\033]9;c\\007",
+        "\\033]2;Old\\007".to_string(),
+        "\\033[22t".into(),
+        "\\033]2;New\\007".into(),
+        "\\033]9;a\\007".into(),
+        "\\033[23t".into(),
+        "\\033]9;b\\007".into(),
+        "\\033c".into(),
+        "\\033]9;c\\007".into(),
+        format!("\\033]2;{long}\\007"),
+        format!("\\033]2;{}\\007", many.join(";")),
+        "\\033]9;d\\007".into(),
     ];
     let whole = run(&format!("printf '{}x'", parts.concat()), (40, 4));
     let split: Vec<String> = parts
@@ -198,13 +203,16 @@ fn titles_reach_the_session_in_their_place_among_notifications() {
         .collect();
     let split = run(&format!("{}; printf x", split.join("; ")), (40, 4));
     let said = [
-        "title Old",
-        "title New",
-        "show a",
-        "title Old",
-        "show b",
-        "reset",
-        "show c",
+        "title Old".to_string(),
+        "title New".into(),
+        "show a".into(),
+        "title Old".into(),
+        "show b".into(),
+        "reset".into(),
+        "show c".into(),
+        format!("title {long}"),
+        format!("title {}", many[..15].join(";")),
+        "show d".into(),
     ];
     assert_eq!(whole.said, said, "one write");
     assert_eq!(split.said, said, "a write a sequence");

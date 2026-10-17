@@ -14,7 +14,7 @@ use super::{
     prompts::{self, Prompts},
     pty::PtyEvent,
     status,
-    titles::Titles,
+    titles::{self, Titles},
 };
 
 /// The longest OSC body kept; longer ones are dropped whole.
@@ -314,10 +314,12 @@ impl Osc {
         }
     }
 
-    /// The longest body kept: an OSC 99 holds a payload of 4096 bytes past its metadata.
+    /// The longest body kept: an OSC 99's holds its payload past its metadata, a title's more.
     fn most(&self) -> usize {
         if self.body.starts_with(b"99;") {
             notify::BODY
+        } else if self.body.starts_with(b"0;") || self.body.starts_with(b"2;") {
+            titles::LONGEST
         } else {
             MOST
         }

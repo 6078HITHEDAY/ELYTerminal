@@ -108,7 +108,7 @@ impl Run {
             );
             match self.events.try_recv() {
                 Ok(PtyEvent::Folder(folder)) => self.folders.push(folder),
-                Ok(PtyEvent::Term(Event::Title(title))) => self.titles.push(title),
+                Ok(PtyEvent::Title(title)) => self.titles.push(title),
                 Ok(PtyEvent::Mark(mark)) => self.marks.push(mark),
                 Ok(PtyEvent::Term(Event::PtyWrite(reply))) => self.pty.write(reply.into_bytes()),
                 Ok(PtyEvent::Term(Event::ChildExit(status))) => {

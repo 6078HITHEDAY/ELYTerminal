@@ -1,7 +1,13 @@
 /// The titles alacritty saves before it drops the oldest.
 const SAVED: usize = 4096;
 
-/// A program's title as alacritty keeps it, read in the output's order: OSC 0 and 2 set it, CSI 22 t saves it, CSI 23 t brings it back, a full reset empties both.
+/// vte keeps 16 parameters of an OSC, its number among them.
+const PARTS: usize = 15;
+
+/// The longest OSC 0 or 2 body the tap keeps; a longer one drops, logged.
+pub(super) const LONGEST: usize = 65536;
+
+/// The title a session shows, read in the output's order as vte and alacritty read it.
 #[derive(Default)]
 pub(crate) struct Titles {
     /// Empty while the program names none.
@@ -10,10 +16,11 @@ pub(crate) struct Titles {
 }
 
 impl Titles {
-    /// Sets the title an OSC 0 or 2 body past its number names: its UTF-8 parameters joined by `;` and trimmed, as alacritty joins them.
+    /// Sets the title from an OSC 0 or 2 body past its number, as vte splits it and alacritty joins it.
     pub fn set(&mut self, rest: &[u8]) -> String {
         let parts: Vec<&str> = rest
             .split(|&byte| byte == b';')
+            .take(PARTS)
             .filter_map(|part| std::str::from_utf8(part).ok())
             .collect();
         self.title = parts.join(";").trim().to_owned();
@@ -56,6 +63,12 @@ mod tests {
             "a part not in UTF-8 passes by"
         );
         assert_eq!(titles.set(b""), "");
+        let parts: Vec<String> = (1..=17).map(|at| at.to_string()).collect();
+        assert_eq!(
+            titles.set(parts.join(";").as_bytes()),
+            parts[..PARTS].join(";"),
+            "vte keeps 16 parameters, the number among them"
+        );
     }
 
     #[test]

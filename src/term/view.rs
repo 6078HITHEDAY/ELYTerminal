@@ -276,10 +276,14 @@ impl TerminalView {
                     self.ask(ask, cx);
                     self.restate(cx);
                 }
-                PtyEvent::Title(title) => self.title = title,
+                PtyEvent::Title(title) => {
+                    self.title.clone_from(&title);
+                    cx.emit(TerminalEvent::Title(title));
+                }
                 PtyEvent::Reset => {
                     self.records.reset();
                     self.title.clear();
+                    cx.emit(TerminalEvent::Title(String::new()));
                     self.restate(cx);
                 }
             }
@@ -294,20 +298,11 @@ impl TerminalView {
     fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
             Event::Wakeup => self.shown = true,
-            Event::MouseCursorDirty => {}
-            // A reset empties the title and sends only this; setting the options sends the title.
-            Event::CursorBlinkingChange => {
-                let settings = config(SettingsStore::get(cx));
-                self.pty.term.lock().set_options(settings);
-            }
-            Event::Title(title) => {
-                self.title.clone_from(&title);
-                cx.emit(TerminalEvent::Title(title));
-            }
-            Event::ResetTitle => {
-                self.title.clear();
-                cx.emit(TerminalEvent::Title(String::new()));
-            }
+            // The tap reads the title in the output's order; alacritty's title events come after it.
+            Event::MouseCursorDirty
+            | Event::CursorBlinkingChange
+            | Event::Title(_)
+            | Event::ResetTitle => {}
             Event::Bell => {
                 log::debug!("terminal {}: a bell, kept silent", self.pty.pid);
                 cx.emit(TerminalEvent::Bell);
