@@ -26,6 +26,7 @@ if [[ -o interactive ]]; then
     precmd_functions=(${precmd_functions:#_ely_mark} _ely_mark)
     if (( _ely_first )); then
       _ely_first=0
+      [[ -o prompt_percent ]] || builtin print -ru2 'ELYTerminal: zsh marks no prompt while prompt_percent is off (setopt prompt_percent)'
       builtin zmodload zsh/sched && builtin sched +0 _ely_mark $ret
     fi
     builtin return ret

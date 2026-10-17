@@ -281,6 +281,19 @@ fn zsh_reports_its_folder_byte_for_byte_and_its_titles() {
 }
 
 #[test]
+fn zsh_says_why_it_marks_no_prompt_without_prompt_percent() {
+    let mut run = Run::start(&installed("zsh"), &[(".zshrc", "unsetopt prompt_percent")]);
+    run.until("the warning", |run| {
+        run.shows("ELYTerminal: zsh marks no prompt while prompt_percent is off")
+    });
+    run.send("false");
+    let ended = [Mark::Output, Mark::Done(Some(1))];
+    run.until("the command's marks", |run| run.marks.ends_with(&ended));
+    assert!(!run.marks.contains(&Mark::Prompt), "{:?}", run.marks);
+    run.finish();
+}
+
+#[test]
 fn bash_reports_its_folder_byte_for_byte_and_keeps_the_status() {
     let status = r#"PROMPT_COMMAND='printf "USER_STATUS=%s\n" "$?"'; shopt -s extdebug"#;
     let files = [(".bashrc", status), (".bash_profile", status)];
@@ -322,6 +335,21 @@ bind -x '"\C-t": :'"#;
         .iter()
         .filter(|mark| **mark == Mark::Output);
     assert_eq!(starts.count(), usize::from(ps0), "{:?}", &run.marks[from..]);
+    run.finish();
+}
+
+#[test]
+fn bash_says_why_it_marks_no_command_without_promptvars() {
+    let files = [
+        (".bashrc", "shopt -u promptvars"),
+        (".bash_profile", "shopt -u promptvars"),
+    ];
+    let mut run = Run::start(&installed("bash"), &files);
+    run.until("the warning", |run| {
+        run.shows("ELYTerminal: bash marks no command while promptvars is off")
+    });
+    run.walk("declare -F _ely_prompt >/dev/null && echo ELY-LOAD''ED");
+    run.ends("false", &[Mark::Prompt, Mark::Input]);
     run.finish();
 }
 
@@ -368,6 +396,10 @@ fn powershell_reports_its_folder_byte_for_byte_and_keeps_the_status() {
         &ended(1),
     );
     run.ends("Get-Item ./missing; sh -c 'exit 7'", &ended(7));
+    // A call through a variable runs a program the line does not name.
+    run.send("$exe = 'sh'");
+    run.ends("& $exe -c 'exit 7'", &ended(7));
+    run.ends("& \"$exe\" -c 'exit 9'", &ended(9));
     let native = "$PSNativeCommandUseErrorActionPreference = $true; sh -c 'exit 7'";
     run.ends(native, &ended(7));
     run.finish();

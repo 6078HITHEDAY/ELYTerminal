@@ -52,3 +52,5 @@ _ely_mark() {
   fi
 }
 PROMPT_COMMAND="_ely_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND};_ely_mark"
+# PS0 and the prompt mark a command only through expansions, which promptvars turns on.
+builtin shopt -q promptvars || builtin printf 'ELYTerminal: bash marks no command while promptvars is off (shopt -s promptvars)\n' >&2

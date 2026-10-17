@@ -11,7 +11,7 @@ function global:prompt {
             # Each native run sets a new $LASTEXITCODE, equal or not; strict mode refuses an unset one.
             $exit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
             $ran = $null -ne $exit -and -not [object]::ReferenceEquals($exit, $global:ElyExit)
-            $code = if ($global:ElyNative -and $ran -and $exit -ne 0) { $exit } else { 1 }
+            $code = if (-not $global:ElyShell -and $ran -and $exit -ne 0) { $exit } else { 1 }
         }
         [Console]::Write("$esc]133;D;$code$bel")
         $global:ElyRan = $false
@@ -38,22 +38,28 @@ if (Test-Path Function:\PSConsoleHostReadLine) {
         if (-not [string]::IsNullOrWhiteSpace($line)) {
             $global:ElyRan = $true
             $global:ElyExit = Get-Variable LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Ignore
-            # A program's exit code is the line's when the line's last pipeline ends in it.
-            $global:ElyNative = $false
+            # A program's code is the line's, unless the line surely ends in PowerShell: a cmdlet, a name not found, or no command.
             $ast = [System.Management.Automation.Language.Parser]::ParseInput($line, [ref]$null, [ref]$null)
             # Strict mode refuses .Count on one statement alone, so the statements stay a list.
             $statements = @(if ($ast.EndBlock) { $ast.EndBlock.Statements })
             $last = if ($statements.Count) { $statements[$statements.Count - 1] }
             if ($last -is [System.Management.Automation.Language.PipelineAst]) {
                 $elements = $last.PipelineElements
-                $end = $elements[$elements.Count - 1]
-                $name = if ($end -is [System.Management.Automation.Language.CommandAst]) { $end.GetCommandName() }
-                $info = if ($name) { Get-Command -Name $name -ErrorAction Ignore | Select-Object -First 1 }
+                $last = $elements[$elements.Count - 1]
+            }
+            $name = if ($last -is [System.Management.Automation.Language.CommandAst]) { $last.GetCommandName() }
+            $global:ElyShell = if ($name) {
+                $pattern = [System.Management.Automation.WildcardPattern]::Escape($name)
+                $info = Get-Command -Name $pattern -ErrorAction Ignore | Select-Object -First 1
                 while ($info -and $info.CommandType -eq 'Alias') { $info = $info.ResolvedCommand }
-                $global:ElyNative = $null -ne $info -and $info.CommandType -in 'Application', 'ExternalScript'
+                $null -eq $info -or $info.CommandType -eq 'Cmdlet'
+            } else {
+                $null -eq $last -or -not $last.Find({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
             }
             [Console]::Write("$([char]27)]133;C$([char]7)")
         }
         $line
     }
+} else {
+    [Console]::Error.WriteLine('ELYTerminal: PowerShell marks no command without PSReadLine')
 }
