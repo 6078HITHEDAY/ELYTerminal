@@ -12,7 +12,7 @@ publish = false
 alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
 dirs = "7"
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "cdc5ce8247b58a876ffed9626953c3cb490a67ed" }
+ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "005faefd5d0cbc9e2e69517af37bc5e680b95878" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"

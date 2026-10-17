@@ -3,7 +3,7 @@ use ely_gpui_component::{
     lists::List,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
-    theme::{ActiveTheme, ControlSize},
+    theme::ControlSize,
     typography::Caption,
 };
 use gpui::{
@@ -25,6 +25,10 @@ use crate::{
         spawn,
     },
 };
+
+mod widths;
+
+use widths::{Dragged, Side};
 
 actions!(
     elyterminal,
@@ -88,6 +92,8 @@ pub struct Workspace {
     git: Entity<GitPanel>,
     /// What the window shows of the desktop, and the blur behind it.
     background: Blur,
+    /// Column widths a drag shows before the settings hold them.
+    dragged: Dragged,
     _settings: Subscription,
     _acted: Subscription,
 }
@@ -114,6 +120,7 @@ impl Workspace {
             files: cx.new(|_| Files::new(launch.cwd.clone())),
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
+            dragged: Dragged::default(),
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
@@ -339,7 +346,6 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
         let settings = SettingsStore::get(cx);
-        let width = cx.theme().sidebar_width(false);
         let workspace = cx.entity();
         let tip =
             |shown: bool, what: &str| format!("{} {what}", if shown { "Hide" } else { "Show" });
@@ -393,8 +399,7 @@ impl Render for Workspace {
                     workspace.update(cx, |this, cx| this.new_session(window, cx))
                 });
             shell = shell.column(
-                ShellColumn::new("sessions")
-                    .width(width)
+                self.side_column(Side::Sessions, cx)
                     .leading(left)
                     .action(new)
                     .child(
@@ -436,8 +441,7 @@ impl Render for Workspace {
             // Git's list draws every row, so terminal output must not redraw it.
             let fill = || StyleRefinement::default().size_full();
             shell = shell.column(terminal).column(
-                ShellColumn::new("panel")
-                    .width(width)
+                self.side_column(Side::Panel, cx)
                     .action(end)
                     // Below the title bar, clear of Windows' caption buttons.
                     .child(div().flex().justify_center().px_2().pt_2().child(switch))
