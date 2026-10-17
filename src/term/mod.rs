@@ -15,6 +15,7 @@ mod pointer;
 mod prompts;
 mod pty;
 pub mod shell;
+mod status;
 mod tap;
 #[cfg(unix)]
 mod unix;

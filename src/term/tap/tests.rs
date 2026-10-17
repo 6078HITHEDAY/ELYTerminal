@@ -1,14 +1,30 @@
 use super::*;
 
+/// What the scanner finds in `chunks`, each one read: a body, or `RESET`.
 fn scan(chunks: &[&[u8]]) -> Vec<String> {
     let mut scanner = Osc::default();
     let mut found = Vec::new();
     for chunk in chunks {
-        scanner.feed(chunk, &mut |body| {
-            found.push(String::from_utf8(body.to_vec()).expect("utf-8"))
+        scanner.feed(chunk, &mut |thing| {
+            found.push(match thing {
+                Found::Osc(body) => String::from_utf8(body.to_vec()).expect("utf-8"),
+                Found::Reset => "RESET".into(),
+            })
         });
     }
     found
+}
+
+#[test]
+fn finds_a_full_reset_between_bodies() {
+    assert_eq!(
+        scan(&[b"\x1b]0;a\x07\x1bc\x1b", b"c\x1b]0;b\x1b\\"]),
+        ["0;a", "RESET", "RESET", "0;b"]
+    );
+    assert!(
+        scan(&[b"\x1b[c\x1b]0;c"]).is_empty(),
+        "DA1 and an unfinished body"
+    );
 }
 
 #[test]
@@ -30,7 +46,7 @@ fn finds_each_osc_body_across_reads_ended_as_vte_ends_it() {
 #[test]
 fn controls_vte_skips_stay_out_of_a_body() {
     assert_eq!(scan(&[b"\x1b\x00]1\x0033;\x1fA\x07"]), ["133;A"]);
-    assert!(scan(&[b"\x1b[31m\x1bc"]).is_empty());
+    assert_eq!(scan(&[b"\x1b[31m\x1bc"]), ["RESET"]);
 }
 
 #[test]

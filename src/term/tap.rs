@@ -12,6 +12,7 @@ use super::{
     mouse::MouseMode,
     prompts::{self, Prompts},
     pty::PtyEvent,
+    status,
 };
 
 /// The longest OSC body kept; longer ones are dropped whole.
@@ -55,27 +56,8 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         let count = self.inner.reader().read(&mut buf[..take])?;
         let read = &buf[..count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
-        self.scanner.feed(read, &mut |body| {
-            if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
-                log::debug!("pty {pid}: {mark:?}");
-                if events.unbounded_send(PtyEvent::Mark(mark)).is_err() {
-                    log::debug!("pty {pid}: a mark after its session closed");
-                }
-                return;
-            }
-            let Some(folder) = body.strip_prefix(b"7;").and_then(folder) else {
-                return;
-            };
-            if last.as_ref() == Some(&folder) {
-                log::debug!("pty {pid}: folder {} again", folder.display());
-            } else {
-                log::info!("pty {pid}: folder {}", folder.display());
-                *last = Some(folder.clone());
-            }
-            if events.unbounded_send(PtyEvent::Folder(folder)).is_err() {
-                log::debug!("pty {pid}: a folder report after its session closed");
-            }
-        });
+        self.scanner
+            .feed(read, &mut |found| report(found, events, pid, last));
         if let Some(mode) = self.mouse.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
@@ -85,6 +67,38 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         let out = self.prompts.pass(&buf[..count]);
         buf[..out.len()].copy_from_slice(out);
         Ok(out.len())
+    }
+}
+
+/// Sends the session what the scanner found: a full reset, a mark, a program's status or a folder.
+fn report(found: Found, events: &UnboundedSender<PtyEvent>, pid: u32, last: &mut Option<PathBuf>) {
+    let event = match found {
+        Found::Reset => {
+            log::debug!("pty {pid}: a full reset");
+            PtyEvent::Reset
+        }
+        Found::Osc(body) => {
+            if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
+                log::debug!("pty {pid}: {mark:?}");
+                PtyEvent::Mark(mark)
+            } else if let Some(status) = body.strip_prefix(b"7501;").and_then(status::read) {
+                log::debug!("pty {pid}: {status:?}");
+                PtyEvent::Status(status)
+            } else if let Some(folder) = body.strip_prefix(b"7;").and_then(folder) {
+                if last.as_ref() == Some(&folder) {
+                    log::debug!("pty {pid}: folder {} again", folder.display());
+                } else {
+                    log::info!("pty {pid}: folder {}", folder.display());
+                    *last = Some(folder.clone());
+                }
+                PtyEvent::Folder(folder)
+            } else {
+                return;
+            }
+        }
+    };
+    if events.unbounded_send(event).is_err() {
+        log::debug!("pty {pid}: an event after its session closed");
     }
 }
 
@@ -138,7 +152,13 @@ enum State {
     Osc,
 }
 
-/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB.
+/// What the scanner finds: an OSC's body, or a full reset.
+pub(crate) enum Found<'a> {
+    Osc(&'a [u8]),
+    Reset,
+}
+
+/// Finds each OSC body across reads, ended as vte ends it: at BEL, ESC, CAN or SUB, and each full reset.
 #[derive(Default)]
 pub(crate) struct Osc {
     state: State,
@@ -147,7 +167,7 @@ pub(crate) struct Osc {
 }
 
 impl Osc {
-    pub fn feed(&mut self, bytes: &[u8], found: &mut impl FnMut(&[u8])) {
+    pub fn feed(&mut self, bytes: &[u8], found: &mut impl FnMut(Found)) {
         let mut rest = bytes;
         while !rest.is_empty() {
             if self.state == State::Ground {
@@ -167,6 +187,10 @@ impl Osc {
                     self.body.clear();
                     self.overflow = false;
                     State::Osc
+                }
+                (State::Escape, b'c') => {
+                    found(Found::Reset);
+                    State::Ground
                 }
                 // vte runs controls in an escape and stays there.
                 (State::Escape, 0x00..=0x17 | 0x19 | 0x1b..=0x1f) => State::Escape,
@@ -194,11 +218,11 @@ impl Osc {
         }
     }
 
-    fn finish(&mut self, found: &mut impl FnMut(&[u8])) {
+    fn finish(&mut self, found: &mut impl FnMut(Found)) {
         if self.overflow {
             log::warn!("pty: an OSC over {MOST} bytes dropped");
         } else {
-            found(&self.body);
+            found(Found::Osc(&self.body));
         }
         self.body.clear();
     }

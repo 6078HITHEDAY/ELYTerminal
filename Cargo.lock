@@ -1751,6 +1751,7 @@ version = "0.1.2"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
+ "base64",
  "block",
  "core-graphics 0.24.0",
  "dirs 7.0.0",

@@ -1,0 +1,168 @@
+use super::*;
+
+fn encoded(text: &[u8]) -> String {
+    BASE64.encode(text)
+}
+
+fn record(state: State, app: Option<&str>) -> Record {
+    Record {
+        state,
+        kind: None,
+        progress: None,
+        app: app.map(str::to_string),
+        title: None,
+        msg: None,
+    }
+}
+
+fn reported(body: &str) -> Record {
+    match read(body.as_bytes()) {
+        Some(Status::Report(_, record)) => record,
+        other => panic!("{body}: {other:?}"),
+    }
+}
+
+#[test]
+fn the_spec_s_examples_read_as_it_means_them() {
+    let body = b"state=blocked:kind=permission:app=terraform:msg=QXBwbHkgMyB0byBhZGQsIDEgdG8gY2hhbmdlLCAwIHRvIGRlc3Ryb3k/";
+    let blocked = Record {
+        kind: Some(Kind::Permission),
+        msg: Some("Apply 3 to add, 1 to change, 0 to destroy?".into()),
+        ..record(State::Blocked, Some("terraform"))
+    };
+    assert_eq!(read(body), Some(Status::Report(String::new(), blocked)));
+    let body = b"state=working:id=us-east:title=VVMgRWFzdA==:progress=40:msg=UHVzaGluZyBpbWFnZQ==";
+    let working = Record {
+        progress: Some(40),
+        title: Some("US East".into()),
+        msg: Some("Pushing image".into()),
+        ..record(State::Working, None)
+    };
+    assert_eq!(read(body), Some(Status::Report("us-east".into(), working)));
+    assert_eq!(
+        read(b"state=clear:id=us-east"),
+        Some(Status::Clear(Some("us-east".into())))
+    );
+    assert_eq!(read(b"state=clear"), Some(Status::Clear(None)));
+    assert_eq!(read(b"?"), Some(Status::Query));
+    assert_eq!(
+        reported("state=done:msg=VXBncmFkZWQgMTIgcGFja2FnZXM")
+            .msg
+            .as_deref(),
+        Some("Upgraded 12 packages"),
+        "padding is optional"
+    );
+}
+
+#[test]
+fn a_malformed_pair_is_skipped_the_last_of_a_key_wins_and_unknown_keys_pass() {
+    let record = reported(" junk : =x : state = idle :Key=v:app=a b:color=red:state=done:app=ok ");
+    assert_eq!(record, self::record(State::Done, Some("ok")));
+}
+
+#[test]
+fn a_sequence_that_breaks_a_rule_drops_whole() {
+    let long = |key: &str, length: usize| format!("state=done:{key}={}", "a".repeat(length));
+    let drops = [
+        "app=x".to_string(),
+        "state=sleeping".into(),
+        "state=done:id=".into(),
+        "state=done:id=a//b".into(),
+        "state=done:id=a/b/c/d/e/f/g/h/i".into(),
+        format!("state=done:id={}", "a".repeat(33)),
+        format!("state=done:{}=1", "k".repeat(17)),
+        long("app", 33),
+        long("title", 257),
+        long("msg", 2733),
+        "state=done:msg=A".into(),
+        format!("state=done:msg={}", encoded(b"a\nb")),
+        format!("state=done:msg={}", encoded("a\u{85}b".as_bytes())),
+        format!("state=done:msg={}", encoded(&[0xff])),
+        format!("state=done:title={}", encoded(&[b'a'; 193])),
+        format!("state=done:x={}", "a".repeat(4096 - 9 - 12)),
+    ];
+    for body in drops {
+        assert_eq!(read(body.as_bytes()), None, "{body}");
+    }
+    assert!(read(format!("state=done:x={}", "a".repeat(4096 - 9 - 14)).as_bytes()).is_some());
+}
+
+#[test]
+fn kind_progress_and_app_count_only_where_the_spec_has_them() {
+    let done = reported("state=done:kind=auth:progress=5");
+    assert_eq!((done.kind, done.progress), (None, None));
+    let blocked = reported("state=blocked:kind=nope:progress=101");
+    assert_eq!((blocked.kind, blocked.progress), (None, None));
+    assert_eq!(reported("state=working:progress=007").progress, Some(7));
+    assert_eq!(reported("state=working:progress=+5").progress, None);
+    assert_eq!(reported("state=blocked:kind=auth").kind, Some(Kind::Auth));
+    assert_eq!(
+        reported("state=working:app=a.b+c_d-e").app.as_deref(),
+        Some("a.b+c_d-e")
+    );
+    assert_eq!(reported("state=working:app=a,b").app, None);
+}
+
+#[test]
+fn records_replace_and_clear_as_the_spec_says() {
+    let mut records = Records::default();
+    records.report(String::new(), record(State::Working, Some("deploy")));
+    records.report("us-east".into(), record(State::Working, None));
+    records.report("us-east/push".into(), record(State::Blocked, None));
+    records.report("us-easter".into(), record(State::Done, Some("other")));
+    records.report("us-east".into(), record(State::Done, None));
+    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
+    assert_eq!(ids, ["", "us-east", "us-east/push", "us-easter"]);
+    let east = records
+        .list
+        .iter()
+        .find(|(id, ..)| id == "us-east")
+        .map(|(_, record, _)| record.clone());
+    assert_eq!(
+        east,
+        Some(record(State::Done, None)),
+        "a report replaces its record whole"
+    );
+    records.clear(Some("us-east"));
+    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["", "us-easter"],
+        "clear takes the record and those under it"
+    );
+    records.clear(None);
+    assert!(records.list.is_empty());
+}
+
+#[test]
+fn a_new_prompt_leaves_done_and_error() {
+    let mut records = Records::default();
+    for (id, state) in [
+        ("a", State::Idle),
+        ("b", State::Working),
+        ("c", State::Done),
+        ("d", State::Blocked),
+        ("e", State::Error),
+    ] {
+        records.report(id.into(), record(state, None));
+    }
+    records.prompt();
+    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
+    assert_eq!(ids, ["c", "e"]);
+}
+
+#[test]
+fn past_the_cap_the_record_updated_longest_ago_goes() {
+    let mut records = Records::default();
+    for at in 0..RECORDS {
+        records.report(format!("r{at}"), record(State::Working, None));
+    }
+    records.report("r0".into(), record(State::Done, None));
+    records.report("new".into(), record(State::Working, None));
+    assert_eq!(records.list.len(), RECORDS);
+    assert!(
+        records.list.iter().all(|(id, ..)| id != "r1"),
+        "r1 was updated longest ago"
+    );
+    assert!(records.list.iter().any(|(id, ..)| id == "r0"));
+}

@@ -27,6 +27,7 @@ use super::{
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
+    status::{self, Records, Status},
     zoom,
 };
 use crate::{
@@ -71,6 +72,8 @@ pub struct TerminalView {
     pub(super) size: (usize, usize),
     /// How many folders the program has reported.
     pub(super) reports: u64,
+    /// What programs say they are doing, OSC 7501.
+    pub(super) records: Records,
     cell: (u16, u16),
     /// Focused in an active window, as the program last heard.
     focused: bool,
@@ -118,6 +121,7 @@ impl TerminalView {
             finder: None,
             size,
             reports: 0,
+            records: Records::default(),
             cell: (8, 16),
             focused: false,
             blinking: false,
@@ -222,7 +226,11 @@ impl TerminalView {
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
                 PtyEvent::Mark(Mark::Done(status)) => cx.emit(TerminalEvent::Finished(status)),
+                // A new prompt ends what was working, waiting or idle; done and error stay.
+                PtyEvent::Mark(Mark::Prompt) => self.records.prompt(),
                 PtyEvent::Mark(_) => {}
+                PtyEvent::Status(status) => self.status(status),
+                PtyEvent::Reset => self.records.clear(None),
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
@@ -230,6 +238,15 @@ impl TerminalView {
             self.search(false, cx);
         }
         cx.notify();
+    }
+
+    /// Keeps a program's report, drops what it clears, and answers its query.
+    fn status(&mut self, status: Status) {
+        match status {
+            Status::Report(id, record) => self.records.report(id, record),
+            Status::Clear(id) => self.records.clear(id.as_deref()),
+            Status::Query => self.pty.write(status::REPLY.as_bytes().to_vec()),
+        }
     }
 
     fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
