@@ -45,7 +45,10 @@ impl<P> Tapped<P> {
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // What a rewrite adds stays inside the buffer, with room for the held sequence's own.
-        let take = buf.len().saturating_sub(self.prompts.held() + 300) / prompts::GROWTH;
+        let room = buf
+            .len()
+            .saturating_sub(self.prompts.held() + prompts::SLACK);
+        let take = room / prompts::GROWTH;
         if take == 0 {
             return Ok(0);
         }

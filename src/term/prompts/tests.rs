@@ -31,7 +31,7 @@ fn parsed(bytes: &[u8], columns: usize, lines: usize) -> Term<VoidListener> {
 }
 
 /// The target of the link at a cell.
-fn target(term: &Term<VoidListener>, line: i32, column: usize) -> Option<String> {
+fn target_of(term: &Term<VoidListener>, line: i32, column: usize) -> Option<String> {
     let cell = &term.grid()[Line(line)][Column(column)];
     cell.hyperlink().map(|link| link.uri().to_string())
 }
@@ -136,7 +136,7 @@ fn a_program_s_link_inside_a_prompt_carries_its_number() {
         Some(1),
         "a prompt all in a link"
     );
-    assert_eq!(target(&whole, 0, 6).as_deref(), Some("file:///work"));
+    assert_eq!(target_of(&whole, 0, 6).as_deref(), Some("file:///work"));
     let first = b"\x1b]133;A\x07\x1b]8;;file:///w\x1b\\/work\r\n\x1b]8;;\x1b\\$ \x1b]133;B\x07\r\no\r\no\r\no";
     let term = parsed(first, 8, 3);
     assert_eq!(jump(&term, true), Some(2), "its linked first row starts it");
@@ -159,7 +159,7 @@ fn a_program_s_link_inside_a_prompt_carries_its_number() {
             .is_some_and(|link| !link.id().starts_with(NUMBERED))
     );
     assert_eq!(
-        target(&open, 0, 2).as_deref(),
+        target_of(&open, 0, 2).as_deref(),
         Some("file:///x"),
         "its own again past the prompt"
     );
@@ -167,6 +167,48 @@ fn a_program_s_link_inside_a_prompt_carries_its_number() {
         y.hyperlink()
             .is_some_and(|link| link.id().starts_with(NUMBERED))
     );
+}
+
+#[test]
+fn a_long_target_numbers_a_prompt_in_either_order() {
+    let target = format!("https://e.test/{}", "a".repeat(249));
+    let open = format!("\x1b]8;;{target}\x1b\\");
+    let before = format!("{open}x\x1b]133;A\x07y\x1b]133;B\x07z\x1b]8;;\x1b\\");
+    let inside = format!("x\x1b]133;A\x07{open}y\x1b]133;B\x07z\x1b]8;;\x1b\\");
+    for bytes in [before, inside] {
+        let term = parsed(bytes.as_bytes(), 8, 2);
+        let row = &term.grid()[Line(0)];
+        let numbered = |column: usize| {
+            row[Column(column)]
+                .hyperlink()
+                .is_some_and(|link| link.id().starts_with(NUMBERED))
+        };
+        assert_eq!(prompt(row), Some(1), "{bytes:?}");
+        assert!(
+            numbered(1) && !numbered(2),
+            "the prompt's cell alone: {bytes:?}"
+        );
+        assert_eq!(target_of(&term, 0, 2).as_deref(), Some(target.as_str()));
+    }
+}
+
+#[test]
+fn controls_after_an_osc_s_closing_escape_run_where_vte_runs_them() {
+    let whole: &[u8] = b"LEFT\x1b]0;title\x1b\r\n\\RIGHT";
+    for cut in 0..=whole.len() {
+        let (first, second) = whole.split_at(cut);
+        assert_eq!(passed(&[first, second]), whole, "cut at {cut}");
+    }
+    let term = parsed(whole, 8, 2);
+    let line = |at: i32| -> String {
+        term.grid()[Line(at)]
+            .into_iter()
+            .map(|cell| cell.c)
+            .collect()
+    };
+    assert_eq!((line(0).trim_end(), line(1).trim_end()), ("LEFT", "RIGHT"));
+    let marked = parsed(b"\x1b]133;A\x1b\r\n\\$", 8, 2);
+    assert_eq!(prompt(&marked.grid()[Line(1)]), Some(1));
 }
 
 #[test]
@@ -186,8 +228,8 @@ fn a_prompt_s_cells_carry_its_link_through_sgr_0_and_its_input_none() {
     );
     assert_eq!(prompt(&term.grid()[Line(0)]), None);
     assert_eq!(prompt(&term.grid()[Line(1)]), Some(1));
-    assert_eq!(target(&term, 1, 1).as_deref(), Some(LINK));
-    assert_eq!(target(&term, 1, 2), None, "input");
+    assert_eq!(target_of(&term, 1, 1).as_deref(), Some(LINK));
+    assert_eq!(target_of(&term, 1, 2), None, "input");
 }
 
 #[test]
@@ -197,21 +239,21 @@ fn a_program_s_own_link_and_the_prompt_s_keep_each_other() {
         12,
         2,
     );
-    assert_eq!(target(&term, 0, 0).as_deref(), Some("file:///work"));
-    assert_eq!(target(&term, 0, 6).as_deref(), Some(LINK));
+    assert_eq!(target_of(&term, 0, 0).as_deref(), Some("file:///work"));
+    assert_eq!(target_of(&term, 0, 6).as_deref(), Some(LINK));
     assert_eq!(prompt(&term.grid()[Line(0)]), Some(1));
     let term = parsed(
         b"\x1b]8;;file:///x\x1b\\x\x1b]133;A\x07y\x1b]8;;\x1b\\z\x1b]133;B\x07",
         12,
         2,
     );
-    assert_eq!(target(&term, 0, 0).as_deref(), Some("file:///x"));
+    assert_eq!(target_of(&term, 0, 0).as_deref(), Some("file:///x"));
     assert_eq!(
-        target(&term, 0, 1).as_deref(),
+        target_of(&term, 0, 1).as_deref(),
         Some("file:///x"),
         "a prompt inside a link keeps it"
     );
-    assert_eq!(target(&term, 0, 2).as_deref(), Some(LINK));
+    assert_eq!(target_of(&term, 0, 2).as_deref(), Some(LINK));
 }
 
 /// Prompts on lines 0, 3 and 6 of a history four lines high, the last on the screen.

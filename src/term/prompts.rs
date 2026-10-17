@@ -16,11 +16,11 @@ const NUMBERED: char = '\u{7f}';
 /// What ends a prompt's link.
 const CLOSE: &[u8] = b"\x1b]8;;\x07";
 
-/// The longest target of a program's link kept, to open it again with a prompt's number.
-const TARGET: usize = 256;
+/// What a held sequence's rewrite comes to at most: a link with the longest target the scanner keeps.
+pub(super) const SLACK: usize = MOST + 32;
 
-/// How many times its size a rewrite makes a sequence at most: a mark of 8 bytes becomes a link of 276.
-pub(super) const GROWTH: usize = 36;
+/// How many times its size a rewrite makes a sequence at most: a mark of 8 bytes inside a program's link becomes that link again.
+pub(super) const GROWTH: usize = SLACK / 8 + 1;
 
 const ESC: u8 = 0x1b;
 
@@ -33,8 +33,8 @@ fn ignored(byte: u8) -> bool {
 enum State {
     #[default]
     Ground,
-    /// After an ESC, held until the next byte says whether an OSC starts.
-    Escape,
+    /// After an ESC, which waits while the parser stands where it stood before it, else has gone on.
+    Escape { sent: bool },
     /// An OSC held whole, since it may be a mark or a link to rewrite.
     Held,
     /// An OSC passed on as it comes.
@@ -51,11 +51,11 @@ pub(crate) struct Prompts {
     body: Vec<u8>,
     /// The body passed the scanner's bound, so it counts for nothing.
     overflow: bool,
+    /// The held OSC's ESC has gone on: it ended the OSC before.
+    sent: bool,
     /// The prompt open now, from its start mark to its end.
     prompt: Option<u32>,
-    /// A program's own link is open.
-    user: bool,
-    /// Its target, when short enough to keep.
+    /// The target of a program's link open now, to open it again with a prompt's number and without.
     target: Option<Vec<u8>>,
     /// The last prompt's number.
     count: u32,
@@ -82,32 +82,33 @@ impl Prompts {
         self.state = match (self.state, byte) {
             (State::Ground, ESC) => {
                 self.held.push(ESC);
-                State::Escape
+                State::Escape { sent: false }
             }
             (State::Ground, _) => {
                 self.out.push(byte);
                 State::Ground
             }
-            (State::Escape, b']') => {
+            (State::Escape { sent }, b']') => {
                 self.held.push(byte);
+                self.sent = sent;
                 self.body.clear();
                 self.overflow = false;
                 State::Held
             }
-            (State::Escape, ESC) => {
+            (State::Escape { .. }, ESC) => {
                 self.release();
                 self.held.push(ESC);
-                State::Escape
+                State::Escape { sent: false }
             }
-            // vte runs these and stays in the escape, so they go on before it, and only the ESC waits.
-            (State::Escape, _) if byte == 0x07 || ignored(byte) => {
+            // vte runs these and stays in the escape; one that waits lets them on first, where the parser stands the same.
+            (State::Escape { sent }, _) if byte == 0x07 || ignored(byte) => {
                 self.out.push(byte);
-                State::Escape
+                State::Escape { sent }
             }
-            (State::Escape, _) => {
+            (State::Escape { .. }, _) => {
                 // A full reset clears the link the parser writes with.
                 if byte == b'c' {
-                    (self.prompt, self.user, self.target) = (None, false, None);
+                    (self.prompt, self.target) = (None, None);
                 }
                 self.held.push(byte);
                 self.release();
@@ -117,10 +118,15 @@ impl Prompts {
                 self.end(Some(byte));
                 State::Ground
             }
+            // An ESC ends the OSC: after a rewrite the parser stands in ground, else inside the OSC, so the ESC goes on.
             (State::Held | State::Passing, ESC) => {
-                self.end(None);
-                self.held.push(ESC);
-                State::Escape
+                if self.end(None) {
+                    self.held.push(ESC);
+                    State::Escape { sent: false }
+                } else {
+                    self.out.push(ESC);
+                    State::Escape { sent: true }
+                }
             }
             (State::Held, _) => {
                 self.held.push(byte);
@@ -168,8 +174,8 @@ impl Prompts {
         self.out.append(&mut self.held);
     }
 
-    /// The OSC ends at `end`, BEL, CAN or SUB, or at an ESC when none.
-    fn end(&mut self, end: Option<u8>) {
+    /// The OSC ends at `end`, BEL, CAN or SUB, or at an ESC when none; true when it was rewritten.
+    fn end(&mut self, end: Option<u8>) -> bool {
         let rewrite = if self.overflow {
             None
         } else if let Some(opens) = self.body.strip_prefix(b"133;").and_then(mark) {
@@ -177,21 +183,19 @@ impl Prompts {
                 self.count = self.count.wrapping_add(1);
                 self.prompt = Some(self.count);
                 // A prompt inside a program's link carries its number on that link.
-                match (self.user, &self.target) {
-                    (false, _) => Some(link(self.count, LINK.as_bytes())),
-                    (true, Some(target)) => Some(link(self.count, target)),
-                    (true, None) => None,
-                }
+                Some(match &self.target {
+                    Some(target) => link(self.count, target),
+                    None => link(self.count, LINK.as_bytes()),
+                })
             } else {
-                match (self.prompt.take(), self.user, &self.target) {
-                    (Some(_), false, _) => Some(CLOSE.to_vec()),
-                    (Some(_), true, Some(target)) => Some(plain(target)),
-                    _ => None,
+                match (self.prompt.take(), &self.target) {
+                    (Some(_), Some(target)) => Some(plain(target)),
+                    (Some(_), None) => Some(CLOSE.to_vec()),
+                    (None, _) => None,
                 }
             }
         } else if let Some((opens, target)) = user(&self.body) {
-            self.user = opens;
-            self.target = (opens && target.len() <= TARGET).then(|| target.to_vec());
+            self.target = opens.then(|| target.to_vec());
             // Inside a prompt a program's link carries the prompt's number; its end takes the prompt's link up again.
             let target = if opens { target } else { LINK.as_bytes() };
             self.prompt.map(|number| link(number, target))
@@ -201,15 +205,21 @@ impl Prompts {
         match (rewrite, self.state) {
             (Some(bytes), State::Held) => {
                 self.held.clear();
-                self.out.extend_from_slice(&bytes);
+                // An ESC that went on already starts the link.
+                self.out.extend_from_slice(&bytes[usize::from(self.sent)..]);
                 // CAN and SUB end the OSC and run as well.
                 self.out.extend(end.filter(|&byte| byte != 0x07));
+                true
             }
             (_, State::Held) => {
                 self.held.extend(end);
                 self.release();
+                false
             }
-            _ => self.out.extend(end),
+            _ => {
+                self.out.extend(end);
+                false
+            }
         }
     }
 }
