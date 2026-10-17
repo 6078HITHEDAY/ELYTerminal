@@ -7,7 +7,12 @@ use alacritty_terminal::{
 use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
-use super::{marks, mouse::MouseMode, prompts::Prompts, pty::PtyEvent};
+use super::{
+    marks,
+    mouse::MouseMode,
+    prompts::{self, Prompts},
+    pty::PtyEvent,
+};
 
 /// The longest OSC body kept; longer ones are dropped whole.
 pub(super) const MOST: usize = 4096;
@@ -39,8 +44,8 @@ impl<P> Tapped<P> {
 
 impl<P: EventedReadWrite> io::Read for Tapped<P> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // A rewrite adds 14 bytes at most to a sequence of 6 or more, so a quarter of the room is read.
-        let take = buf.len().saturating_sub(self.prompts.held() + 64) / 4;
+        // What a rewrite adds stays inside the buffer, with room for the held sequence's own.
+        let take = buf.len().saturating_sub(self.prompts.held() + 300) / prompts::GROWTH;
         if take == 0 {
             return Ok(0);
         }

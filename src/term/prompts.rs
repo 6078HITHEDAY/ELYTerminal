@@ -7,11 +7,20 @@ use gpui::Context;
 
 use super::{tap::MOST, view::TerminalView};
 
-/// The target of the OSC 8 links prompts become, each named by its prompt's number; no program names a link so.
+/// The target of the OSC 8 link a prompt becomes; no program names a link so.
 pub(crate) const LINK: &str = "\u{7f}";
+
+/// What a link's id starts with when it carries a prompt's number: the prompt's own link, or a program's inside it.
+const NUMBERED: char = '\u{7f}';
 
 /// What ends a prompt's link.
 const CLOSE: &[u8] = b"\x1b]8;;\x07";
+
+/// The longest target of a program's link kept, to open it again with a prompt's number.
+const TARGET: usize = 256;
+
+/// How many times its size a rewrite makes a sequence at most: a mark of 8 bytes becomes a link of 276.
+pub(super) const GROWTH: usize = 36;
 
 const ESC: u8 = 0x1b;
 
@@ -46,6 +55,8 @@ pub(crate) struct Prompts {
     prompt: Option<u32>,
     /// A program's own link is open.
     user: bool,
+    /// Its target, when short enough to keep.
+    target: Option<Vec<u8>>,
     /// The last prompt's number.
     count: u32,
     /// What goes to the parser from the last read.
@@ -78,8 +89,6 @@ impl Prompts {
                 State::Ground
             }
             (State::Escape, b']') => {
-                // Controls vte ran inside the escape go on first, as it ran them.
-                self.out.extend(self.held.drain(1..));
                 self.held.push(byte);
                 self.body.clear();
                 self.overflow = false;
@@ -90,15 +99,15 @@ impl Prompts {
                 self.held.push(ESC);
                 State::Escape
             }
-            // vte runs these and stays in the escape.
+            // vte runs these and stays in the escape, so they go on before it, and only the ESC waits.
             (State::Escape, _) if byte == 0x07 || ignored(byte) => {
-                self.held.push(byte);
+                self.out.push(byte);
                 State::Escape
             }
             (State::Escape, _) => {
                 // A full reset clears the link the parser writes with.
                 if byte == b'c' {
-                    (self.prompt, self.user) = (None, false);
+                    (self.prompt, self.user, self.target) = (None, false, None);
                 }
                 self.held.push(byte);
                 self.release();
@@ -167,15 +176,25 @@ impl Prompts {
             if opens {
                 self.count = self.count.wrapping_add(1);
                 self.prompt = Some(self.count);
-                (!self.user).then(|| link(self.count))
+                // A prompt inside a program's link carries its number on that link.
+                match (self.user, &self.target) {
+                    (false, _) => Some(link(self.count, LINK.as_bytes())),
+                    (true, Some(target)) => Some(link(self.count, target)),
+                    (true, None) => None,
+                }
             } else {
-                let closes = self.prompt.take().is_some() && !self.user;
-                closes.then(|| CLOSE.to_vec())
+                match (self.prompt.take(), self.user, &self.target) {
+                    (Some(_), false, _) => Some(CLOSE.to_vec()),
+                    (Some(_), true, Some(target)) => Some(plain(target)),
+                    _ => None,
+                }
             }
-        } else if let Some(opens) = user(&self.body) {
+        } else if let Some((opens, target)) = user(&self.body) {
             self.user = opens;
-            // The program's link ends inside a prompt: the prompt's link takes up again.
-            self.prompt.filter(|_| !opens).map(link)
+            self.target = (opens && target.len() <= TARGET).then(|| target.to_vec());
+            // Inside a prompt a program's link carries the prompt's number; its end takes the prompt's link up again.
+            let target = if opens { target } else { LINK.as_bytes() };
+            self.prompt.map(|number| link(number, target))
         } else {
             None
         };
@@ -208,27 +227,37 @@ fn mark(body: &[u8]) -> Option<bool> {
     }
 }
 
-/// Whether an OSC 8 body opens a program's link, as alacritty reads its target; none for no link at all.
-fn user(body: &[u8]) -> Option<bool> {
+/// Whether an OSC 8 body opens a program's link, as alacritty reads its target, and that target; none for no link at all.
+fn user(body: &[u8]) -> Option<(bool, &[u8])> {
     let rest = body.strip_prefix(b"8;")?;
     let target = &rest[rest.iter().position(|&byte| byte == b';')? + 1..];
     // alacritty joins the target's parts with `;`, each one empty when it is not UTF-8.
-    Some(
-        target.contains(&b';')
-            || std::str::from_utf8(target).is_ok_and(|target| !target.is_empty()),
-    )
+    let opens =
+        target.contains(&b';') || std::str::from_utf8(target).is_ok_and(|text| !text.is_empty());
+    Some((opens, target))
 }
 
-/// The OSC 8 link that marks prompt `number`'s cells.
-fn link(number: u32) -> Vec<u8> {
-    format!("\x1b]8;id={number};{LINK}\x07").into_bytes()
+/// A link to `target` whose id carries prompt `number`.
+fn link(number: u32, target: &[u8]) -> Vec<u8> {
+    let mut link = format!("\x1b]8;id={NUMBERED}{number};").into_bytes();
+    link.extend_from_slice(target);
+    link.push(0x07);
+    link
 }
 
-/// The number of the prompt `row` shows, as its link names it.
+/// A program's link to `target`, its id its own again.
+fn plain(target: &[u8]) -> Vec<u8> {
+    let mut link = b"\x1b]8;;".to_vec();
+    link.extend_from_slice(target);
+    link.push(0x07);
+    link
+}
+
+/// The number of the prompt `row` shows, as a link's id carries it.
 fn prompt(row: &Row<Cell>) -> Option<u32> {
     row.into_iter().find_map(|cell| {
-        let link = cell.hyperlink().filter(|link| link.uri() == LINK)?;
-        link.id().parse().ok()
+        let link = cell.hyperlink()?;
+        link.id().strip_prefix(NUMBERED)?.parse().ok()
     })
 }
 

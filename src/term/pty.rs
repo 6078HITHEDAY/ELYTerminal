@@ -339,6 +339,15 @@ mod tests {
     }
 
     #[test]
+    fn a_long_escape_of_controls_keeps_the_pty_reading() {
+        let ran = run(
+            "printf '\\033'; head -c 3000000 /dev/zero; printf '[0mREADY'",
+            (40, 4),
+        );
+        assert_eq!(ran.text, "READY");
+    }
+
+    #[test]
     fn the_foreground_is_the_program_s_own_group() {
         let launch = Launch {
             program: Some(("/bin/sh".into(), vec!["-c".into(), "exec sleep 30".into()])),

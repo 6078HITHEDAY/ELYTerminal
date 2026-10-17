@@ -40,15 +40,15 @@ fn target(term: &Term<VoidListener>, line: i32, column: usize) -> Option<String>
 fn a_mark_becomes_its_prompt_s_numbered_link() {
     assert_eq!(
         passed(&[b"\x1b]133;A\x07$ \x1b]133;B\x1b\\x"]),
-        b"\x1b]8;id=1;\x7f\x07$ \x1b]8;;\x07\x1b\\x"
+        b"\x1b]8;id=\x7f1;\x7f\x07$ \x1b]8;;\x07\x1b\\x"
     );
     assert_eq!(
         passed(&[b"\x1b]133;A;k=i\x07\x1b]133;D;1\x18"]),
-        b"\x1b]8;id=1;\x7f\x07\x1b]8;;\x07\x18"
+        b"\x1b]8;id=\x7f1;\x7f\x07\x1b]8;;\x07\x18"
     );
     assert_eq!(
         passed(&[b"\x1b]133;N\x07\x1b]133;C\x07\x1b]133;A\x07"]),
-        b"\x1b]8;id=1;\x7f\x07\x1b]8;;\x07\x1b]8;id=2;\x7f\x07"
+        b"\x1b]8;id=\x7f1;\x7f\x07\x1b]8;;\x07\x1b]8;id=\x7f2;\x7f\x07"
     );
     assert_eq!(
         passed(&[b"\x1b]133;D;0\x07"]),
@@ -110,10 +110,70 @@ fn other_sequences_pass_as_they_came() {
 }
 
 #[test]
+fn a_long_escape_of_controls_goes_on_as_it_comes() {
+    let mut whole = vec![ESC];
+    whole.extend(vec![0; 3 << 20]);
+    whole.extend_from_slice(b"[0mREADY");
+    let mut prompts = Prompts::default();
+    let mut out = Vec::new();
+    for chunk in whole.chunks(64 << 10) {
+        out.extend_from_slice(prompts.pass(chunk));
+        assert!(prompts.held() <= 1, "only the ESC waits");
+    }
+    assert_eq!(out.len(), whole.len());
+    assert!(out.ends_with(b"\x1b[0mREADY"));
+}
+
+#[test]
+fn a_program_s_link_inside_a_prompt_carries_its_number() {
+    let whole = parsed(
+        b"\x1b]133;A\x07\x1b]8;;file:///work\x1b\\/work $ \x1b]8;;\x1b\\\x1b]133;B\x07",
+        12,
+        2,
+    );
+    assert_eq!(
+        prompt(&whole.grid()[Line(0)]),
+        Some(1),
+        "a prompt all in a link"
+    );
+    assert_eq!(target(&whole, 0, 6).as_deref(), Some("file:///work"));
+    let first = b"\x1b]133;A\x07\x1b]8;;file:///w\x1b\\/work\r\n\x1b]8;;\x1b\\$ \x1b]133;B\x07\r\no\r\no\r\no";
+    let term = parsed(first, 8, 3);
+    assert_eq!(jump(&term, true), Some(2), "its linked first row starts it");
+    let open = parsed(
+        b"\x1b]8;;file:///x\x1b\\x\x1b]133;A\x07y\x1b]133;B\x07z",
+        8,
+        2,
+    );
+    assert_eq!(
+        prompt(&open.grid()[Line(0)]),
+        Some(1),
+        "a prompt inside a link left open"
+    );
+    let (y, z) = (
+        &open.grid()[Line(0)][Column(1)],
+        &open.grid()[Line(0)][Column(2)],
+    );
+    assert!(
+        z.hyperlink()
+            .is_some_and(|link| !link.id().starts_with(NUMBERED))
+    );
+    assert_eq!(
+        target(&open, 0, 2).as_deref(),
+        Some("file:///x"),
+        "its own again past the prompt"
+    );
+    assert!(
+        y.hyperlink()
+            .is_some_and(|link| link.id().starts_with(NUMBERED))
+    );
+}
+
+#[test]
 fn controls_vte_runs_inside_an_escape_go_on_before_the_link() {
     assert_eq!(
         passed(&[b"\x1b\n\x07]133;A\x07$"]),
-        b"\n\x07\x1b]8;id=1;\x7f\x07$"
+        b"\n\x07\x1b]8;id=\x7f1;\x7f\x07$"
     );
 }
 
