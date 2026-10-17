@@ -143,11 +143,7 @@ impl TerminalView {
     /// Posts the state its row shows when it turned to waiting, done or error.
     fn tell_state(&mut self, cx: &mut Context<Self>) {
         let body = match self.records.shown() {
-            Some((id, record))
-                if matches!(record.state, State::Blocked | State::Done | State::Error) =>
-            {
-                line(&self.records, id, record)
-            }
+            Some((id, record)) if tells(record.state) => line(&self.records, id, record),
             _ => return,
         };
         self.post(body, None, cx);
@@ -160,13 +156,21 @@ impl TerminalView {
             log::info!("terminal {}: its last command ended {ended}", self.pty.pid);
         }
         self.ended = status;
-        self.post(finished(status), None, cx);
+        // Only a command C started posts its end, so a prompt bash 3.2 draws again posts nothing.
+        if std::mem::take(&mut self.ran) {
+            self.post(finished(status), None, cx);
+        } else {
+            log::debug!(
+                "terminal {}: an end without its start posts nothing",
+                self.pty.pid
+            );
+        }
     }
 
     /// Posts `body` while the window is not active or the session hidden, one every 3 seconds at most.
     fn post(&mut self, body: String, asked: Option<&Notice>, cx: &mut Context<Self>) {
         let pid = self.pty.pid;
-        if self.front && self.active {
+        if !unseen(self.front, self.active) {
             log::debug!("terminal {pid}: in view, so it posts no {body:?}");
             return;
         }
@@ -181,6 +185,12 @@ impl TerminalView {
             &self.title
         });
         log::info!("terminal {pid}: posts {}: {title:?}, {body:?}", posted.tag);
+        // Linux's notification daemons read the body as markup.
+        let body = if cfg!(target_os = "linux") {
+            escape(&body)
+        } else {
+            body
+        };
         cx.show_system_notification(SystemNotification {
             tag: posted.tag.clone(),
             title: title.into(),
@@ -246,14 +256,47 @@ impl TerminalView {
 
     /// A press on notification `tag`, if this session posted it: a program that asked hears of it; whether the session shows.
     pub fn pressed(&mut self, tag: &str) -> Option<bool> {
-        let posted = self.notices.take(tag, None)?;
-        log::info!("terminal {}: notification {tag} pressed", self.pty.pid);
+        let pid = self.pty.pid;
+        let Some(posted) = self.notices.take(tag, None) else {
+            // A twin Linux stacked, pressed before, or one past the 64 kept, still shows its session.
+            let own = owns(pid, tag);
+            if own {
+                log::info!(
+                    "terminal {pid}: notification {tag} pressed, its record gone, so it tells no program"
+                );
+            }
+            return own.then_some(true);
+        };
+        log::info!("terminal {pid}: notification {tag} pressed");
         if posted.report {
             let id = posted.id.as_deref().unwrap_or("0");
             self.pty.write(notify::activated(id).into_bytes());
         }
         Some(posted.focus)
     }
+}
+
+/// Whether a session posts: not while it is the session shown in an active window.
+fn unseen(front: bool, active: bool) -> bool {
+    !(front && active)
+}
+
+/// Whether the row's turn to `state` posts: waiting, done and error do.
+fn tells(state: State) -> bool {
+    matches!(state, State::Blocked | State::Done | State::Error)
+}
+
+/// Whether program `pid`'s session posted notification `tag`: its own, `PID`, else `PID:ID` or `PID#N`.
+fn owns(pid: u32, tag: &str) -> bool {
+    tag.strip_prefix(&pid.to_string())
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '#']))
+}
+
+/// `text` as markup reads it as text.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// What a command's end says: it finished, or the status it failed with.

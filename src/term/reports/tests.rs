@@ -81,3 +81,43 @@ fn a_notification_says_its_text_as_text() {
     assert_eq!(finished(None), "Command finished");
     assert_eq!(finished(Some(2)), "Command exited with 2");
 }
+
+#[test]
+fn a_session_posts_unless_it_is_the_one_shown_in_an_active_window() {
+    assert!(!unseen(true, true));
+    assert!(unseen(true, false), "the window inactive");
+    assert!(unseen(false, true), "the session hidden");
+    assert!(unseen(false, false));
+}
+
+#[test]
+fn waiting_done_and_error_post_and_work_and_rest_do_not() {
+    for (state, posts) in [
+        (State::Blocked, true),
+        (State::Done, true),
+        (State::Error, true),
+        (State::Working, false),
+        (State::Idle, false),
+    ] {
+        assert_eq!(tells(state), posts, "{state:?}");
+    }
+}
+
+#[test]
+fn a_tag_names_the_session_that_posted_it() {
+    for tag in ["12", "12:build", "12#3"] {
+        assert!(owns(12, tag), "{tag}");
+    }
+    for tag in ["123", "1", "123:build", "13#3", ""] {
+        assert!(!owns(12, tag), "{tag}");
+    }
+}
+
+#[test]
+fn a_body_goes_as_markup_s_text() {
+    assert_eq!(
+        escape("<b>a</b> & <a href=x>"),
+        "&lt;b&gt;a&lt;/b&gt; &amp; &lt;a href=x&gt;"
+    );
+    assert_eq!(escape("plain"), "plain");
+}
