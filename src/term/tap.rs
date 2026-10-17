@@ -10,6 +10,7 @@ use polling::{Event, PollMode, Poller};
 use super::{
     marks,
     mouse::MouseMode,
+    notify::{self, Kitty},
     prompts::{self, Prompts},
     pty::PtyEvent,
     status,
@@ -24,6 +25,7 @@ pub(crate) struct Tapped<P> {
     scanner: Osc,
     mouse: MouseModes,
     prompts: Prompts,
+    kitty: Kitty,
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
@@ -36,6 +38,7 @@ impl<P> Tapped<P> {
             scanner: Osc::default(),
             mouse: MouseModes::default(),
             prompts: Prompts::default(),
+            kitty: Kitty::default(),
             events,
             pid,
             last: None,
@@ -55,9 +58,9 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
         }
         let count = self.inner.reader().read(&mut buf[..take])?;
         let read = &buf[..count];
-        let (events, pid, last) = (&self.events, self.pid, &mut self.last);
+        let (events, pid, last, kitty) = (&self.events, self.pid, &mut self.last, &mut self.kitty);
         self.scanner
-            .feed(read, &mut |found| report(found, events, pid, last));
+            .feed(read, &mut |found| report(found, events, pid, last, kitty));
         if let Some(mode) = self.mouse.feed(read) {
             log::info!("pty {pid}: mouse {mode:?}");
             if events.unbounded_send(PtyEvent::Mouse(mode)).is_err() {
@@ -70,8 +73,14 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
     }
 }
 
-/// Sends the session what the scanner found: a full reset, a mark, a program's status or a folder.
-fn report(found: Found, events: &UnboundedSender<PtyEvent>, pid: u32, last: &mut Option<PathBuf>) {
+/// Sends the session what the scanner found: a full reset, a mark, a program's status or ask, or a folder.
+fn report(
+    found: Found,
+    events: &UnboundedSender<PtyEvent>,
+    pid: u32,
+    last: &mut Option<PathBuf>,
+    kitty: &mut Kitty,
+) {
     let event = match found {
         Found::Reset => {
             log::debug!("pty {pid}: a full reset");
@@ -87,6 +96,9 @@ fn report(found: Found, events: &UnboundedSender<PtyEvent>, pid: u32, last: &mut
             {
                 log::debug!("pty {pid}: {status:?}");
                 PtyEvent::Status(status)
+            } else if let Some(ask) = ask(body, kitty) {
+                log::debug!("pty {pid}: {ask:?}");
+                PtyEvent::Ask(ask)
             } else if let Some(folder) = body.strip_prefix(b"7;").and_then(folder) {
                 if last.as_ref() == Some(&folder) {
                     log::debug!("pty {pid}: folder {} again", folder.display());
@@ -102,6 +114,17 @@ fn report(found: Found, events: &UnboundedSender<PtyEvent>, pid: u32, last: &mut
     };
     if events.unbounded_send(event).is_err() {
         log::debug!("pty {pid}: an event after its session closed");
+    }
+}
+
+/// A notification or progress an OSC 99, 777 or 9 body asks for.
+fn ask(body: &[u8], kitty: &mut Kitty) -> Option<notify::Ask> {
+    if let Some(rest) = body.strip_prefix(b"99;") {
+        kitty.read(rest)
+    } else if let Some(rest) = body.strip_prefix(b"777;") {
+        notify::rxvt(rest)
+    } else {
+        body.strip_prefix(b"9;").and_then(notify::nine)
     }
 }
 

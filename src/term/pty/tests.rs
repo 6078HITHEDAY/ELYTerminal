@@ -5,13 +5,18 @@ use alacritty_terminal::{
 use futures::StreamExt;
 
 use super::*;
-use crate::term::status::{Record, State};
+use crate::term::{
+    notify::Ask,
+    status::{Record, State},
+};
 
 struct Ran {
     folders: Vec<PathBuf>,
     marks: Vec<Mark>,
     /// What programs said of their status, a full reset as none.
     statuses: Vec<Option<Status>>,
+    /// Notifications and progress programs asked for.
+    asks: Vec<Ask>,
     text: String,
     /// The first line's cells that carry a prompt's link.
     prompt: Vec<usize>,
@@ -30,21 +35,22 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
     };
     let (pty, mut events) =
         spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
-    let (folders, marks, statuses, success) = futures::executor::block_on(async {
-        let (mut folders, mut marks, mut statuses, mut success) =
-            (Vec::new(), Vec::new(), Vec::new(), false);
+    let (folders, marks, statuses, asks, success) = futures::executor::block_on(async {
+        let (mut folders, mut marks, mut statuses, mut asks, mut success) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), false);
         while let Some(event) = events.next().await {
             match event {
                 PtyEvent::Folder(folder) => folders.push(folder),
                 PtyEvent::Mark(mark) => marks.push(mark),
                 PtyEvent::Status(status) => statuses.push(Some(status)),
                 PtyEvent::Reset => statuses.push(None),
+                PtyEvent::Ask(ask) => asks.push(ask),
                 PtyEvent::Term(Event::ChildExit(status)) => success = status.success(),
                 PtyEvent::Term(Event::Exit) => break,
                 PtyEvent::Term(_) | PtyEvent::Mouse(_) => {}
             }
         }
-        (folders, marks, statuses, success)
+        (folders, marks, statuses, asks, success)
     });
     let term = pty.term.lock();
     let row = &term.grid()[Line(0)];
@@ -58,6 +64,7 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
         folders,
         marks,
         statuses,
+        asks,
         text: text.trim_end().to_string(),
         prompt: prompt.collect(),
         success,
@@ -116,6 +123,27 @@ fn osc_7501_and_a_full_reset_reach_the_session_in_order() {
         None,
     ];
     assert_eq!(ran.statuses, said);
+    assert_eq!(ran.text, "x");
+}
+
+#[test]
+fn notifications_and_progress_reach_the_session_in_order() {
+    let ran = run(
+        "printf '\\033]9;Hello\\007\\033]777;notify;T;B\\007\\033]99;i=a:d=0;Hel\\033\\\\\\033]99;i=a;lo\\033\\\\\\033]9;4;1;40\\007x'",
+        (40, 4),
+    );
+    let titles: Vec<String> = ran
+        .asks
+        .iter()
+        .map(|ask| match ask {
+            Ask::Show(notice) => format!("{}/{}", notice.title, notice.body),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        titles,
+        ["Hello/", "T/B", "Hello/", "Progress(Set(Some(40)))"]
+    );
     assert_eq!(ran.text, "x");
 }
 

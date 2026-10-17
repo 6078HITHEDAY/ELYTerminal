@@ -10,6 +10,7 @@ mod links;
 pub mod mac;
 mod marks;
 pub mod mouse;
+mod notify;
 mod paint;
 mod pointer;
 mod prompts;

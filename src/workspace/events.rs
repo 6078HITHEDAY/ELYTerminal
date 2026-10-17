@@ -46,6 +46,10 @@ impl Workspace {
                 }
                 session.status = *status;
             }
+            TerminalEvent::Notice(ask) => {
+                let pid = session.terminal.read(cx).pid();
+                log::info!("app: session {pid} asks {ask:?}");
+            }
             TerminalEvent::Exited(status) => {
                 let pid = session.terminal.read(cx).pid();
                 log::info!("app: session {pid}'s program ended, {status}");

@@ -24,6 +24,7 @@ use super::{
     input::{self, Find, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
+    notify::{self, Ask},
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
@@ -52,6 +53,8 @@ pub enum TerminalEvent {
     Bell,
     /// A command the shell ran ended, with the status it gave.
     Finished(Option<i32>),
+    /// A notification to show or close, OSC 9, 777 or 99.
+    Notice(Ask),
     Exited(ExitStatus),
 }
 
@@ -230,7 +233,8 @@ impl TerminalView {
                 PtyEvent::Mark(Mark::Prompt) => self.records.prompt(),
                 PtyEvent::Mark(_) => {}
                 PtyEvent::Status(status) => self.status(status),
-                PtyEvent::Reset => self.records.clear(None),
+                PtyEvent::Ask(ask) => self.ask(ask, cx),
+                PtyEvent::Reset => self.records.reset(),
             }
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
@@ -246,6 +250,16 @@ impl TerminalView {
             Status::Report(id, record) => self.records.report(id, record),
             Status::Clear(id) => self.records.clear(id.as_deref()),
             Status::Query => self.pty.write(status::REPLY.as_bytes().to_vec()),
+        }
+    }
+
+    /// Maps progress, answers queries, and hands notifications on.
+    fn ask(&mut self, ask: Ask, cx: &mut Context<Self>) {
+        match ask {
+            Ask::Progress(progress) => self.records.progress(progress),
+            Ask::Query(id) => self.pty.write(notify::answer(&id).into_bytes()),
+            Ask::Alive(id) => self.pty.write(notify::alive(&id).into_bytes()),
+            ask @ (Ask::Show(_) | Ask::Close(_)) => cx.emit(TerminalEvent::Notice(ask)),
         }
     }
 

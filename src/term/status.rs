@@ -4,6 +4,8 @@ use base64::{
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
 
+use super::notify::Progress;
+
 /// What a program says it is doing, OSC 7501.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
@@ -59,7 +61,7 @@ const LEVELS: usize = 8;
 pub const RECORDS: usize = 256;
 
 /// Standard base64, its padding optional.
-const BASE64: GeneralPurpose = GeneralPurpose::new(
+pub(super) const BASE64: GeneralPurpose = GeneralPurpose::new(
     &STANDARD,
     GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
 );
@@ -191,11 +193,49 @@ fn text(value: &str, key: &str, encoded: usize, decoded: usize) -> Result<String
 pub struct Records {
     list: Vec<(String, Record, u64)>,
     clock: u64,
+    /// A program has reported through OSC 7501 since the last full reset, so OSC 9;4 maps no more.
+    reported: bool,
 }
 
 impl Records {
-    /// Replaces the record at `id` whole.
+    /// A program's report: replaces the record at `id` whole.
     pub fn report(&mut self, id: String, record: Record) {
+        self.reported = true;
+        self.put(id, record);
+    }
+
+    /// OSC 9;4 as the root record, until a program reports through OSC 7501.
+    pub fn progress(&mut self, progress: Progress) {
+        if self.reported {
+            log::debug!("status: OSC 9;4 passed by, a program reports through OSC 7501");
+            return;
+        }
+        let root = |state, progress| Record {
+            state,
+            kind: None,
+            progress,
+            app: None,
+            title: None,
+            msg: None,
+        };
+        match progress {
+            Progress::Remove => self.list.retain(|(id, ..)| !id.is_empty()),
+            // Paused work is work still, its progress kept.
+            Progress::Set(value) | Progress::Pause(value) => {
+                self.put(String::new(), root(State::Working, value))
+            }
+            Progress::Indeterminate => self.put(String::new(), root(State::Working, None)),
+            Progress::Error(_) => self.put(String::new(), root(State::Error, None)),
+        }
+    }
+
+    /// A full reset: every record goes, and OSC 9;4 maps again.
+    pub fn reset(&mut self) {
+        self.list.clear();
+        self.reported = false;
+    }
+
+    fn put(&mut self, id: String, record: Record) {
         self.clock += 1;
         if let Some(entry) = self.list.iter_mut().find(|(at, ..)| *at == id) {
             *entry = (id, record, self.clock);
@@ -211,8 +251,9 @@ impl Records {
         self.list.push((id, record, self.clock));
     }
 
-    /// Drops the record at `id` and every one under it; with none, all.
+    /// A program's clear: drops the record at `id` and every one under it; with none, all.
     pub fn clear(&mut self, id: Option<&str>) {
+        self.reported = true;
         match id {
             None => self.list.clear(),
             Some(id) => {

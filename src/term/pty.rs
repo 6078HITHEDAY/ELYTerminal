@@ -11,7 +11,7 @@ use alacritty_terminal::{
 };
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
-use super::{marks::Mark, mouse::MouseMode, status::Status, tap::Tapped};
+use super::{marks::Mark, mouse::MouseMode, notify::Ask, status::Status, tap::Tapped};
 use crate::settings::{CursorStyle, Settings};
 
 /// What a session hears from its pty.
@@ -23,6 +23,8 @@ pub enum PtyEvent {
     Mark(Mark),
     /// A program's status, OSC 7501.
     Status(Status),
+    /// A notification or progress, OSC 9, 777 or 99.
+    Ask(Ask),
     /// A full reset, `ESC c`.
     Reset,
 }
