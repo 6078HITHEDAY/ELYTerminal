@@ -141,6 +141,32 @@ fn records_replace_and_clear_as_the_spec_says() {
 }
 
 #[test]
+fn herdr_s_agents_replace_their_own_records_alone() {
+    let mut records = Records::default();
+    records.report("build".into(), record(State::Working, None));
+    let codex = [(
+        "herdr/w1:p1".to_string(),
+        record(State::Working, Some("codex")),
+    )];
+    records.herdr(&codex);
+    let clock = records.clock;
+    records.herdr(&codex);
+    assert_eq!(records.clock, clock, "the same agents change nothing");
+    let claude = [(
+        "herdr/w1:p2".to_string(),
+        record(State::Blocked, Some("claude")),
+    )];
+    records.herdr(&claude);
+    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
+    assert_eq!(ids, ["build", "herdr/w1:p2"]);
+    records.reset();
+    records.herdr(&claude);
+    assert_eq!(records.list.len(), 1, "the next snapshot puts them back");
+    records.herdr(&[]);
+    assert!(records.list.is_empty());
+}
+
+#[test]
 fn a_new_prompt_leaves_done_and_error() {
     let mut records = Records::default();
     for (id, state) in [

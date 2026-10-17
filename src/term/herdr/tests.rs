@@ -73,7 +73,8 @@ fn reply(focused_pane: &str, cwd: &str) -> String {
 
 #[test]
 fn the_focused_pane_s_folder_comes_from_herdr_s_snapshot() {
-    let read = |focused_pane: &str, cwd: &str| focused(&reply(focused_pane, cwd));
+    let read =
+        |focused_pane: &str, cwd: &str| shows(&reply(focused_pane, cwd)).map(|(folder, _)| folder);
     let folder = format!("{ROOT}srv/b");
     assert_eq!(
         read(r#""w1:p2""#, &format!("\"{folder}\"")).expect("a folder"),
@@ -90,9 +91,80 @@ fn the_focused_pane_s_folder_comes_from_herdr_s_snapshot() {
     assert!(error.to_string().contains("relative"), "{error}");
     let failed =
         r#"{"id":"elyterminal","error":{"code":"invalid_request","message":"no such method"}}"#;
-    let error = focused(failed).expect_err("an error");
+    let error = shows(failed).expect_err("an error");
     assert_eq!(error.to_string(), "invalid_request: no such method");
-    assert!(focused("").is_err());
+    assert!(shows("").is_err());
+}
+
+#[test]
+fn herdr_s_agents_whose_state_it_knows_are_records_by_pane() {
+    let agent = |pane: &str, status: &str, more: &str| {
+        format!(
+            r#"{{"terminal_id":"t","agent_status":"{status}","workspace_id":"w1","tab_id":"w1:t1","pane_id":"{pane}","focused":false,"revision":1{more}}}"#
+        )
+    };
+    let agents = [
+        agent(
+            "w1:p1",
+            "working",
+            r#","agent":"codex","display_agent":"Codex","name":"review","title":"codex","terminal_title_stripped":"Reading files""#,
+        ),
+        agent(
+            "w1:p2",
+            "blocked",
+            r#","agent":"claude","display_agent":"Claude Code","title":"claude""#,
+        ),
+        agent("w1:p3", "unknown", ""),
+        agent("w1:p4", "napping", ""),
+        agent("w1:p5", "done", ""),
+        agent("w1:p6", "idle", ""),
+    ];
+    let reply = reply("null", "null").replace(
+        r#""agents":[]"#,
+        &format!(r#""agents":[{}]"#, agents.join(",")),
+    );
+    let (folder, records) = shows(&reply).expect("a snapshot");
+    assert_eq!(folder, None);
+    let said: Vec<_> = records
+        .iter()
+        .map(|(id, record)| {
+            (
+                id.as_str(),
+                record.state,
+                record.app.as_deref(),
+                record.title.as_deref(),
+                record.msg.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (
+                "herdr/w1:p1",
+                State::Working,
+                Some("codex"),
+                Some("review"),
+                Some("Reading files")
+            ),
+            (
+                "herdr/w1:p2",
+                State::Blocked,
+                Some("claude"),
+                Some("Claude Code"),
+                Some("claude")
+            ),
+            ("herdr/w1:p5", State::Done, None, None, None),
+            ("herdr/w1:p6", State::Idle, None, None, None),
+        ]
+    );
+    assert!(
+        records
+            .iter()
+            .all(|(_, record)| record.kind.is_none() && record.progress.is_none())
+    );
+    let older = reply.replace(&format!(r#","agents":[{}]"#, agents.join(",")), "");
+    assert_eq!(shows(&older).expect("a herdr before agents").1, []);
 }
 
 #[cfg(unix)]
@@ -118,13 +190,13 @@ fn herdr_answers_over_its_socket() {
             .expect("a reply");
         request
     });
-    assert_eq!(folder(&socket).expect("an answer"), Some("/srv".into()));
+    assert_eq!(snapshot(&socket).expect("an answer").0, Some("/srv".into()));
     assert_eq!(server.join().expect("the server").as_bytes(), SNAPSHOT);
     fs::remove_dir_all(&dir).expect("the test folder goes");
-    let error = folder(&socket).expect_err("no server");
+    let error = snapshot(&socket).expect_err("no server");
     assert!(format!("{error:#}").contains("asking"), "{error:#}");
     assert!(starting(&error), "{error:#}");
-    assert!(!starting(&focused("").expect_err("no reply")));
+    assert!(!starting(&shows("").expect_err("no reply")));
 }
 
 /// macOS hides the variables of its own programs, such as `/bin/sleep`, so the test reads itself.
@@ -325,9 +397,12 @@ fn herdr_answers_over_its_pipe() {
         stream.sync_all().expect("the client reads the reply");
         request
     });
-    assert_eq!(folder(&socket).expect("an answer"), Some("C:/srv".into()));
+    assert_eq!(
+        snapshot(&socket).expect("an answer").0,
+        Some("C:/srv".into())
+    );
     assert_eq!(server.join().expect("the server").as_bytes(), SNAPSHOT);
-    let error = folder(&socket).expect_err("no server");
+    let error = snapshot(&socket).expect_err("no server");
     assert!(format!("{error:#}").contains("asking"), "{error:#}");
     assert!(starting(&error), "{error:#}");
 }

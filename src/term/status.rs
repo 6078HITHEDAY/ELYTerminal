@@ -57,6 +57,9 @@ const ID: usize = 128;
 const SEGMENT: usize = 32;
 const LEVELS: usize = 8;
 
+/// The ids herdr's agents take, one by pane.
+pub(super) const HERDR: &str = "herdr/";
+
 /// Records a terminal keeps; past them, the one updated longest ago goes.
 pub const RECORDS: usize = 256;
 
@@ -226,6 +229,21 @@ impl Records {
             }
             Progress::Indeterminate => self.put(String::new(), root(State::Working, None)),
             Progress::Error(_) => self.put(String::new(), root(State::Error, None)),
+        }
+    }
+
+    /// herdr's agents in place of the last ones, unless they are the same.
+    pub fn herdr(&mut self, agents: &[(String, Record)]) {
+        let held = self.list.iter().filter(|(id, ..)| id.starts_with(HERDR));
+        if held
+            .map(|(id, record, _)| (id, record))
+            .eq(agents.iter().map(|(id, record)| (id, record)))
+        {
+            return;
+        }
+        self.list.retain(|(id, ..)| !id.starts_with(HERDR));
+        for (id, record) in agents {
+            self.put(id.clone(), record.clone());
         }
     }
 

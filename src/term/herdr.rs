@@ -10,7 +10,10 @@ use anyhow::Context as _;
 use gpui::{Context, Task};
 use serde::Deserialize;
 
-use super::view::{TerminalEvent, TerminalView};
+use super::{
+    status::{HERDR, Record, State},
+    view::{TerminalEvent, TerminalView},
+};
 
 #[cfg(unix)]
 mod unix;
@@ -27,7 +30,7 @@ const CHECK: Duration = Duration::from_millis(500);
 /// How long herdr may take to answer.
 const WAIT: Duration = Duration::from_secs(1);
 
-/// The socket request for herdr's session: its focus and its panes' folders.
+/// The socket request for herdr's session: its focus, its panes' folders and its agents.
 const SNAPSHOT: &[u8] = b"{\"id\":\"elyterminal\",\"method\":\"session.snapshot\",\"params\":{}}\n";
 
 /// A program's arguments, and its variables as the system holds them.
@@ -38,6 +41,7 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
     cx.spawn(async move |view, cx| {
         let mut seen: Option<Program> = None;
         let (mut socket, mut shown, mut retry, mut failed) = (None, None, false, String::new());
+        let mut states: Vec<(String, State)> = Vec::new();
         loop {
             cx.background_executor().timer(CHECK).await;
             let Ok((pid, lead, reports)) = view.update(cx, |view, _| {
@@ -68,7 +72,13 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
                 retry = true;
                 failed.clear();
                 if socket.take().is_some() {
-                    log::info!("terminal {pid}: herdr left the foreground");
+                    log::info!(
+                        "terminal {pid}: herdr left the foreground, its agents' records with it"
+                    );
+                    states.clear();
+                    if view.update(cx, |view, _| view.records.herdr(&[])).is_err() {
+                        break;
+                    }
                 }
             }
             if retry {
@@ -95,34 +105,49 @@ pub fn follow(cx: &mut Context<TerminalView>) -> Task<()> {
             let Some(path) = socket.clone() else {
                 continue;
             };
-            match cx
+            let (folder, agents) = match cx
                 .background_executor()
-                .spawn(async move { folder(&path) })
+                .spawn(async move { snapshot(&path) })
                 .await
             {
-                Ok(Some(folder)) if shown.as_ref() != Some(&folder) => {
-                    failed.clear();
-                    let report = folder.clone();
-                    // The shell reports only once herdr has left; its folder then stands.
-                    let Ok(still) = view.update(cx, |view, cx| {
-                        let still = view.reports == reports;
-                        if still {
-                            cx.emit(TerminalEvent::Folder(report));
-                        }
-                        still
-                    }) else {
-                        break;
-                    };
-                    if still {
-                        log::info!(
-                            "terminal {pid}: herdr's focused pane is in {}",
-                            folder.display()
-                        );
-                        shown = Some(folder);
+                Ok(shows) => shows,
+                Err(error) => {
+                    failure(&mut failed, pid, &error);
+                    continue;
+                }
+            };
+            failed.clear();
+            let report = folder.filter(|folder| shown.as_ref() != Some(folder));
+            // The shell reports only once herdr has left; its folder then stands.
+            let Ok(still) = view.update(cx, |view, cx| {
+                let still = view.reports == reports;
+                if still {
+                    view.records.herdr(&agents);
+                    if let Some(folder) = report.clone() {
+                        cx.emit(TerminalEvent::Folder(folder));
                     }
                 }
-                Ok(_) => failed.clear(),
-                Err(error) => failure(&mut failed, pid, &error),
+                still
+            }) else {
+                break;
+            };
+            if !still {
+                continue;
+            }
+            let now: Vec<(String, State)> = agents
+                .into_iter()
+                .map(|(id, record)| (id, record.state))
+                .collect();
+            if now != states {
+                log::info!("terminal {pid}: herdr's agents are {now:?}");
+                states = now;
+            }
+            if let Some(folder) = report {
+                log::info!(
+                    "terminal {pid}: herdr's focused pane is in {}",
+                    folder.display()
+                );
+                shown = Some(folder);
             }
         }
     })
@@ -237,8 +262,8 @@ fn session(args: &[String]) -> Option<String> {
     named
 }
 
-/// The folder of the pane herdr's server has focused; none while it has none or knows none.
-fn folder(socket: &Path) -> anyhow::Result<Option<PathBuf>> {
+/// What herdr's server shows: the folder of the pane it has focused, none while it has none or knows none, and its agents.
+fn snapshot(socket: &Path) -> anyhow::Result<Shows> {
     let ask = || -> io::Result<String> {
         let mut stream = connect(socket)?;
         stream.write_all(SNAPSHOT)?;
@@ -247,8 +272,11 @@ fn folder(socket: &Path) -> anyhow::Result<Option<PathBuf>> {
         Ok(reply)
     };
     let reply = ask().with_context(|| format!("herdr: asking {}", socket.display()))?;
-    focused(&reply).with_context(|| format!("herdr: {}", socket.display()))
+    shows(&reply).with_context(|| format!("herdr: {}", socket.display()))
 }
+
+/// The focused pane's folder, and herdr's agents as records.
+type Shows = (Option<PathBuf>, Vec<(String, Record)>);
 
 #[derive(Deserialize)]
 struct Reply {
@@ -265,6 +293,9 @@ struct Snapshot {
 struct Session {
     focused_pane_id: Option<String>,
     panes: Vec<Pane>,
+    /// A herdr before agents lists none.
+    #[serde(default)]
+    agents: Vec<Agent>,
 }
 
 #[derive(Deserialize)]
@@ -274,20 +305,44 @@ struct Pane {
 }
 
 #[derive(Deserialize)]
+struct Agent {
+    pane_id: String,
+    agent_status: AgentStatus,
+    agent: Option<String>,
+    display_agent: Option<String>,
+    name: Option<String>,
+    title: Option<String>,
+    terminal_title_stripped: Option<String>,
+}
+
+/// An agent's state, as herdr names it.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AgentStatus {
+    Idle,
+    Working,
+    Blocked,
+    Done,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Deserialize)]
 struct Failure {
     code: String,
     message: String,
 }
 
-/// The focused pane's folder in herdr's `session.snapshot` reply.
-pub(super) fn focused(reply: &str) -> anyhow::Result<Option<PathBuf>> {
+/// What herdr's `session.snapshot` reply shows.
+pub(super) fn shows(reply: &str) -> anyhow::Result<Shows> {
     let reply: Reply = serde_json::from_str(reply).context("its reply does not parse")?;
     if let Some(Failure { code, message }) = reply.error {
         anyhow::bail!("{code}: {message}");
     }
     let session = reply.result.context("its reply holds no result")?.snapshot;
+    let agents = records(session.agents);
     let Some(id) = session.focused_pane_id else {
-        return Ok(None);
+        return Ok((None, agents));
     };
     let pane = session
         .panes
@@ -301,7 +356,30 @@ pub(super) fn focused(reply: &str) -> anyhow::Result<Option<PathBuf>> {
             cwd.display()
         );
     }
-    Ok(pane.cwd)
+    Ok((pane.cwd, agents))
+}
+
+/// Each agent whose state herdr knows, as the record of its pane: herdr names no kind and no progress.
+fn records(agents: Vec<Agent>) -> Vec<(String, Record)> {
+    let record = |agent: Agent| {
+        let state = match agent.agent_status {
+            AgentStatus::Idle => State::Idle,
+            AgentStatus::Working => State::Working,
+            AgentStatus::Blocked => State::Blocked,
+            AgentStatus::Done => State::Done,
+            AgentStatus::Unknown => return None,
+        };
+        let record = Record {
+            state,
+            kind: None,
+            progress: None,
+            app: agent.agent,
+            title: agent.name.or(agent.display_agent),
+            msg: agent.terminal_title_stripped.or(agent.title),
+        };
+        Some((format!("{HERDR}{}", agent.pane_id), record))
+    };
+    agents.into_iter().filter_map(record).collect()
 }
 
 #[cfg(test)]
