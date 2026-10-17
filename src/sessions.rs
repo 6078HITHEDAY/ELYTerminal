@@ -121,7 +121,7 @@ fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
     let (pid, records) = (view.pid() as usize, view.records());
     let icon = |name: IconName, color: Hsla| Icon::new(name).color(color).into_any_element();
     let failed = view.ended().filter(|&code| code != 0);
-    let mark = match (records.shown(), failed) {
+    let mark = match (records.shown().map(|(_, record)| record), failed) {
         (
             Some(Record {
                 state: State::Blocked,
@@ -215,23 +215,13 @@ fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
     )
 }
 
-/// What hover shows: a line for each record, ten at most, with its state, app, title and message, then a failed command's status.
+/// What hover shows: a line for each record, ten at most, then a failed command's status.
 pub fn hover(records: &Records, failed: Option<i32>) -> Vec<SharedString> {
-    let line = |(id, record): (&str, &Record)| {
-        let parts = [
-            records.app(id),
-            record.title.as_deref(),
-            record.msg.as_deref(),
-        ];
-        let said: Vec<String> = parts.into_iter().flatten().map(plain).collect();
-        let state = label(record);
-        SharedString::from(if said.is_empty() {
-            state
-        } else {
-            format!("{state}: {}", said.join(" · "))
-        })
-    };
-    let mut lines: Vec<SharedString> = records.iter().take(LISTED).map(line).collect();
+    let mut lines: Vec<SharedString> = records
+        .iter()
+        .take(LISTED)
+        .map(|(id, record)| line(records, id, record).into())
+        .collect();
     let more = records.iter().count().saturating_sub(LISTED);
     if more > 0 {
         lines.push(format!("{more} more").into());
@@ -240,6 +230,22 @@ pub fn hover(records: &Records, failed: Option<i32>) -> Vec<SharedString> {
         lines.push(format!("Last command exited with {code}").into());
     }
     lines
+}
+
+/// A record as hover and notifications say it: its state, then its app, title and message.
+pub fn line(records: &Records, id: &str, record: &Record) -> String {
+    let parts = [
+        records.app(id),
+        record.title.as_deref(),
+        record.msg.as_deref(),
+    ];
+    let said: Vec<String> = parts.into_iter().flatten().map(plain).collect();
+    let state = label(record);
+    if said.is_empty() {
+        state
+    } else {
+        format!("{state}: {}", said.join(" · "))
+    }
 }
 
 /// A record's state, as hover names it.

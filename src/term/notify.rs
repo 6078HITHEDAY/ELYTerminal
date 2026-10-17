@@ -2,15 +2,6 @@ use base64::Engine;
 
 use super::status::BASE64;
 
-/// When a notification may show: OSC 99's `o`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Occasion {
-    #[default]
-    Always,
-    Unfocused,
-    Invisible,
-}
-
 /// A notification a program asks for: OSC 9, 777 or 99.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notice {
@@ -18,7 +9,6 @@ pub struct Notice {
     pub id: Option<String>,
     pub title: String,
     pub body: String,
-    pub occasion: Occasion,
     /// A press shows the window and session (`a=focus`, the default), and tells the program (`a=report`).
     pub focus: bool,
     pub report: bool,
@@ -121,7 +111,6 @@ fn plain(title: String, body: String) -> Notice {
         id: None,
         title,
         body,
-        occasion: Occasion::Always,
         focus: true,
         report: false,
         close: false,
@@ -141,14 +130,30 @@ fn safe(bytes: &[u8], what: &str) -> Option<String> {
     Some(text)
 }
 
-/// The answer to OSC 99's query, naming `id`: what this terminal reads of notifications.
+/// gpui closes no notification on Linux, nor replaces one, so close and expiry hold elsewhere alone.
+pub(super) const CLOSES: bool = !cfg!(target_os = "linux");
+
+/// The answer to OSC 99's query, naming `id`: a press focuses and reports, a notification posts while unseen, its payloads, and close and expiry where gpui closes one.
 pub fn answer(id: &str) -> String {
-    format!("\x1b]99;i={id}:p=?;p=title,body,?,alive:o=always\x1b\\")
+    let (close, expire) = if CLOSES { ("close,", ":w=1") } else { ("", "") };
+    format!(
+        "\x1b]99;i={id}:p=?;a=focus,report:o=invisible:p=title,body,{close}?,alive{expire}\x1b\\"
+    )
 }
 
-/// The answer to OSC 99's `p=alive`, naming `id`: none, as no notification shows yet.
-pub fn alive(id: &str) -> String {
-    format!("\x1b]99;i={id}:p=alive;\x1b\\")
+/// The answer to OSC 99's `p=alive`, naming `id`: the ids of notifications still alive.
+pub fn alive(id: &str, alive: &[&str]) -> String {
+    format!("\x1b]99;i={id}:p=alive;{}\x1b\\", alive.join(","))
+}
+
+/// What `c=1` hears of notification `id`: its close goes untracked, as gpui hears of none.
+pub fn untracked(id: &str) -> String {
+    format!("\x1b]99;i={id}:p=close;untracked\x1b\\")
+}
+
+/// What `a=report` hears when notification `id` is pressed.
+pub fn activated(id: &str) -> String {
+    format!("\x1b]99;i={id};\x1b\\")
 }
 
 /// An OSC 99 payload's most bytes: plain, and base64; and its metadata's.
@@ -335,13 +340,6 @@ impl Kitty {
             return Err(format!("a notification over {GATHERED} bytes"));
         }
         let notice = &mut gathering.notice;
-        if let Some(occasion) = get(b'o') {
-            notice.occasion = match occasion {
-                b"unfocused" => Occasion::Unfocused,
-                b"invisible" => Occasion::Invisible,
-                _ => Occasion::Always,
-            };
-        }
         if let Some(actions) = get(b'a') {
             for action in actions.split(|&byte| byte == b',') {
                 let (on, name) = match action.strip_prefix(b"-") {

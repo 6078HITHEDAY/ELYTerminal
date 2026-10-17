@@ -37,7 +37,6 @@ impl Workspace {
                 session.bell = true;
             }
             TerminalEvent::Bell => {}
-            TerminalEvent::Finished(_) => {}
             TerminalEvent::Shows(state) => {
                 let now = session.terminal.read(cx).records().shows();
                 // A hidden session that starts waiting, and still waits, marks its row until it is shown.
@@ -45,10 +44,6 @@ impl Workspace {
                     log::debug!("app: hidden session {} waits", index + 1);
                     session.waiting = true;
                 }
-            }
-            TerminalEvent::Notice(ask) => {
-                let pid = session.terminal.read(cx).pid();
-                log::info!("app: session {pid} asks {ask:?}");
             }
             TerminalEvent::Exited(status) => {
                 let pid = session.terminal.read(cx).pid();
@@ -61,5 +56,26 @@ impl Workspace {
             self.retitle(window);
         }
         cx.notify();
+    }
+
+    /// A press on notification `tag`: its session hears of it and shows, unless it asked not to; false when no session here posted it.
+    pub fn pressed(&mut self, tag: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let found = self
+            .sessions
+            .iter()
+            .enumerate()
+            .find_map(|(index, session)| {
+                let focus = session.terminal.update(cx, |view, _| view.pressed(tag))?;
+                Some((index, focus))
+            });
+        let Some((index, focus)) = found else {
+            return false;
+        };
+        if focus {
+            cx.activate(true);
+            window.activate_window();
+            self.select(index, window, cx);
+        }
+        true
     }
 }

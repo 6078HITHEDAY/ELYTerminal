@@ -303,7 +303,11 @@ fn osc_9_4_maps_to_the_root_record_until_a_program_reports() {
 fn a_row_shows_the_most_pressing_record_the_last_reported_in_its_state() {
     let mut records = Records::default();
     assert_eq!(records.shown(), None);
-    let shown = |records: &Records| records.shown().map(|record| (record.state, record.kind));
+    let shown = |records: &Records| {
+        records
+            .shown()
+            .map(|(_, record)| (record.state, record.kind))
+    };
     records.report("a".into(), record(State::Idle, None));
     assert_eq!(shown(&records), Some((State::Idle, None)));
     records.report("b".into(), record(State::Done, None));

@@ -87,14 +87,9 @@ fn osc_99_gathers_chunks_by_id_and_reads_its_options() {
         (Some("a"), "Hel", "World")
     );
     assert_eq!(
-        (
-            notice.occasion,
-            notice.focus,
-            notice.report,
-            notice.close,
-            notice.expire
-        ),
-        (Occasion::Unfocused, false, true, true, Some(5000))
+        (notice.focus, notice.report, notice.close, notice.expire),
+        (false, true, true, Some(5000)),
+        "o passes by"
     );
     let other = shown(kitty.read(b"i=b:p=body;!"));
     assert_eq!(
@@ -224,9 +219,17 @@ fn osc_99_drops_what_breaks_its_rules() {
 
 #[test]
 fn the_answers_name_the_asker_s_id() {
+    let offered = if CLOSES {
+        "p=title,body,close,?,alive:w=1"
+    } else {
+        "p=title,body,?,alive"
+    };
     assert_eq!(
         answer("q"),
-        "\x1b]99;i=q:p=?;p=title,body,?,alive:o=always\x1b\\"
+        format!("\x1b]99;i=q:p=?;a=focus,report:o=invisible:{offered}\x1b\\")
     );
-    assert_eq!(alive("0"), "\x1b]99;i=0:p=alive;\x1b\\");
+    assert_eq!(alive("0", &[]), "\x1b]99;i=0:p=alive;\x1b\\");
+    assert_eq!(alive("z", &["a", "b"]), "\x1b]99;i=z:p=alive;a,b\x1b\\");
+    assert_eq!(untracked("n1"), "\x1b]99;i=n1:p=close;untracked\x1b\\");
+    assert_eq!(activated("0"), "\x1b]99;i=0;\x1b\\");
 }

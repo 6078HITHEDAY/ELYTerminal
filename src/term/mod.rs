@@ -15,6 +15,7 @@ mod paint;
 mod pointer;
 mod prompts;
 mod pty;
+mod reports;
 pub mod shell;
 mod status;
 mod tap;

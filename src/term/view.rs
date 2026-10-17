@@ -24,11 +24,11 @@ use super::{
     input::{self, Find, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
-    notify::{self, Ask},
     paint::{self, Look},
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
-    status::{self, Records, State, Status},
+    reports::Notices,
+    status::{Records, State},
     zoom,
 };
 use crate::{
@@ -51,10 +51,6 @@ pub enum TerminalEvent {
     Title(String),
     Folder(PathBuf),
     Bell,
-    /// A command the shell ran ended, with the status it gave.
-    Finished(Option<i32>),
-    /// A notification to show or close, OSC 9, 777 or 99.
-    Notice(Ask),
     /// The state its row shows changed, to this one.
     Shows(Option<State>),
     Exited(ExitStatus),
@@ -80,7 +76,15 @@ pub struct TerminalView {
     /// What programs say they are doing, OSC 7501.
     pub(super) records: Records,
     /// The status its shell's last command ended with; none before one, or when it gave none.
-    ended: Option<i32>,
+    pub(super) ended: Option<i32>,
+    /// The system notifications it posted.
+    pub(super) notices: Notices,
+    /// The program's title; empty while it names none.
+    pub(super) title: String,
+    /// It is the session shown.
+    pub(super) front: bool,
+    /// Its window is active.
+    pub(super) active: bool,
     cell: (u16, u16),
     /// Focused in an active window, as the program last heard.
     focused: bool,
@@ -130,6 +134,10 @@ impl TerminalView {
             reports: 0,
             records: Records::default(),
             ended: None,
+            notices: Notices::default(),
+            title: String::new(),
+            front: true,
+            active: false,
             cell: (8, 16),
             focused: false,
             blinking: false,
@@ -163,23 +171,9 @@ impl TerminalView {
         self.ended
     }
 
-    /// Notes the state its row shows, and tells the owner of each change.
-    pub(super) fn restate(&mut self, cx: &mut Context<Self>) {
-        if self.records.restate() {
-            let state = self.records.shows();
-            log::info!("terminal {}: its row shows {state:?}", self.pty.pid);
-            cx.emit(TerminalEvent::Shows(state));
-        }
-    }
-
-    /// A command the shell ran ended with `status`.
-    fn finished(&mut self, status: Option<i32>, cx: &mut Context<Self>) {
-        if self.ended != status {
-            let ended = status.map_or("with no status".into(), |code| format!("with {code}"));
-            log::info!("terminal {}: its last command ended {ended}", self.pty.pid);
-        }
-        self.ended = status;
-        cx.emit(TerminalEvent::Finished(status));
+    /// Whether it is the session shown: one shown in an active window posts no notification.
+    pub fn set_front(&mut self, front: bool) {
+        self.front = front;
     }
 
     fn pump(mut events: Events, cx: &mut Context<Self>) -> Task<()> {
@@ -229,6 +223,7 @@ impl TerminalView {
 
     /// Tells a program that asked, by mode 1004, when the terminal gains or loses focus.
     fn refocus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.active = window.is_window_active();
         let focused = self.focus.is_focused(window) && window.is_window_active();
         if focused != self.focused {
             self.focused = focused;
@@ -254,6 +249,7 @@ impl TerminalView {
         let drawn = events
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
+        let mut restated = false;
         for event in events {
             match event {
                 PtyEvent::Folder(folder) => {
@@ -266,47 +262,32 @@ impl TerminalView {
                 // A new prompt ends what was working, waiting or idle; done and error stay.
                 PtyEvent::Mark(Mark::Prompt) => {
                     self.records.prompt();
-                    self.restate(cx);
+                    restated |= self.restate(cx);
                 }
                 PtyEvent::Mark(_) => {}
                 PtyEvent::Status(status) => {
                     self.status(status);
-                    self.restate(cx);
+                    restated |= self.restate(cx);
                 }
                 PtyEvent::Ask(ask) => {
                     self.ask(ask, cx);
-                    self.restate(cx);
+                    restated |= self.restate(cx);
                 }
                 PtyEvent::Reset => {
                     self.records.reset();
-                    self.restate(cx);
+                    restated |= self.restate(cx);
                 }
             }
+        }
+        // A state a later change in the same output passed by posts nothing.
+        if restated {
+            self.tell_state(cx);
         }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
             self.search(false, cx);
         }
         cx.notify();
-    }
-
-    /// Keeps a program's report, drops what it clears, and answers its query.
-    fn status(&mut self, status: Status) {
-        match status {
-            Status::Report(id, record) => self.records.report(id, record),
-            Status::Clear(id) => self.records.clear(id.as_deref()),
-            Status::Query => self.pty.write(status::REPLY.as_bytes().to_vec()),
-        }
-    }
-
-    /// Maps progress, answers queries, and hands notifications on.
-    fn ask(&mut self, ask: Ask, cx: &mut Context<Self>) {
-        match ask {
-            Ask::Progress(progress) => self.records.progress(progress),
-            Ask::Query(id) => self.pty.write(notify::answer(&id).into_bytes()),
-            Ask::Alive(id) => self.pty.write(notify::alive(&id).into_bytes()),
-            ask @ (Ask::Show(_) | Ask::Close(_)) => cx.emit(TerminalEvent::Notice(ask)),
-        }
     }
 
     fn term_event(&mut self, event: Event, cx: &mut Context<Self>) {
@@ -318,8 +299,14 @@ impl TerminalView {
                 let settings = config(SettingsStore::get(cx));
                 self.pty.term.lock().set_options(settings);
             }
-            Event::Title(title) => cx.emit(TerminalEvent::Title(title)),
-            Event::ResetTitle => cx.emit(TerminalEvent::Title(String::new())),
+            Event::Title(title) => {
+                self.title.clone_from(&title);
+                cx.emit(TerminalEvent::Title(title));
+            }
+            Event::ResetTitle => {
+                self.title.clear();
+                cx.emit(TerminalEvent::Title(String::new()));
+            }
             Event::Bell => {
                 log::debug!("terminal {}: a bell, kept silent", self.pty.pid);
                 cx.emit(TerminalEvent::Bell);

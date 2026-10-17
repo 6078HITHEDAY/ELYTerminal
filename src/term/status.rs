@@ -300,8 +300,8 @@ impl Records {
         self.list.len() != before
     }
 
-    /// The record a row shows: blocked, else error, working, done or idle, the one reported last in its state.
-    pub fn shown(&self) -> Option<&Record> {
+    /// The record a row shows, with its id: blocked, else error, working, done or idle, the one reported last in its state.
+    pub fn shown(&self) -> Option<(&str, &Record)> {
         [
             State::Blocked,
             State::Error,
@@ -315,13 +315,13 @@ impl Records {
                 .iter()
                 .filter(|(_, record, _)| record.state == state)
                 .max_by_key(|(.., at)| *at)
-                .map(|(_, record, _)| record)
+                .map(|(id, record, _)| (id.as_str(), record))
         })
     }
 
     /// Notes the state a row shows now; true when it changed since the last note.
     pub fn restate(&mut self) -> bool {
-        let now = self.shown().map(|record| record.state);
+        let now = self.shown().map(|(_, record)| record.state);
         let changed = now != self.shows;
         self.shows = now;
         changed

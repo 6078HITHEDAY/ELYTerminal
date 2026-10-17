@@ -50,6 +50,23 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
     menus::init(cx);
+    cx.set_app_identity(APP_ID, TITLE);
+    // A press on a notification goes to the window whose session posted it.
+    cx.on_system_notification_response(|response, cx| {
+        let tag = response.tag;
+        let pressed = cx
+            .windows()
+            .into_iter()
+            .filter_map(|window| window.downcast::<Workspace>())
+            .any(|workspace| {
+                workspace
+                    .update(cx, |this, window, cx| this.pressed(&tag, window, cx))
+                    .unwrap_or(false)
+            });
+        if !pressed {
+            log::info!("app: notification {tag} pressed, but no session holds it");
+        }
+    });
     // Settings alone hold no terminal, so they go with the last one.
     cx.on_window_closed(|cx, _| {
         let windows = cx.windows();

@@ -8,7 +8,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 - One window. Sessions on the left, the terminal in the middle, Git or Files on the right.
 - Every setting has a control in the settings window. No setting lives only in a file.
-- Silent: no sound, no bell, no notifications, no update checks, no telemetry, no tips, no onboarding.
+- Silent: no sound, no bell, no notifications but a session's, below, no update checks, no telemetry, no tips, no onboarding.
 - Clean: no subtitle, no tagline, no logging options, no status bar, no badges that do not carry state.
 - Built-in themes, each shown as a small preview, Catppuccin among them. A theme colors the terminal and the chrome.
 - The window background blurs on macOS, Windows, Wayland and X11.
@@ -47,7 +47,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Prompt marks, OSC 133: the shell integration marks where each prompt starts (A) and ends (B), where a command starts (C), and where it ends with its exit status (D), all but C on macOS's bash 3.2, which has no hook for it; the terminal reads any program's OSC 133. Cmd-Up and Cmd-Down, and Cmd-Shift-Up and Cmd-Shift-Down, on macOS, Ctrl-Shift-Up and Ctrl-Shift-Down elsewhere, scroll to the prompt before or after the view's top, as in Ghostty.
 - Program status, OSC 7501 revision 0.4: each terminal keeps the records programs report (state, id, kind, progress, app, title, msg), checked as the spec checks them; a new prompt drops working, blocked and idle records, a full reset drops them all; the terminal answers the support query with the states and kinds it takes.
 - Progress, OSC 9;4: set, error, indeterminate and pause stand as the root record until a program reports OSC 7501, until a full reset.
-- Notifications: OSC 9 (iTerm2), OSC 777 notify (rxvt) and OSC 99 (kitty: title and body in chunks, base64, ids, occasions, focus and report on activation, close, and its query); ConEmu's other OSC 9 commands are no notifications.
+- Notifications: OSC 9 (iTerm2), OSC 777 notify (rxvt) and OSC 99 (kitty: title and body in chunks, base64, ids, focus and report on activation, close, expiry, which ones live, and its query; `o` passes by, since a session posts only while unseen, below); ConEmu's other OSC 9 commands are no notifications.
 - Inside herdr, which keeps its panes' OSC 7, the session's folder is that of herdr's focused pane, read from herdr's socket while herdr's client runs in the session, on macOS, Linux and Windows.
 - Inside herdr, which passes no OSC 7501 on, herdr's agent states (idle, working, blocked, done) are the session's status records.
 - Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks.
