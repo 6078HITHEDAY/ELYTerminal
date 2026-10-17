@@ -57,8 +57,8 @@ const ID: usize = 128;
 const SEGMENT: usize = 32;
 const LEVELS: usize = 8;
 
-/// The ids herdr's agents take, one by pane.
-pub(super) const HERDR: &str = "herdr/";
+/// The ids herdr's agents take, one by pane: no OSC 7501 id holds a colon, so none is taken for theirs.
+pub(super) const HERDR: &str = "herdr:";
 
 /// Records a terminal keeps; past them, the one updated longest ago goes.
 pub const RECORDS: usize = 256;

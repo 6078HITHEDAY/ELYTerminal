@@ -141,21 +141,21 @@ fn herdr_s_agents_whose_state_it_knows_are_records_by_pane() {
         said,
         [
             (
-                "herdr/w1:p1",
+                "herdr:w1:p1",
                 State::Working,
                 Some("codex"),
                 Some("review"),
                 Some("Reading files")
             ),
             (
-                "herdr/w1:p2",
+                "herdr:w1:p2",
                 State::Blocked,
                 Some("claude"),
                 Some("Claude Code"),
                 Some("claude")
             ),
-            ("herdr/w1:p5", State::Done, None, None, None),
-            ("herdr/w1:p6", State::Idle, None, None, None),
+            ("herdr:w1:p5", State::Done, None, None, None),
+            ("herdr:w1:p6", State::Idle, None, None, None),
         ]
     );
     assert!(
