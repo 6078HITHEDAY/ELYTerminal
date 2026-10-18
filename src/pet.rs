@@ -1,27 +1,20 @@
 //! Ely, the icon's girl, peeking over the main window's top edge from a window of her own.
 
-mod faces;
 mod look;
 #[cfg(target_os = "macos")]
 mod macos;
+mod rig;
 #[cfg(windows)]
 mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
 
-use std::{
-    cell::RefCell,
-    f32::consts::PI,
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use gpui::{
-    Animation, AnimationExt as _, App, AppContext as _, Bounds, Context, Image, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, Pixels, Render, Styled, Subscription, Task, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img,
-    point, popup, px, size,
+    App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, Render, Styled, Subscription, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas, div, point, popup, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -31,8 +24,8 @@ use self::windows as platform;
 #[cfg(target_os = "linux")]
 use self::x11 as platform;
 use self::{
-    faces::Face,
-    look::{Mood, PETTED, face, mood},
+    look::{Act, EASE, Mood, Pose, blend, mood, pose},
+    rig::Rig,
 };
 use crate::{settings::SettingsStore, workspace::Workspace};
 
@@ -43,20 +36,22 @@ const ROOM: f32 = 16.0;
 /// How far in from the pane's left edge she holds its top edge.
 const LEFT: f32 = 140.0;
 
-/// Ely in her window: her face follows the sessions' marks, and a press pets her.
+/// Ely in her window: she moves all the time, her acts follow the sessions' marks, and a press pets her.
 pub struct Pet {
-    faces: Vec<(Face, Arc<Image>)>,
+    rig: Rc<Rig>,
     mood: Mood,
-    /// When the mood began.
+    /// When the mood began, when she came, and when she was last pressed.
     since: Instant,
+    shown: Instant,
     petted: Option<Instant>,
-    /// Counts her moves, so each plays from its start.
-    moves: usize,
+    /// What she was doing, her last pose, and the pose a change of act eases her from, with its time.
+    act: Act,
+    last: Option<Pose>,
+    eased: Option<(Pose, Instant)>,
     /// How far in from the pane's left edge she opened.
     left: f32,
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
-    _wake: Option<Task<()>>,
     _watch: Vec<Subscription>,
 }
 
@@ -177,19 +172,19 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                     pet.feel(now, cx);
                 }
             });
-            let mut pet = Pet {
-                faces: faces::images(),
+            Pet {
+                rig: Rc::new(Rig::new()),
                 mood: start,
                 since: Instant::now(),
+                shown: Instant::now(),
                 petted: None,
-                moves: 0,
+                act: Act::Calm,
+                last: None,
+                eased: None,
                 left: at,
                 glue: None,
-                _wake: None,
                 _watch: vec![feel],
-            };
-            pet.wake(cx);
-            pet
+            }
         })
     })?;
     if !wayland {
@@ -249,40 +244,37 @@ fn wayland(_: &Window) -> bool {
 }
 
 impl Pet {
-    /// Takes up `mood`: a new face, and the move it starts with.
+    /// Takes up `mood`, whose act begins now.
     fn feel(&mut self, mood: Mood, cx: &mut Context<Self>) {
         log::debug!("pet: Ely feels {mood:?}, was {:?}", self.mood);
         (self.mood, self.since) = (mood, Instant::now());
-        self.moves += 1;
-        self.wake(cx);
         cx.notify();
     }
 
-    /// Her face now, a press's wink first.
-    fn face(&self, now: Instant) -> (Face, Option<Duration>) {
-        match self.petted.map(|at| now.saturating_duration_since(at)) {
-            Some(held) if held < PETTED => (Face::Petted, Some(PETTED - held)),
-            _ => face(self.mood, now.saturating_duration_since(self.since)),
+    /// Her pose now, eased from her last one while a change of act is fresh.
+    fn pose(&mut self, now: Instant) -> Pose {
+        let since = |at: Instant| now.saturating_duration_since(at).as_secs_f64();
+        let mut pose = pose(
+            self.mood,
+            since(self.since),
+            since(self.shown),
+            self.petted.map(since),
+        );
+        if pose.act != self.act {
+            log::debug!("pet: Ely goes from {:?} to {:?}", self.act, pose.act);
+            self.act = pose.act;
+            self.eased = self.last.take().map(|last| (last, now));
         }
-    }
-
-    /// Draws her again when her face changes next.
-    fn wake(&mut self, cx: &mut Context<Self>) {
-        let (_, next) = self.face(Instant::now());
-        self._wake = next.map(|next| {
-            cx.spawn(async move |pet, cx| {
-                cx.background_executor().timer(next).await;
-                if pet
-                    .update(cx, |pet, cx| {
-                        pet.wake(cx);
-                        cx.notify();
-                    })
-                    .is_err()
-                {
-                    log::debug!("pet: her window went before her next face");
-                }
-            })
-        });
+        if let Some((from, at)) = &self.eased {
+            let into = since(*at) as f32;
+            if into < EASE {
+                pose = blend(from, pose, into);
+            } else {
+                self.eased = None;
+            }
+        }
+        self.last = Some(pose.clone());
+        pose
     }
 
     fn place(&self, main: &Window) {
@@ -308,41 +300,23 @@ impl Pet {
 }
 
 impl Render for Pet {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (face, _) = self.face(Instant::now());
-        let image = (self.faces.iter())
-            .find(|(drawn, _)| *drawn == face)
-            .map(|(_, image)| image.clone())
-            .expect("every face is drawn");
-        let (mood, first) = (self.mood, self.moves == 0);
-        let head = img(image)
-            .absolute()
-            .left_0()
-            .bottom_0()
-            .w(px(WIDTH))
-            .h(px(HEAD))
-            .with_animation(
-                ("ely", self.moves),
-                Animation::new(Duration::from_millis(600)),
-                move |head, delta| match mood {
-                    // She rises from behind the edge when she comes.
-                    _ if first => head.bottom(px(-HEAD * (1.0 - delta).powi(3))),
-                    // A hop: two for a program that waits, one for one that finished.
-                    Mood::Waiting | Mood::Done => {
-                        let hops = if mood == Mood::Waiting { 2.0 } else { 1.0 };
-                        head.bottom(px((delta * hops * PI).sin().abs() * (ROOM - 4.0)))
-                    }
-                    // A shake that dies away.
-                    Mood::Error => head.left(px((delta * 6.0 * PI).sin() * 4.0 * (1.0 - delta))),
-                    Mood::Calm | Mood::Working => head,
-                },
-            );
-        div().size_full().relative().child(head).on_mouse_down(
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let pose = self.pose(Instant::now());
+        // gpui gives a hidden window no frames, so she rests while unseen.
+        window.request_animation_frame();
+        let rig = self.rig.clone();
+        let drawn = canvas(
+            |_, _, _| {},
+            move |bounds, _, window, cx| {
+                let head = point(bounds.origin.x, bounds.origin.y + px(ROOM));
+                rig.paint(head, &pose, window, cx);
+            },
+        );
+        div().size_full().child(drawn.size_full()).on_mouse_down(
             MouseButton::Left,
             cx.listener(|pet, _, _, cx| {
                 log::debug!("pet: Ely is pressed");
                 pet.petted = Some(Instant::now());
-                pet.wake(cx);
                 cx.notify();
             }),
         )

@@ -70,7 +70,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - The window opens at the size it was left at, on macOS, Windows and Linux: the size is kept in settings once it settles; a maximized or full-screen window keeps the size from before; a kept size past the screen shrinks to it; the window is no smaller than 100 by 100, the least the settings keep.
 - The title shows the active session's title, and no other text.
 - The pointer over the terminal is the arrow.
-- Ely, the icon's girl, peeks over the window's top edge from behind it, on macOS, Windows and Linux: her face shows how the sessions are doing, waiting, an error, work, a finish or calm, and a press pets her. A switch in Settings, Terminal, turns her off.
+- Ely, the icon's girl, peeks over the window's top edge from behind it, on macOS, Windows and Linux. She moves all the time, as she does in the films: she breathes, sways and blinks, and how the sessions are doing, waiting, an error, work, a finish or calm, moves her. A press pets her. A switch in Settings, Terminal, turns her off.
 - The title bar is transparent, as Ghostty's: the window's background, opacity and blur run under it, so it wears the terminal's color.
 - Every control in the title bar takes its own press on every platform, the window buttons Ely draws on Windows and Linux too.
 
