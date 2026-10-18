@@ -12,7 +12,7 @@ use objc::{
 };
 
 /// US layout key codes and what each key types.
-const KEYS: [(&str, u16, &str); 32] = [
+const KEYS: [(&str, u16, &str); 34] = [
     (",", 43, ","),
     ("a", 0, "a"),
     ("b", 11, "b"),
@@ -32,8 +32,10 @@ const KEYS: [(&str, u16, &str); 32] = [
     ("=", 24, "="),
     ("minus", 27, "-"),
     ("m", 46, "m"),
+    ("n", 45, "n"),
     ("q", 12, "q"),
     ("[", 33, "["),
+    ("]", 30, "]"),
     ("space", 49, " "),
     ("tab", 48, "\t"),
     ("enter", 36, "\r"),

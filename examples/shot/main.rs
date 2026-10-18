@@ -42,6 +42,7 @@ fn main() {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 for spec in &keys {
                     match spec.as_str() {
+                        "wait" => cx.background_executor().timer(Duration::from_secs(1)).await,
                         "to:main" => {
                             aim = main;
                             capture::front(number(aim, cx)).expect("the window on screen");

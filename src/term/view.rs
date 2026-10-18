@@ -67,6 +67,9 @@ pub struct TerminalView {
     pub(super) pointer: Pointer,
     /// The mouse mode, as the tap follows it.
     pub(super) mouse: MouseMode,
+    /// Keys go as Windows' records, as ConPTY asks.
+    #[cfg(windows)]
+    pub(super) win32: bool,
     /// Keys whose press this terminal saw, so their releases may go out.
     pub(super) held: HashSet<String>,
     pub(super) finder: Option<Finder>,
@@ -130,6 +133,8 @@ impl TerminalView {
             caret: Bounds::default(),
             pointer: Pointer::default(),
             mouse: MouseMode::default(),
+            #[cfg(windows)]
+            win32: false,
             held: HashSet::new(),
             finder: None,
             size,
@@ -260,6 +265,8 @@ impl TerminalView {
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
+                #[cfg(windows)]
+                PtyEvent::Win32(on) => self.win32 = on,
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
                 // A new prompt ends what was working, waiting or idle; done and error stay.
                 PtyEvent::Mark(Mark::Prompt) => {

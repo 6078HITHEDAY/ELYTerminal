@@ -64,7 +64,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | Box drawing, blocks and powerline shapes as geometry | T07 | `term::boxes` tests | Pass |
 | JetBrains Mono, any installed font, Nerd Font icons | T06, T17 | `tests/fonts.rs` | Pass |
 | Cursor shapes, blink by setting and DECSCUSR, hollow unfocused | T06 | T06 review | Pass |
-| xterm keys, cursor mode, Option as Alt, kitty protocol, keypad | T08 | `term::keys` tests | Pass |
+| xterm keys, cursor mode, Option as Alt, kitty protocol, keypad; a shifted symbol as its own key with Shift on macOS and Windows; win32-input-mode on Windows | T08, T44 | `term::keys` tests, `kitty_reports_the_key_shift_turned_into_a_symbol` red at `CSI 123;13u` before the fix; on macOS herdr 0.9.5, its `[keys]` `previous_workspace = "cmd+shift+ctrl+["` and `next_workspace = "cmd+shift+ctrl+]"`, run by `shot` in a fresh HOME: before, ⌘⇧⌃] sent `CSI 125;13u` and herdr stayed on its workspace; after, `CSI 93:125;14u` moved it to the next and ⌘⇧⌃[, `CSI 91:123;14u`, back; `term::win32` and `term::tap` tests on Windows | Pass |
 | IME: marked text at the cursor, commits to the program | T08 | T08 review | Pass |
 | Selection by character, word, line; Shift extends; mouse reporting; wheel | T09 | `term::mouse`, `term::tap` tests | Pass |
 | Copy, paste, bracketed paste, copy on select, OSC 52 | T09 | T09 review | Pass |

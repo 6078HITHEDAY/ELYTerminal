@@ -24,6 +24,8 @@ pub struct Key<'a> {
     /// Cmd, the Windows key or Super: kitty's super.
     pub platform: bool,
     pub action: Action,
+    /// The key's own character, where gpui named the one Shift made and dropped Shift.
+    pub unshifted: Option<char>,
 }
 
 /// The kitty keyboard flags a program set.
@@ -47,7 +49,21 @@ pub fn encode(key: &Key, app_cursor: bool, kitty: Kitty) -> Option<Vec<u8>> {
     }
     match functional(key.name) {
         Some((number, end)) => named(key, number, end, app_cursor, kitty),
-        None => typed(key, printable(key.name)?, kitty),
+        None => match key.unshifted {
+            // kitty names the key itself, with Shift, and what Shift made of it as its alternate.
+            Some(own) => {
+                let made = printable(key.name)?;
+                let mut name = [0; 4];
+                let key = Key {
+                    name: own.encode_utf8(&mut name),
+                    shift: true,
+                    unshifted: None,
+                    ..*key
+                };
+                typed(&key, own, Some(made), kitty)
+            }
+            None => typed(key, printable(key.name)?, None, kitty),
+        },
     }
 }
 
@@ -79,7 +95,7 @@ fn printable(name: &str) -> Option<char> {
 }
 
 /// Whether the key types its text: some, none of it control, and no modifier that stops text.
-fn types(key: &Key) -> bool {
+pub(super) fn types(key: &Key) -> bool {
     let control = key.text.chars().any(char::is_control);
     !key.text.is_empty() && !control && !key.ctrl && !key.alt && !key.platform
 }
@@ -165,8 +181,8 @@ fn named(key: &Key, number: u32, end: char, app_cursor: bool, kitty: Kitty) -> O
     Some(sequence.into_bytes())
 }
 
-/// A printable key: text, then legacy bytes, then CSI u once a flag has more to say.
-fn typed(key: &Key, ch: char, kitty: Kitty) -> Option<Vec<u8>> {
+/// A printable key: text, then legacy bytes, then CSI u once a flag has more to say; `made` is what Shift made of it.
+fn typed(key: &Key, ch: char, made: Option<char>, kitty: Kitty) -> Option<Vec<u8>> {
     let typing = types(key);
     if typing && !kitty.all && key.action != Action::Release {
         return None;
@@ -176,6 +192,7 @@ fn typed(key: &Key, ch: char, kitty: Kitty) -> Option<Vec<u8>> {
         .chars()
         .next()
         .filter(|&typed| typing && typed != ch && !typed.is_control())
+        .or(made.filter(|&made| made != ch))
         .or_else(|| (key.shift && ch.is_ascii_lowercase()).then(|| ch.to_ascii_uppercase()))
         .filter(|_| key.shift && kitty.alternates);
     let event = event(key, kitty);

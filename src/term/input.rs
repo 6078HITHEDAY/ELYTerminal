@@ -93,7 +93,7 @@ impl TerminalView {
             return;
         }
         self.held.insert(event.keystroke.key.clone());
-        let facts = self.facts();
+        let facts = self.facts(&event.keystroke);
         let action = if event.is_held || facts.repeat {
             Action::Repeat
         } else {
@@ -109,7 +109,7 @@ impl TerminalView {
         if !self.held.remove(&event.keystroke.key) {
             return;
         }
-        let facts = self.facts();
+        let facts = self.facts(&event.keystroke);
         if self.send(&event.keystroke, Action::Release, facts, cx) {
             cx.stop_propagation();
         }
@@ -138,6 +138,7 @@ impl TerminalView {
             alt,
             platform: modifiers.platform,
             action,
+            unshifted: facts.unshifted,
         };
         let mode = *self.pty.term.lock().mode();
         let kitty = Kitty {
@@ -147,6 +148,22 @@ impl TerminalView {
             all: mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
             text: mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
         };
+        // As in Windows Terminal: kitty's flags first, then Windows' records; text stays text.
+        #[cfg(windows)]
+        if self.win32 && kitty == Kitty::default() && !keys::types(&key) {
+            match super::win32::record(keystroke, action) {
+                Some(bytes) => {
+                    log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
+                    self.input(bytes, cx);
+                    return true;
+                }
+                None => log::debug!(
+                    "terminal {}: no virtual key for {:?}, so it goes as bytes",
+                    self.pty.pid,
+                    keystroke.key
+                ),
+            }
+        }
         let Some(bytes) = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty) else {
             return false;
         };
@@ -157,19 +174,35 @@ impl TerminalView {
 
     /// AppKit's facts of the key; logged and none when unreadable.
     #[cfg(target_os = "macos")]
-    fn facts(&self) -> Facts {
-        super::mac::key_facts().unwrap_or_else(|error| {
+    fn facts(&self, keystroke: &Keystroke) -> Facts {
+        super::mac::key_facts(&keystroke.key, keystroke.modifiers.shift).unwrap_or_else(|error| {
             log::error!("terminal {}: {error:#}", self.pty.pid);
             Facts {
                 left_option: false,
                 right_option: false,
                 repeat: false,
+                unshifted: None,
             }
         })
     }
 
-    #[cfg(not(target_os = "macos"))]
-    fn facts(&self) -> Facts {
+    /// Windows' layout names the key gpui named by what Shift made of it.
+    #[cfg(windows)]
+    fn facts(&self, keystroke: &Keystroke) -> Facts {
+        let unshifted = if keystroke.modifiers.shift {
+            None
+        } else {
+            super::win32::unshifted(&keystroke.key)
+        };
+        Facts {
+            repeat: false,
+            unshifted,
+        }
+    }
+
+    /// gpui keeps no key code on Linux, so a shifted symbol stays as gpui names it.
+    #[cfg(not(any(target_os = "macos", windows)))]
+    fn facts(&self, _: &Keystroke) -> Facts {
         Facts::default()
     }
 
@@ -199,6 +232,7 @@ type Facts = super::mac::KeyFacts;
 #[derive(Clone, Copy, Debug, Default)]
 struct Facts {
     repeat: bool,
+    unshifted: Option<char>,
 }
 
 impl EntityInputHandler for TerminalView {
