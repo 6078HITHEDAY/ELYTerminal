@@ -92,37 +92,43 @@ impl TerminalView {
         if event.prefer_character_input {
             return;
         }
-        self.held.insert(event.keystroke.key.clone());
         let facts = self.facts(&event.keystroke);
         let action = if event.is_held || facts.repeat {
             Action::Repeat
         } else {
             Action::Press
         };
-        if self.send(&event.keystroke, action, facts, cx) {
+        let went = self.send(&event.keystroke, action, facts, false, cx);
+        self.held
+            .insert(held(&event.keystroke, facts), went == Some(true));
+        if went.is_some() {
             cx.stop_propagation();
         }
     }
 
     /// A release goes out only for a press this terminal saw: none for one a binding took.
     pub(super) fn key_up(&mut self, event: &KeyUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.held.remove(&event.keystroke.key) {
-            return;
-        }
         let facts = self.facts(&event.keystroke);
-        if self.send(&event.keystroke, Action::Release, facts, cx) {
+        let Some(record) = self.held.remove(&held(&event.keystroke, facts)) else {
+            return;
+        };
+        if self
+            .send(&event.keystroke, Action::Release, facts, record, cx)
+            .is_some()
+        {
             cx.stop_propagation();
         }
     }
 
-    /// Sends what `keystroke` means to the program; false when it is text the input method types.
+    /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `record` says that of its press.
     fn send(
         &mut self,
         keystroke: &Keystroke,
         action: Action,
         facts: Facts,
+        record: bool,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) -> Option<bool> {
         let modifiers = keystroke.modifiers;
         let alt = modifiers.alt && Self::alt_is_meta(facts, cx);
         let text = match &keystroke.key_char {
@@ -150,12 +156,15 @@ impl TerminalView {
         };
         // As in Windows Terminal: kitty's flags first, then Windows' records; text stays text.
         #[cfg(windows)]
-        if self.win32 && kitty == Kitty::default() && !keys::types(&key) {
+        if self.win32
+            && kitty == Kitty::default()
+            && (record || action != Action::Release && !keys::types(&key))
+        {
             match super::win32::record(keystroke, action) {
                 Some(bytes) => {
                     log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
                     self.input(bytes, cx);
-                    return true;
+                    return Some(true);
                 }
                 None => log::debug!(
                     "terminal {}: no virtual key for {:?}, so it goes as bytes",
@@ -164,12 +173,12 @@ impl TerminalView {
                 ),
             }
         }
-        let Some(bytes) = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty) else {
-            return false;
-        };
+        #[cfg(not(windows))]
+        debug_assert!(!record, "only Windows sends records");
+        let bytes = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty)?;
         log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
         self.input(bytes, cx);
-        true
+        Some(false)
     }
 
     /// AppKit's facts of the key; logged and none when unreadable.
@@ -182,6 +191,7 @@ impl TerminalView {
                 right_option: false,
                 repeat: false,
                 unshifted: None,
+                code: None,
             }
         })
     }
@@ -197,6 +207,7 @@ impl TerminalView {
         Facts {
             repeat: false,
             unshifted,
+            code: super::win32::virtual_key(&keystroke.key).map(|(key, _)| key),
         }
     }
 
@@ -233,6 +244,21 @@ type Facts = super::mac::KeyFacts;
 struct Facts {
     repeat: bool,
     unshifted: Option<char>,
+    /// The key's virtual key, which Shift does not change; none off Windows.
+    code: Option<u16>,
+}
+
+/// A key while it is down: its code where the platform gives one, else gpui's name, which Shift may change.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum Held {
+    Code(u16),
+    Name(String),
+}
+
+fn held(keystroke: &Keystroke, facts: Facts) -> Held {
+    facts
+        .code
+        .map_or_else(|| Held::Name(keystroke.key.clone()), Held::Code)
 }
 
 impl EntityInputHandler for TerminalView {

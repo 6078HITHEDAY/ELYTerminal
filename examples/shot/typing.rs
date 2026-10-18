@@ -219,7 +219,11 @@ fn mouse(name: &str, flags: u64, number: u32) -> anyhow::Result<()> {
 /// Posts one spec on window `number`.
 pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
     if let Some((call, text)) = spec.split_once(':') {
-        return compose(call, text, number);
+        return match call {
+            "down" => key(text, number, &[10]),
+            "up" => key(text, number, &[11]),
+            call => compose(call, text, number),
+        };
     }
     if let "activate" | "deactivate" = spec {
         unsafe {
@@ -233,6 +237,11 @@ pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
         log::info!("shot: {spec}");
         return Ok(());
     }
+    key(spec, number, &[10, 11])
+}
+
+/// Posts key `spec`, or a mouse gesture, as AppKit events of `kinds`: 10 down, 11 up.
+fn key(spec: &str, number: u32, kinds: &[u64]) -> anyhow::Result<()> {
     let mut parts: Vec<&str> = spec.split('-').collect();
     let name = parts.pop().context("an empty key")?;
     let mut flags: u64 = 0;
@@ -277,7 +286,7 @@ pub fn post(spec: &str, number: u32) -> anyhow::Result<()> {
         }
         _ => ignoring.clone(),
     };
-    for kind in [10u64, 11] {
+    for &kind in kinds {
         unsafe {
             let event: *mut Object = msg_send![
                 class!(NSEvent),

@@ -49,21 +49,7 @@ pub fn encode(key: &Key, app_cursor: bool, kitty: Kitty) -> Option<Vec<u8>> {
     }
     match functional(key.name) {
         Some((number, end)) => named(key, number, end, app_cursor, kitty),
-        None => match key.unshifted {
-            // kitty names the key itself, with Shift, and what Shift made of it as its alternate.
-            Some(own) => {
-                let made = printable(key.name)?;
-                let mut name = [0; 4];
-                let key = Key {
-                    name: own.encode_utf8(&mut name),
-                    shift: true,
-                    unshifted: None,
-                    ..*key
-                };
-                typed(&key, own, Some(made), kitty)
-            }
-            None => typed(key, printable(key.name)?, None, kitty),
-        },
+        None => typed(key, printable(key.name)?, kitty),
     }
 }
 
@@ -181,23 +167,28 @@ fn named(key: &Key, number: u32, end: char, app_cursor: bool, kitty: Kitty) -> O
     Some(sequence.into_bytes())
 }
 
-/// A printable key: text, then legacy bytes, then CSI u once a flag has more to say; `made` is what Shift made of it.
-fn typed(key: &Key, ch: char, made: Option<char>, kitty: Kitty) -> Option<Vec<u8>> {
+/// A printable key: text, then legacy bytes, then CSI u once a flag has more to say.
+fn typed(key: &Key, ch: char, kitty: Kitty) -> Option<Vec<u8>> {
     let typing = types(key);
     if typing && !kitty.all && key.action != Action::Release {
         return None;
     }
+    // gpui names what Shift made of a key and drops Shift; CSI u names the key, with Shift.
+    let (own, shift, made) = match key.unshifted {
+        Some(own) => (own, true, Some(ch).filter(|&made| made != own)),
+        None => (ch, key.shift, None),
+    };
     let shifted = key
         .text
         .chars()
         .next()
-        .filter(|&typed| typing && typed != ch && !typed.is_control())
-        .or(made.filter(|&made| made != ch))
-        .or_else(|| (key.shift && ch.is_ascii_lowercase()).then(|| ch.to_ascii_uppercase()))
-        .filter(|_| key.shift && kitty.alternates);
+        .filter(|&typed| typing && typed != own && !typed.is_control())
+        .or(made)
+        .or_else(|| (shift && own.is_ascii_lowercase()).then(|| own.to_ascii_uppercase()))
+        .filter(|_| shift && kitty.alternates);
     let event = event(key, kitty);
     let text = typing && kitty.text && key.action != Action::Release;
-    let mods = code(key);
+    let mods = code(&Key { shift, ..*key });
     if shifted.is_none() && event.is_none() && !text {
         if mods == 1 && !kitty.all {
             return None;
@@ -210,7 +201,7 @@ fn typed(key: &Key, ch: char, made: Option<char>, kitty: Kitty) -> Option<Vec<u8
             return Some(bytes);
         }
     }
-    let mut out = format!("\x1b[{}", ch.to_ascii_lowercase() as u32);
+    let mut out = format!("\x1b[{}", own.to_ascii_lowercase() as u32);
     if let Some(shifted) = shifted {
         out.push_str(&format!(":{}", shifted as u32));
     }

@@ -341,6 +341,20 @@ fn kitty_reports_the_key_shift_turned_into_a_symbol() {
         Some("\x1b[123;5u"),
         "legacy keeps fixterms' shifted character"
     );
+    let events = Kitty {
+        events: true,
+        ..Kitty::default()
+    };
+    assert_eq!(
+        kitty(made("alt+{", "", Action::Press), events).as_deref(),
+        Some("\x1b{"),
+        "a flag that adds no field keeps the legacy bytes gpui's name gives"
+    );
+    let bang = Key {
+        unshifted: Some('1'),
+        ..key("alt+!", "")
+    };
+    assert_eq!(kitty(bang, events).as_deref(), Some("\x1b!"));
     let same = Key {
         unshifted: Some('7'),
         ..key("ctrl+7", "")

@@ -58,6 +58,8 @@ pub struct KeyFacts {
     pub repeat: bool,
     /// The key's own character, where gpui named the one Shift made and dropped Shift.
     pub unshifted: Option<char>,
+    /// AppKit's key code, which Shift does not change.
+    pub code: Option<u16>,
 }
 
 /// The facts of the key event AppKit is handling now, which gpui named `name`, with `shift` or not.
@@ -89,6 +91,7 @@ pub fn key_facts(name: &str, shift: bool) -> anyhow::Result<KeyFacts> {
         right_option: flags & RIGHT_OPTION != 0,
         repeat,
         unshifted,
+        code: Some(code),
     })
 }
 

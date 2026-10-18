@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
+use std::{collections::HashMap, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
 
 use alacritty_terminal::{
     event::Event,
@@ -21,7 +21,7 @@ use super::{
     find::Finder,
     frame::frame,
     ink::Ink,
-    input::{self, Find, NextPrompt, PreviousPrompt},
+    input::{self, Find, Held, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
     paint::{self, Look},
@@ -70,8 +70,8 @@ pub struct TerminalView {
     /// Keys go as Windows' records, as ConPTY asks.
     #[cfg(windows)]
     pub(super) win32: bool,
-    /// Keys whose press this terminal saw, so their releases may go out.
-    pub(super) held: HashSet<String>,
+    /// Keys whose press this terminal saw, so their releases may go out; true where it went as Windows' record.
+    pub(super) held: HashMap<Held, bool>,
     pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
     /// How many folders the program has reported.
@@ -135,7 +135,7 @@ impl TerminalView {
             mouse: MouseMode::default(),
             #[cfg(windows)]
             win32: false,
-            held: HashSet::new(),
+            held: HashMap::new(),
             finder: None,
             size,
             reports: 0,

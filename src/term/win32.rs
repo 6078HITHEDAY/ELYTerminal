@@ -72,7 +72,7 @@ pub fn unshifted(made: &str) -> Option<char> {
 }
 
 /// The virtual key gpui's `name` stands for, and whether it sits in the enhanced block.
-fn virtual_key(name: &str) -> Option<(u16, bool)> {
+pub fn virtual_key(name: &str) -> Option<(u16, bool)> {
     let named = match name {
         "enter" => (VK_RETURN, false),
         "tab" => (VK_TAB, false),
