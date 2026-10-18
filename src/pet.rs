@@ -167,9 +167,10 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
     let pet = cx.open_window(options, |_, cx| {
         cx.new(|cx| {
             let feel = cx.observe(&workspace, move |pet: &mut Pet, workspace, cx| {
-                let now = feeling(workspace.read(cx), cx);
-                if now != pet.mood {
-                    pet.feel(now, cx);
+                let mood = feeling(workspace.read(cx), cx);
+                if mood != pet.mood {
+                    pet.feel(mood, Instant::now());
+                    cx.notify();
                 }
             });
             Pet {
@@ -244,14 +245,26 @@ fn wayland(_: &Window) -> bool {
 }
 
 impl Pet {
-    /// Takes up `mood`, whose act begins now.
-    fn feel(&mut self, mood: Mood, cx: &mut Context<Self>) {
+    /// Takes up `mood` at `now`, its act beginning there, eased from where she is.
+    fn feel(&mut self, mood: Mood, now: Instant) {
         log::debug!("pet: Ely feels {mood:?}, was {:?}", self.mood);
-        (self.mood, self.since) = (mood, Instant::now());
-        cx.notify();
+        (self.mood, self.since) = (mood, now);
+        self.ease(now);
     }
 
-    /// Her pose now, eased from her last one while a change of act is fresh.
+    /// A press at `now`, which winks her, eased from where she is.
+    fn press(&mut self, now: Instant) {
+        log::debug!("pet: Ely is pressed");
+        self.petted = Some(now);
+        self.ease(now);
+    }
+
+    /// Eases her from her last pose, from `now`, as a move restarts.
+    fn ease(&mut self, now: Instant) {
+        self.eased = self.last.clone().map(|last| (last, now));
+    }
+
+    /// Her pose now, eased from where she was while a change of act or mood, or a press, is fresh.
     fn pose(&mut self, now: Instant) -> Pose {
         let since = |at: Instant| now.saturating_duration_since(at).as_secs_f64();
         let mut pose = pose(
@@ -263,7 +276,7 @@ impl Pet {
         if pose.act != self.act {
             log::debug!("pet: Ely goes from {:?} to {:?}", self.act, pose.act);
             self.act = pose.act;
-            self.eased = self.last.take().map(|last| (last, now));
+            self.ease(now);
         }
         if let Some((from, at)) = &self.eased {
             let into = since(*at) as f32;
@@ -315,8 +328,7 @@ impl Render for Pet {
         div().size_full().child(drawn.size_full()).on_mouse_down(
             MouseButton::Left,
             cx.listener(|pet, _, _, cx| {
-                log::debug!("pet: Ely is pressed");
-                pet.petted = Some(Instant::now());
+                pet.press(Instant::now());
                 cx.notify();
             }),
         )
@@ -325,7 +337,79 @@ impl Render for Pet {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::time::Duration;
+
+    use super::{look::Mark, *};
+
+    /// Her, `mood` since `since`, come long before.
+    fn ely(mood: Mood, since: Instant) -> Pet {
+        Pet {
+            rig: Rc::new(Rig::new()),
+            mood,
+            since,
+            shown: since - Duration::from_secs(60),
+            petted: None,
+            act: Act::Calm,
+            last: None,
+            eased: None,
+            left: LEFT,
+            glue: None,
+            _watch: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_change_of_mood_or_a_press_eases_her_from_where_she_is_though_the_act_stays() {
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        // A wait hops her, a press winks, and a program starts working inside the wink.
+        let mut pet = ely(Mood::Waiting, start);
+        pet.press(at(2250));
+        let before = pet.pose(at(2750));
+        pet.feel(Mood::Working, at(2750));
+        let after = pet.pose(at(2751));
+        assert_eq!((before.act, after.act), (Act::Wink, Act::Wink));
+        assert!(
+            (after.lift - before.lift).abs() < 1.0,
+            "no drop: {} then {}",
+            before.lift,
+            after.lift
+        );
+        let marks: Vec<Mark> = after.marks.iter().map(|(mark, _)| *mark).collect();
+        assert!(
+            marks.contains(&Mark::Bang),
+            "the wait's mark fades: {marks:?}"
+        );
+        // An old finish clears mid-glance: calm before and after, her eyes turn back at her pace.
+        let mut pet = ely(Mood::Done, start);
+        let before = pet.pose(at(13_600));
+        pet.feel(Mood::Calm, at(13_600));
+        let after = pet.pose(at(13_601));
+        assert_eq!((before.act, after.act), (Act::Calm, Act::Calm));
+        assert!(
+            before.look.0 < -5.0 && (after.look.0 - before.look.0).abs() < 0.5,
+            "no snap: {:?} then {:?}",
+            before.look,
+            after.look
+        );
+        let later = pet.pose(at(14_000));
+        assert!(
+            pet.eased.is_none() && later.look.0.abs() < 0.5,
+            "eased in by then"
+        );
+        // A second press mid-hop restarts the wink without a drop.
+        let mut pet = ely(Mood::Calm, start);
+        pet.press(at(1000));
+        let before = pet.pose(at(1300));
+        pet.press(at(1300));
+        let after = pet.pose(at(1301));
+        assert!(
+            before.lift > 10.0 && (after.lift - before.lift).abs() < 1.0,
+            "no drop: {} then {}",
+            before.lift,
+            after.lift
+        );
+    }
 
     #[test]
     fn she_holds_the_edge_of_any_pane() {

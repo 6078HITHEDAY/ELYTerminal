@@ -196,7 +196,7 @@ fn moved(
         Bone::Iris(side) if open(side) => (shift(squash(side, pose.wide), by(pose.look)), 1.0),
         Bone::Arc(side) if shut(side) => (squash(side, 1.0), 1.0),
         Bone::Lines if pose.eyes == Eyes::Lines => (head, 1.0),
-        Bone::Brows if pose.brows => (head, 1.0),
+        Bone::Brows if pose.brows > 0.0 => (head, pose.brows),
         Bone::Blush => (head, 1.0 + 0.6 * pose.flush),
         Bone::Mouth(mouth) if mouth == pose.mouth => (grow(head, pivot, (pose.pop, pose.pop)), 1.0),
         Bone::Lock(side) => {

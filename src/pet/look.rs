@@ -119,7 +119,8 @@ pub struct Pose {
     pub mouth: Mouth,
     /// The mouth's size, which pops as it changes.
     pub pop: f32,
-    pub brows: bool,
+    /// How much her worried brows show.
+    pub brows: f32,
     pub flush: f32,
     /// Each hand pressed down, left then right.
     pub hands: [f32; 2],
@@ -148,7 +149,7 @@ pub fn pose(mood: Mood, held: f64, shown: f64, petted: Option<f64>) -> Pose {
     pose
 }
 
-/// `to`, `since` seconds after a change of act, eased from `from`, her last pose before it: her place and her moves blend, the marks `to` lacks fade, and the shapes are `to`'s.
+/// `to`, `since` seconds after a change of act or mood, or a press, eased from `from`, her pose then: her place, her moves and her brows blend, the marks `to` lacks fade, and the shapes are `to`'s.
 pub fn blend(from: &Pose, to: Pose, since: f32) -> Pose {
     let k = smooth((since / EASE).clamp(0.0, 1.0));
     let mix = |a: f32, b: f32| a + (b - a) * k;
@@ -168,6 +169,7 @@ pub fn blend(from: &Pose, to: Pose, since: f32) -> Pose {
         ahoge: mix(from.ahoge, to.ahoge),
         look: (mix(from.look.0, to.look.0), mix(from.look.1, to.look.1)),
         wide: mix(from.wide, to.wide),
+        brows: mix(from.brows, to.brows),
         flush: mix(from.flush, to.flush),
         hands: [
             mix(from.hands[0], to.hands[0]),
@@ -196,7 +198,7 @@ fn idle(act: Act, t: f64, period: f32, amp: f32) -> Pose {
         eyes: Eyes::Open,
         mouth: Mouth::Smile,
         pop: popping(early(t)),
-        brows: false,
+        brows: 0.0,
         flush: 0.0,
         hands: [0.0; 2],
         marks: Vec::new(),
@@ -290,7 +292,7 @@ fn waiting(t: f64) -> Pose {
 /// An error: brows up, a frown, a shake, a smaller one every 4.5 s, and a drop that runs down.
 fn fretting(t: f64) -> Pose {
     let mut pose = idle(Act::Fret, t, 2.4, 1.5);
-    pose.brows = true;
+    pose.brows = 1.0;
     pose.mouth = Mouth::Frown;
     pose.look = (0.0, 3.0);
     pose.tilt = -3.0;

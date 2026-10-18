@@ -139,7 +139,7 @@ fn a_wait_widens_her_eyes_and_hops_her_twice_every_round() {
 #[test]
 fn an_error_frets_her_with_a_shake_and_a_drop() {
     let fret = |held: f64| at(Mood::Error, held);
-    assert!(fret(1.0).brows);
+    assert_eq!(fret(1.0).brows, 1.0);
     assert_eq!((fret(1.0).act, fret(1.0).mouth), (Act::Fret, Mouth::Frown));
     assert!(fret(0.15).shake.abs() > 1.0, "a shake");
     assert_eq!(fret(1.0).shake, 0.0);
@@ -200,4 +200,10 @@ fn a_change_of_act_eases_her_from_her_last_pose() {
         .1;
     assert!(bang.alpha > 0.0 && bang.alpha < 1.0);
     assert_eq!(leaving.eyes, Eyes::Open, "the shapes are the new act's");
+    let fretting = at(Mood::Error, 1.0);
+    let calming = blend(&fretting, at(Mood::Calm, 0.1), 0.1);
+    assert!(
+        calming.brows > 0.0 && calming.brows < 1.0,
+        "her brows ease down"
+    );
 }
