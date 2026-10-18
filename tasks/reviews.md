@@ -217,3 +217,9 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T43
 
 - No review: the owner waived it for this change, its release included.
+
+## T44
+
+- Round 1, fc10c4d: FAIL. Under kitty's events flag alone, Option-Shift-[ as Alt sent ESC [ for ESC {, since the legacy bytes a key falls back to took the restored key; a key that is down was known by gpui's name, which Shift changes, so a release after Shift came up went nowhere, which on Windows keeps herdr's lease on the key. Fixed in 6f8bfae: legacy bytes keep gpui's character; a key that is down is known by AppKit's key code or Windows' virtual key; shot posts a press or a release alone.
+- Round 2, 6f8bfae: FAIL. On Windows a repeat that types after its modifiers came up overwrote the record its press made, so its release went as no record. Fixed in 3f47134: a repeat goes as a record where its press did, through one function, records, tested on every system.
+- Round 3, 3f47134: PASS. The reviewer's replay of the Windows handlers with herdr 0.9.5's lease code passed both release orders after a typing repeat, and a mutant that drops the fix failed; on macOS real herdr switched one, two, three, two, one with Shift, Ctrl or every modifier let go first; kitty flags 2 and 7 and plain text and an IME commit sent the bytes they should; check.sh, 226 Linux tests and the Windows cross-check passed.
