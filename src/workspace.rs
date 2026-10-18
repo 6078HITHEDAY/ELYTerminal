@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton, SegmentedControl},
     lists::List,
@@ -9,7 +11,7 @@ use ely_gpui_component::{
 use gpui::{
     Action, App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, ParentElement, Render, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Window, actions, div, prelude::FluentBuilder,
+    StyleRefinement, Styled, Subscription, Task, Window, actions, div, prelude::FluentBuilder,
 };
 
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
     files::Files,
     git::panel::{Acted, GitPanel},
     menus,
-    sessions::{self, Session},
+    sessions::{self, Session, orb},
     settings::{PanelTab, Settings, SettingsStore, StartIn, window::OpenSettings},
     term::{
         Events, Launch, Pty, TerminalView, config,
@@ -95,6 +97,8 @@ pub struct Workspace {
     background: Blur,
     /// Column widths a drag shows before the settings hold them.
     dragged: Dragged,
+    /// Draws the window at each step of the status marks while one shown moves.
+    ticking: Option<Task<()>>,
     _settings: Subscription,
     _acted: Subscription,
 }
@@ -122,6 +126,7 @@ impl Workspace {
             git,
             background: Blur::new(window, SettingsStore::get(cx)),
             dragged: Dragged::default(),
+            ticking: None,
             _settings: cx.observe_global_in::<SettingsStore>(window, |this, window, cx| {
                 this.background.follow(window, SettingsStore::get(cx));
                 cx.notify();
@@ -155,7 +160,33 @@ impl Workspace {
             reports: launch.reports,
             bell: false,
             waiting: false,
+            look: None,
             _events: events,
+        });
+    }
+
+    /// Notes each session's mark `now`, and draws the window at each step while one shown moves.
+    fn tick(&mut self, now: Instant, cx: &mut Context<Self>) {
+        let mut moving = false;
+        for session in &mut self.sessions {
+            moving |= session.note(now, cx);
+        }
+        let moving = moving && SettingsStore::get(cx).show_sessions;
+        if moving == self.ticking.is_some() {
+            return;
+        }
+        log::debug!("app: status marks {}", if moving { "move" } else { "rest" });
+        self.ticking = moving.then(|| {
+            cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(orb::wait(Instant::now()))
+                        .await;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        break;
+                    }
+                }
+            })
         });
     }
 
@@ -307,6 +338,8 @@ fn column_toggle(
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.background.fit(window);
+        let now = Instant::now();
+        self.tick(now, cx);
         let settings = SettingsStore::get(cx);
         let workspace = cx.entity();
         let tip =
@@ -350,7 +383,7 @@ impl Render for Workspace {
             let home = dirs::home_dir();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
                 let active = index == self.active;
-                sessions::row(&workspace, index, session, active, home.as_deref(), cx)
+                sessions::row(&workspace, index, session, active, home.as_deref(), now, cx)
             });
             let list = List::new().children(rows);
             let new = IconButton::new("new-session", IconName::Plus)

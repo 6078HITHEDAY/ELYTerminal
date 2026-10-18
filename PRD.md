@@ -80,6 +80,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - A session whose program ends closes its row. The last row closing closes the window.
 - A bell in a hidden session marks its row.
 - A row shows its session's status: working, with its progress where known; waiting on the user, for a permission, a question or a login; done; error; and a mark when the last command failed. Hover shows each record's program, title and message. A hidden session that starts waiting marks its row until it is shown.
+- The mark is 3 by 3 dots that move: work ripples, or fills by its progress; waiting dips; a settled state draws its shape, then holds still.
 - System notifications on macOS, Windows and Linux: a session that starts waiting, finishes or fails, and a program's OSC 9, 777 or 99 notification, post one while the window is not active or the session is hidden, one a session every 3 seconds at most; it names the session, and a press on it shows the window and the session. On macOS only the app bundle posts them.
 
 ## 8. Right panel: Files

@@ -1,18 +1,24 @@
-use std::path::{MAIN_SEPARATOR, Path, PathBuf};
+use std::{
+    path::{MAIN_SEPARATOR, Path, PathBuf},
+    time::Instant,
+};
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     lists::ListItem,
-    motion::ProgressRing,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize},
 };
-use gpui::{AnyElement, App, Entity, Hsla, SharedString, Subscription, div, prelude::*, rems};
+use gpui::{AnyElement, App, Entity, SharedString, Subscription, div, prelude::*, rems};
 
 use crate::{
     term::{Kind, Record, Records, State, TerminalView},
     workspace::{TITLE, Workspace},
 };
+
+pub mod orb;
+
+use orb::Look;
 
 /// A program on its own terminal, as the sessions column lists it.
 pub struct Session {
@@ -27,7 +33,23 @@ pub struct Session {
     pub bell: bool,
     /// It started waiting on the user while hidden.
     pub waiting: bool,
+    /// The look its mark shows, and since when.
+    pub look: Option<(Look, Instant)>,
     pub _events: Subscription,
+}
+
+impl Session {
+    /// Notes the look its mark takes `now`; true while the mark moves.
+    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+        let view = self.terminal.read(cx);
+        let failed = view.ended().is_some_and(|code| code != 0);
+        let shows = look(view.records().shown().map(|(_, record)| record), failed);
+        if self.look.map(|(shown, _)| shown) != shows {
+            self.look = shows.map(|shows| (shows, now));
+        }
+        self.look
+            .is_some_and(|(look, since)| orb::moves(look, now.saturating_duration_since(since)))
+    }
 }
 
 /// The most records hover lists, and the most characters it shows of each part.
@@ -71,6 +93,7 @@ pub fn row(
     session: &Session,
     active: bool,
     home: Option<&Path>,
+    now: Instant,
     cx: &App,
 ) -> ListItem {
     let terminal = session.terminal.read(cx);
@@ -96,7 +119,7 @@ pub fn row(
                     close.update(cx, |this, cx| this.close(index, window, cx))
                 }),
         );
-    let mark = mark(&session.terminal, cx);
+    let mark = mark(session, now, cx);
     let bell = session
         .bell
         .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
@@ -113,79 +136,36 @@ pub fn row(
     )
 }
 
-/// The mark of what the session's records say, else of its last command's failure; hover lists them.
-fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
+/// What a mark shows: the most pressing record's state, else a failed last command.
+pub fn look(record: Option<&Record>, failed: bool) -> Option<Look> {
+    Some(
+        match (record.map(|record| (record.state, record.progress)), failed) {
+            (Some((State::Blocked, _)), _) => Look::Waiting,
+            (Some((State::Error, _)), _) => Look::Error,
+            (Some((State::Working, progress)), _) => Look::Working(progress),
+            (Some((State::Done, _)), _) => Look::Done,
+            (_, true) => Look::Error,
+            (Some((State::Idle, _)), false) => Look::Idle,
+            (None, false) => return None,
+        },
+    )
+}
+
+/// The session's mark: its look's dots in its state's color; hover lists the records.
+fn mark(session: &Session, now: Instant, cx: &App) -> Option<AnyElement> {
+    let (look, since) = session.look?;
     let theme = cx.theme();
     let colors = &theme.colors;
-    let view = terminal.read(cx);
-    let (pid, records) = (view.pid() as usize, view.records());
-    let icon = |name: IconName, color: Hsla| Icon::new(name).color(color).into_any_element();
-    let failed = view.ended().filter(|&code| code != 0);
-    let mark = match (records.shown().map(|(_, record)| record), failed) {
-        (
-            Some(Record {
-                state: State::Blocked,
-                kind,
-                ..
-            }),
-            _,
-        ) => {
-            let name = match kind {
-                Some(Kind::Permission) => IconName::Shield,
-                Some(Kind::Question) => IconName::CircleHelp,
-                Some(Kind::Auth) => IconName::Key,
-                None => IconName::Hand,
-            };
-            icon(name, colors.warning)
-        }
-        (
-            Some(Record {
-                state: State::Error,
-                ..
-            }),
-            _,
-        ) => icon(IconName::CircleX, colors.danger),
-        (
-            Some(Record {
-                state: State::Working,
-                progress: Some(value),
-                ..
-            }),
-            _,
-        ) => ProgressRing::new(("session-progress", pid), f32::from(*value) / 100.0)
-            .size(theme.icon_size(IconSize::Xl))
-            // The track takes the border's color, which a selected row's ground may match.
-            .inside(
-                Icon::new(IconName::LoaderCircle)
-                    .size(IconSize::Xs)
-                    .color(colors.info),
-            )
-            .into_any_element(),
-        // A turning spinner would draw the window at every frame while the program works.
-        (
-            Some(Record {
-                state: State::Working,
-                ..
-            }),
-            _,
-        ) => icon(IconName::LoaderCircle, colors.info),
-        (
-            Some(Record {
-                state: State::Done, ..
-            }),
-            _,
-        ) => icon(IconName::CircleCheck, colors.success),
-        (_, Some(_)) => icon(IconName::CircleAlert, colors.danger),
-        (
-            Some(Record {
-                state: State::Idle, ..
-            }),
-            None,
-        ) => icon(IconName::Circle, colors.fg_muted),
-        (None, None) => return None,
+    let color = match look {
+        Look::Working(_) => colors.info,
+        Look::Waiting => colors.warning,
+        Look::Error => colors.danger,
+        Look::Done => colors.success,
+        Look::Idle => colors.fg_muted,
     };
+    let pid = session.terminal.read(cx).pid() as usize;
     // Hover reads the records as they stand, so an open one follows them, and scrolls within the window.
-    let watched = terminal.downgrade();
+    let watched = session.terminal.downgrade();
     let tip = Tooltip::rich(move |window, cx| {
         let lines = watched.upgrade().map_or_else(Vec::new, |terminal| {
             let view = terminal.read(cx);
@@ -201,7 +181,7 @@ fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
             .children(lines)
             .into_any_element()
     });
-    // Every mark takes the ring's box, so the title stays put as the state changes.
+    // Every mark takes a 24-pixel box, so the title stays put as the state changes.
     Some(
         div()
             .id(("session-status", pid))
@@ -210,7 +190,7 @@ fn mark(terminal: &Entity<TerminalView>, cx: &App) -> Option<AnyElement> {
             .items_center()
             .justify_center()
             .hoverable_tooltip(tip)
-            .child(mark)
+            .child(orb::lattice(look, color, now, since))
             .into_any_element(),
     )
 }
@@ -330,6 +310,42 @@ mod tests {
         assert_eq!(after_close(1, 1, 3), 1, "it went: the next one");
         assert_eq!(after_close(3, 3, 3), 2, "the last went: the one before");
         assert_eq!(after_close(1, 2, 3), 1, "one after it went");
+    }
+
+    #[test]
+    fn the_mark_shows_the_most_pressing_look() {
+        let record = |state, progress| Record {
+            state,
+            kind: None,
+            progress,
+            app: None,
+            title: None,
+            msg: None,
+        };
+        let waiting = look(Some(&record(State::Blocked, None)), true);
+        assert_eq!(
+            waiting,
+            Some(Look::Waiting),
+            "waiting outranks a failed command"
+        );
+        let working = look(Some(&record(State::Working, Some(40))), false);
+        assert_eq!(working, Some(Look::Working(Some(40))));
+        let idle = record(State::Idle, None);
+        assert_eq!(
+            look(Some(&idle), true),
+            Some(Look::Error),
+            "a failed command outranks idle"
+        );
+        assert_eq!(look(Some(&idle), false), Some(Look::Idle));
+        assert_eq!(
+            look(Some(&record(State::Done, None)), true),
+            Some(Look::Done)
+        );
+        assert_eq!(
+            look(Some(&record(State::Error, None)), false),
+            Some(Look::Error)
+        );
+        assert_eq!(look(None, false), None);
     }
 
     #[test]

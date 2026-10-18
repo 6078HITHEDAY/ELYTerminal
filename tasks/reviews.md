@@ -209,3 +209,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T41
 
 - Round 1, 7569f00 with release v0.1.3: PASS. The reviewer compared `Cargo.lock` with its parent, where of 844 packages only elyterminal moved, to 0.1.3; matched the 127 files of the tag's source archive to 7569f00 byte for byte; downloaded the three files anonymously against their SHA-256s; checked the disk image's stapled notarization and its app's Developer ID signature, hardened runtime and version 0.1.3, the zip's icon and manifest against their sources byte for byte and its imports, no C runtime DLL among them, and the tarball's three files and glibc 2.35; and matched the notes to T32 to T40. The app was not run, since its first notification asks the owner's leave. CI run 1156 on 7569f00 passed on macOS, Ubuntu and Windows before the release was published; Release run 1157 built the notarized disk image.
+
+## T42
+
+- No review: the owner waived it for this change.
