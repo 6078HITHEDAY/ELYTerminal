@@ -72,6 +72,8 @@ pub struct Settings {
     pub scrollback: u32,
     pub option_as_alt: OptionAsAlt,
     pub copy_on_select: bool,
+    /// Ely peeks over the main window's top edge.
+    pub ely: bool,
     pub show_sessions: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
@@ -103,6 +105,7 @@ impl Default for Settings {
             scrollback: 10_000,
             option_as_alt: OptionAsAlt::Off,
             copy_on_select: false,
+            ely: true,
             show_sessions: true,
             show_panel: true,
             panel: PanelTab::Git,

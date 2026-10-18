@@ -39,11 +39,16 @@ pub struct Session {
 }
 
 impl Session {
-    /// Notes the look its mark takes `now`; true while the mark moves.
-    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+    /// The look its mark takes from its terminal now.
+    pub fn looks(&self, cx: &App) -> Option<Look> {
         let view = self.terminal.read(cx);
         let failed = view.ended().is_some_and(|code| code != 0);
-        let shows = look(view.records().shown().map(|(_, record)| record), failed);
+        look(view.records().shown().map(|(_, record)| record), failed)
+    }
+
+    /// Notes the look its mark takes `now`; true while the mark moves.
+    pub fn note(&mut self, now: Instant, cx: &App) -> bool {
+        let shows = self.looks(cx);
         if self.look.map(|(shown, _)| shown) != shows {
             self.look = shows.map(|shows| (shows, now));
         }

@@ -136,6 +136,7 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
             Workspace::new(pty, events, launch, window, cx)
         })
     })?;
+    crate::pet::follow(window, cx);
     log::info!(
         "app: main window open at {} by {}, blur: {background:?} on {}",
         f32::from(kept.width),

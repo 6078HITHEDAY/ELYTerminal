@@ -84,6 +84,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | The pointer over the terminal is the arrow | T26 | the terminal sets no pointer, so gpui's arrow shows; on X11 with the pointer over the grid, gpui asked for no I-beam ("text"), which it had asked for, and failed to load under Xvfb, before | Pass |
 | The title bar is transparent | T11, T19 | T19 review | Pass |
 | Every title bar control takes its press, Ely's window buttons on Windows and Linux too | T26 | Ely `cdc5ce8`: `window_controls_occlude_what_lies_under` (each style; before, the box under Windows' caption buttons took the press), `a_wobbling_press_on_a_slot_moves_no_window` (before, the window moved), `a_wobbling_press_on_a_column_title_moves_the_window`; on the owner's PC, window messages asked the app for Windows' hit test along the title bar: v0.1.0 answered caption from end to end, T26's build answers client over the toggles and +, caption over the titles, min, max and close over Ely's buttons, and a press on close closed the app; the owner, given v0.1.1's build and these controls to click, reported it works on Windows | Pass |
+| Ely peeks over the window's top edge from behind it; her face follows the sessions; a press pets her | T46 | `pet::look` tests: the most pressing mark sets her mood, calm blinks, glances and dozes, a finish cheers for 4 s, waiting and errors hold; `pet::faces` tests: every face parses at three times her box and shows its marks; `pet::x11` test under Xvfb: her window stands on the pane, just above the window manager's frame, and unmaps and maps with the main window; on macOS `shot` found her the main window's child, 112 by 124 points on its top edge 140 in, a capture of the screen showed her over the edge, and OSC 7501 reports gave her surprise, worry, eyes down and a cheer; Windows type-checks; Wayland's popup is gpui's own | Pass |
 
 ## 7. Sessions panel
 
@@ -124,6 +125,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | Appearance: theme grids, dark theme, font, size, line height, ligatures, cursor and preview, opacity, blur, padding | T17 | T17 review | Pass |
 | On Omarchy, the Omarchy theme first in the grid | T27 | on X11 with Omarchy's theme folder, the Omarchy card leads the grid, chosen, over a preview in its colors | Pass |
 | Terminal: scrollback, Option as Alt (macOS), copy on select | T18 | T18 review | Pass |
+| Terminal: Ely, a switch | T46 | on macOS the switch closed her window and saved `"ely": false`, a start with it showed no Ely, and the switch brought her back | Pass |
 | Terminal: every shortcut, with a search | T26 | read from the keymap, the bindings that apply in the main window's terminal; on X11 the list showed this platform's keys (Ctrl+Shift+T, Alt+1 and on), and typing "paste" left Edit's Paste, Ctrl+Shift+V | Pass |
 
 ## 11. Background blur

@@ -99,7 +99,14 @@ impl SettingsWindow {
             settings.copy_on_select,
             |settings, on| settings.copy_on_select = on,
         );
-        let section = section.row(SettingsRow::new("Copy on select").control(copy));
+        let ely = switch(&this, "ely", settings.ely, |settings, on| settings.ely = on);
+        let section = section
+            .row(SettingsRow::new("Copy on select").control(copy))
+            .row(
+                SettingsRow::new("Ely")
+                    .description("Peeks over the window, her face as your sessions are")
+                    .control(ely),
+            );
         let keys = SettingsSection::new("Shortcuts")
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
         div().flex().flex_col().gap_6().child(section).child(keys)
