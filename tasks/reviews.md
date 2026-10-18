@@ -213,3 +213,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T42
 
 - No review: the owner waived it for this change.
+
+## T43
+
+- No review: the owner waived it for this change, its release included.
