@@ -18,10 +18,10 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt as _, App, AppContext as _, Bounds, Context, Decorations, Image,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled,
-    Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
-    WindowOptions, div, img, point, popup, px, size,
+    Animation, AnimationExt as _, App, AppContext as _, Bounds, Context, Image, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, Pixels, Render, Styled, Subscription, Task, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div, img,
+    point, popup, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -52,6 +52,8 @@ pub struct Pet {
     petted: Option<Instant>,
     /// Counts her moves, so each plays from its start.
     moves: usize,
+    /// How far in from the pane's left edge she opened.
+    left: f32,
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
     _wake: Option<Task<()>>,
@@ -61,40 +63,80 @@ pub struct Pet {
 /// Shows Ely over `main` while the settings want her.
 pub fn follow(main: WindowHandle<Workspace>, cx: &mut App) {
     let shown: Rc<RefCell<Option<WindowHandle<Pet>>>> = Rc::default();
-    let sync = move |cx: &mut App| {
-        let open = *shown.borrow();
-        match (SettingsStore::get(cx).ely, open) {
-            (true, None) => match show(main, cx) {
-                Ok(pet) => *shown.borrow_mut() = Some(pet),
-                Err(error) => log::error!("pet: Ely does not show: {error:#}"),
-            },
-            (false, Some(pet)) => {
-                *shown.borrow_mut() = None;
-                log::info!("pet: Ely goes, as the settings say");
-                if pet
-                    .update(cx, |_, window, _| window.remove_window())
-                    .is_err()
-                {
-                    log::debug!("pet: her window had gone");
+    let sync = {
+        let shown = shown.clone();
+        move |cx: &mut App| {
+            let open = *shown.borrow();
+            match (SettingsStore::get(cx).ely, open) {
+                (true, None) => *shown.borrow_mut() = open_pet(main, cx),
+                (false, Some(pet)) => {
+                    *shown.borrow_mut() = None;
+                    close(pet, "as the settings say", cx);
                 }
+                _ => {}
             }
-            _ => {}
         }
     };
     sync(cx);
     cx.observe_global::<SettingsStore>(sync).detach();
+    // A Wayland popup keeps the place it opened at, so she opens again where a new width puts her.
+    let moved = main.update(cx, |_, window, cx| {
+        cx.observe_window_bounds(window, move |_, window, cx| {
+            let Some(pet) = *shown.borrow() else {
+                return;
+            };
+            let at = left(pane(window).size.width);
+            if wayland(window) && pet.read(cx).is_ok_and(|pet| pet.left != at) {
+                let shown = shown.clone();
+                cx.defer(move |cx| {
+                    close(pet, "to stand where the new width puts her", cx);
+                    *shown.borrow_mut() = open_pet(main, cx);
+                });
+            }
+        })
+    });
+    match moved {
+        Ok(moved) => moved.detach(),
+        Err(error) => log::error!("pet: the main window's width goes unwatched: {error:#}"),
+    }
+}
+
+/// Opens her window, logging why when it does not open.
+fn open_pet(main: WindowHandle<Workspace>, cx: &mut App) -> Option<WindowHandle<Pet>> {
+    show(main, cx)
+        .inspect_err(|error| log::error!("pet: Ely does not show: {error:#}"))
+        .ok()
+}
+
+fn close(pet: WindowHandle<Pet>, why: &str, cx: &mut App) {
+    log::info!("pet: Ely goes, {why}");
+    if pet
+        .update(cx, |_, window, _| window.remove_window())
+        .is_err()
+    {
+        log::debug!("pet: her window had gone");
+    }
+}
+
+/// How far in from the pane's left edge she stands on a pane `width` points wide: `LEFT`, or less on a narrow pane, so she holds its edge.
+fn left(width: Pixels) -> f32 {
+    LEFT.min(f32::from(width) - WIDTH).max(0.0)
 }
 
 /// Opens her window on `main`'s top edge: a popup Wayland's compositor places, else a window kept there.
 fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHandle<Pet>> {
-    let (bounds, inset, wayland) = main.update(cx, |_, window, _| {
-        (window.bounds(), top_inset(window), wayland(window))
+    let (bounds, pane, wayland) = main.update(cx, |_, window, _| {
+        (window.bounds(), pane(window), wayland(window))
     })?;
+    let at = left(pane.size.width);
     let room = size(px(WIDTH), px(HEAD + ROOM));
     let kind = if wayland {
         WindowKind::AnchoredPopup(popup::PopupOptions {
             parent: main.into(),
-            anchor_rect: Bounds::new(point(inset + px(LEFT), inset), size(px(1.), px(1.))),
+            anchor_rect: Bounds::new(
+                point(pane.origin.x + px(at), pane.origin.y),
+                size(px(1.), px(1.)),
+            ),
             anchor: popup::PopupAnchor::TopLeft,
             gravity: popup::PopupGravity::TopRight,
             constraint_adjustment: popup::PopupConstraintAdjustment::empty(),
@@ -104,10 +146,7 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
     } else {
         WindowKind::PopUp
     };
-    let origin = point(
-        bounds.origin.x + inset + px(LEFT),
-        bounds.origin.y + inset - room.height,
-    );
+    let origin = bounds.origin + pane.origin + point(px(at), -room.height);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(origin, room))),
         titlebar: None,
@@ -121,21 +160,30 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
         ..Default::default()
     };
     let workspace = main.entity(cx)?;
+    let feeling = |workspace: &Workspace, cx: &App| {
+        mood(
+            workspace
+                .sessions()
+                .iter()
+                .filter_map(|session| session.looks(cx)),
+        )
+    };
+    let start = feeling(workspace.read(cx), cx);
     let pet = cx.open_window(options, |_, cx| {
         cx.new(|cx| {
-            let feel = cx.observe(&workspace, |pet: &mut Pet, workspace, cx| {
-                let sessions = workspace.read(cx).sessions();
-                let now = mood(sessions.iter().filter_map(|session| session.looks(cx)));
+            let feel = cx.observe(&workspace, move |pet: &mut Pet, workspace, cx| {
+                let now = feeling(workspace.read(cx), cx);
                 if now != pet.mood {
                     pet.feel(now, cx);
                 }
             });
             let mut pet = Pet {
                 faces: faces::images(),
-                mood: Mood::Calm,
+                mood: start,
                 since: Instant::now(),
                 petted: None,
                 moves: 0,
+                left: at,
                 glue: None,
                 _wake: None,
                 _watch: vec![feel],
@@ -152,7 +200,7 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
     } else {
         "a window kept there"
     };
-    log::info!("pet: Ely peeks over the main window, {way}");
+    log::info!("pet: Ely peeks over the main window, {way}, feeling {start:?}");
     Ok(pet)
 }
 
@@ -178,12 +226,13 @@ fn glue(main: WindowHandle<Workspace>, pet: WindowHandle<Pet>, cx: &mut App) -> 
     })?
 }
 
-/// The pane's distance from its window's top: the resize margin of a window that draws its own frame and is free at the top.
-fn top_inset(window: &Window) -> Pixels {
-    match (window.window_decorations(), window.client_inset()) {
-        (Decorations::Client { tiling }, Some(inset)) if !tiling.top => inset,
-        _ => px(0.),
-    }
+/// The main window's pane, in its own points.
+fn pane(window: &Window) -> Bounds<Pixels> {
+    crate::blur::pane(
+        window.viewport_size(),
+        window.client_inset(),
+        window.window_decorations(),
+    )
 }
 
 /// Whether `window` is a Wayland surface, where the compositor places windows.
@@ -297,5 +346,21 @@ impl Render for Pet {
                 cx.notify();
             }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn she_holds_the_edge_of_any_pane() {
+        assert_eq!(left(px(1200.)), LEFT);
+        assert_eq!(left(px(200.)), 200.0 - WIDTH);
+        assert_eq!(
+            left(px(100.)),
+            0.0,
+            "narrower than she is, she stands at its left"
+        );
     }
 }

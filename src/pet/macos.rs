@@ -4,12 +4,12 @@ use anyhow::bail;
 use gpui::Window;
 use objc::{
     msg_send,
-    runtime::{NO, Object},
+    runtime::{NO, Object, YES},
     sel, sel_impl,
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::LEFT;
+use super::left;
 
 /// AppKit's `NSWindowAbove`.
 const ABOVE: isize = 1;
@@ -36,7 +36,7 @@ pub struct Glue {
 }
 
 impl Glue {
-    /// Makes her window the main window's child, at its level and in its Spaces, with no shadow.
+    /// Makes her window the main window's child, at its level and in its Spaces, with no shadow and never key, so a press leaves the keys with the terminal.
     pub fn new(pet: &Window, main: &Window) -> anyhow::Result<Self> {
         let (pet, main) = (native(pet)?, native(main)?);
         unsafe {
@@ -45,17 +45,18 @@ impl Glue {
             let spaces: usize = msg_send![main, collectionBehavior];
             let _: () = msg_send![pet, setCollectionBehavior: spaces];
             let _: () = msg_send![pet, setHasShadow: NO];
+            let _: () = msg_send![pet, setBecomesKeyOnlyIfNeeded: YES];
             let _: () = msg_send![main, addChildWindow: pet ordered: ABOVE];
         }
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge, `LEFT` points in from its left.
+    /// Stands her on the main window's top edge, as far in as its width allows.
     pub fn place(&self, _: &Window) -> anyhow::Result<()> {
         unsafe {
             let frame: Rect = msg_send![self.main, frame];
             let at = Point {
-                x: frame.origin.x + f64::from(LEFT),
+                x: frame.origin.x + f64::from(left(gpui::px(frame.width as f32))),
                 y: frame.origin.y + frame.height,
             };
             let _: () = msg_send![self.pet, setFrameOrigin: at];

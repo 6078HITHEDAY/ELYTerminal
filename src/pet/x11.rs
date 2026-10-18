@@ -1,14 +1,14 @@
 //! Ely's window on X11: gpui's popup, which no window manager places, put on the main window's top edge and just above it.
 
 use anyhow::{Context as _, bail};
-use gpui::Window;
+use gpui::{Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use x11rb::{
     protocol::xproto::{ConfigureWindowAux, ConnectionExt as _, StackMode},
     rust_connection::RustConnection,
 };
 
-use super::{HEAD, LEFT, ROOM, top_inset};
+use super::{HEAD, ROOM, left, pane};
 
 /// Her X window, the main one, and a connection of her own to their server.
 pub struct Glue {
@@ -29,21 +29,22 @@ impl Glue {
         })
     }
 
-    /// Stands her on the main window's pane, `LEFT` points in, stacked just above the main window's frame.
+    /// Stands her on the main window's pane, as far in as its width allows, stacked just above the main window's frame.
     pub fn place(&self, main: &Window) -> anyhow::Result<()> {
-        self.put(main.scale_factor(), f32::from(top_inset(main)))
+        self.put(main.scale_factor(), pane(main))
     }
 
-    /// Places her at `scale` over a pane `inset` points into the main window.
-    fn put(&self, scale: f32, inset: f32) -> anyhow::Result<()> {
+    /// Places her at `scale` over `pane`, in the main window's points.
+    fn put(&self, scale: f32, pane: Bounds<Pixels>) -> anyhow::Result<()> {
+        let (x, y) = (f32::from(pane.origin.x), f32::from(pane.origin.y));
         let (root, frame) = self.frame()?;
         let at = (self.connection)
             .translate_coordinates(self.main, root, 0, 0)?
             .reply()
             .context("pet: the main window's place")?;
         let aux = ConfigureWindowAux::new()
-            .x(i32::from(at.dst_x) + ((LEFT + inset) * scale).round() as i32)
-            .y(i32::from(at.dst_y) + ((inset - HEAD - ROOM) * scale).round() as i32)
+            .x(i32::from(at.dst_x) + ((x + left(pane.size.width)) * scale).round() as i32)
+            .y(i32::from(at.dst_y) + ((y - HEAD - ROOM) * scale).round() as i32)
             .sibling(frame)
             .stack_mode(StackMode::ABOVE);
         (self.connection)
@@ -94,6 +95,8 @@ mod tests {
         connection::Connection as _,
         protocol::xproto::{CreateWindowAux, MapState, WindowClass},
     };
+
+    use gpui::{point, px, size};
 
     use super::*;
     use crate::testx11::Xvfb;
@@ -146,7 +149,8 @@ mod tests {
             pet,
             main,
         };
-        glue.put(2.0, 10.0).expect("she is placed");
+        let pane = Bounds::new(point(px(10.), px(10.)), size(px(380.), px(280.)));
+        glue.put(2.0, pane).expect("she is placed");
         let check = x11rb::connect(Some(&xvfb.display))
             .expect("the check connects")
             .0;
@@ -155,11 +159,11 @@ mod tests {
             .expect("the request")
             .reply()
             .expect("her place");
-        let left = (
-            100 + ((LEFT + 10.0) * 2.0).round() as i32,
+        let stands = (
+            100 + ((10.0 + left(px(380.))) * 2.0).round() as i32,
             100 + ((10.0 - HEAD - ROOM) * 2.0).round() as i32,
         );
-        assert_eq!((i32::from(at.x), i32::from(at.y)), left);
+        assert_eq!((i32::from(at.x), i32::from(at.y)), stands);
         let order = check
             .query_tree(root)
             .expect("the request")
