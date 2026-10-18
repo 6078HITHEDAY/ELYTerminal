@@ -80,38 +80,40 @@ impl Glue {
         self.put(main.scale_factor(), pane(main))
     }
 
-    /// Posts her box, sized at her own DPI as gpui did not when it opened her off the display, standing at `scale` over `pane`, in the main window's points.
+    /// Posts her bottom left corner on `pane` at `scale`, in the main window's points; her window sizes her at the DPI it has when the place lands, as gpui did not when it opened her off the display.
     fn put(&self, scale: f32, pane: Bounds<Pixels>) -> anyhow::Result<()> {
         let mut main = WINDOWINFO {
             cbSize: size_of::<WINDOWINFO>() as u32,
             ..Default::default()
         };
-        let (dpi, read) = unsafe {
-            (
-                GetDpiForWindow(self.pet),
-                GetWindowInfo(self.main, &mut main),
-            )
-        };
-        anyhow::ensure!(dpi != 0, "pet: her window's DPI does not read");
+        let read = unsafe { GetWindowInfo(self.main, &mut main) };
         anyhow::ensure!(read != 0, "pet: the main window's place does not read");
-        let own = dpi as f32 / USER_DEFAULT_SCREEN_DPI as f32;
-        let (at, size) = stand(main.rcClient, scale, own, pane);
-        let posted = unsafe { PostMessageW(self.pet, PLACE, pack(at), pack(size) as LPARAM) };
+        let corner = stand(main.rcClient, scale, pane);
+        let posted = unsafe { PostMessageW(self.pet, PLACE, pack(corner), 0) };
         anyhow::ensure!(posted != 0, "pet: her place does not post");
-        log::debug!("pet: Ely is to stand at {at:?}, {size:?} pixels");
+        log::debug!("pet: Ely is to stand on {corner:?}");
         Ok(())
     }
 }
 
-/// Her box at `own` scale, its bottom on `pane` at `scale` over the main window's `client` rect: its place and size in pixels.
-fn stand(client: RECT, scale: f32, own: f32, pane: Bounds<Pixels>) -> ((i32, i32), (i32, i32)) {
-    let size = sized(own);
+/// Her bottom left corner on `pane` at `scale` over the main window's `client` rect, in pixels.
+fn stand(client: RECT, scale: f32, pane: Bounds<Pixels>) -> (i32, i32) {
     let (x, y) = (f32::from(pane.origin.x), f32::from(pane.origin.y));
-    let at = (
+    (
         client.left + ((x + left(pane.size.width)) * scale).round() as i32,
-        client.top + (y * scale).round() as i32 - size.1,
-    );
-    (at, size)
+        client.top + (y * scale).round() as i32,
+    )
+}
+
+/// Her box at `dpi` on her bottom left `corner`.
+fn boxed((left, bottom): (i32, i32), dpi: u32) -> RECT {
+    let (width, height) = sized(dpi as f32 / USER_DEFAULT_SCREEN_DPI as f32);
+    RECT {
+        left,
+        top: bottom - height,
+        right: left + width,
+        bottom,
+    }
 }
 
 /// Her box's size in pixels at `own` scale.
@@ -133,15 +135,12 @@ unsafe extern "system" fn inactive(
     match message {
         WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
         PLACE => {
-            let ((x, y), (width, height)) = (unpack(wparam), unpack(lparam as WPARAM));
-            CORNER.set(Some((x, y + height)));
-            let rect = RECT {
-                left: x,
-                top: y,
-                right: x + width,
-                bottom: y + height,
-            };
-            move_to(window, rect);
+            let corner = unpack(wparam);
+            CORNER.set(Some(corner));
+            match unsafe { GetDpiForWindow(window) } {
+                0 => log::error!("pet: her window's DPI does not read at her place"),
+                dpi => move_to(window, boxed(corner, dpi)),
+            }
             0
         }
         WM_DPICHANGED => {
@@ -168,7 +167,7 @@ unsafe extern "system" fn inactive(
                     log::debug!("pet: at {dpi} DPI Ely keeps her corner at {corner:?}");
                 }
                 Ok(None) => log::debug!(
-                    "pet: at {dpi} DPI Ely stands where Windows suggests, as on her corner she would lie on a display of another"
+                    "pet: a keep at {dpi} DPI, hers {current}, leaves Ely where Windows put her"
                 ),
                 Err(error) => log::error!("{error:#}"),
             }
@@ -194,7 +193,7 @@ fn move_to(window: HWND, rect: RECT) {
 
 /// Her box at `dpi` on the bottom left `corner` her place gave her, while `dpi` is still hers, `current`, and the box lies mostly on a display of that DPI, as `dpi_of` reads it, so the move changes no DPI and posts no other keep; else none, and Windows' rect stands.
 fn keeping(
-    (left, bottom): (i32, i32),
+    corner: (i32, i32),
     dpi: u32,
     current: u32,
     dpi_of: impl Fn(&RECT) -> anyhow::Result<u32>,
@@ -202,13 +201,7 @@ fn keeping(
     if dpi != current {
         return Ok(None);
     }
-    let (width, height) = sized(dpi as f32 / USER_DEFAULT_SCREEN_DPI as f32);
-    let kept = RECT {
-        left,
-        top: bottom - height,
-        right: left + width,
-        bottom,
-    };
+    let kept = boxed(corner, dpi);
     Ok((dpi_of(&kept)? == dpi).then_some(kept))
 }
 

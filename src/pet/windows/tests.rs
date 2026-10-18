@@ -78,8 +78,9 @@ fn her_bottom_stands_on_the_panes_top_edge_whatever_the_two_windows_dpi() {
         bottom: 900,
     };
     let pane = Bounds::new(point(px(10.), px(8.)), size(px(800.), px(600.)));
-    for (scale, own) in [(1.0, 1.0), (1.0, 1.5), (1.5, 1.0), (2.0, 1.25)] {
-        let ((x, y), (width, height)) = stand(client, scale, own, pane);
+    for (scale, dpi) in [(1.0, 96), (1.0, 144), (1.5, 96), (2.0, 120)] {
+        let her = boxed(stand(client, scale, pane), dpi);
+        let own = dpi as f32 / 96.0;
         let own_box = (
             (WIDTH * own).round() as i32,
             ((HEAD + ROOM) * own).round() as i32,
@@ -89,9 +90,12 @@ fn her_bottom_stands_on_the_panes_top_edge_whatever_the_two_windows_dpi() {
             20 + (8.0 * scale).round() as i32,
         );
         assert_eq!(
-            ((width, height), (x, y + height)),
+            (
+                (her.right - her.left, her.bottom - her.top),
+                (her.left, her.bottom)
+            ),
             (own_box, corner),
-            "the main window at {scale}, hers at {own}"
+            "the main window at {scale}, hers at {dpi} DPI"
         );
     }
 }
@@ -112,25 +116,25 @@ fn displays(down: bool, first: u32, second: u32) -> impl Fn(&RECT) -> anyhow::Re
     }
 }
 
-/// What reaches her window: a place, or a keep at a DPI.
+/// What reaches her window: a place, her bottom left corner, or a keep at a DPI.
 enum Sent {
-    Place(RECT),
+    Place((i32, i32)),
     Keep(u32),
 }
 
 /// Her window, its rect and DPI, once the queue `places` start drains on `dpi_of`'s displays: a move to a display of another DPI changes hers, gpui takes Windows' rect, scaled about its middle, and a keep joins the queue, as her procedure posts one; and how many changes it took.
 fn drain(
     mut window: (RECT, u32),
-    places: &[RECT],
+    places: &[(i32, i32)],
     dpi_of: &impl Fn(&RECT) -> anyhow::Result<u32>,
 ) -> ((RECT, u32), usize) {
-    let mut queue: VecDeque<Sent> = places.iter().map(|&rect| Sent::Place(rect)).collect();
+    let mut queue: VecDeque<Sent> = places.iter().map(|&at| Sent::Place(at)).collect();
     let (mut corner, mut changes) = (None, 0);
     while let Some(sent) = queue.pop_front() {
         let target = match sent {
-            Sent::Place(rect) => {
-                corner = Some((rect.left, rect.bottom));
-                rect
+            Sent::Place(at) => {
+                corner = Some(at);
+                boxed(at, window.1)
             }
             Sent::Keep(dpi) => {
                 let corner = corner.expect("a place first");
@@ -184,7 +188,7 @@ fn placing_her_across_two_displays_of_two_dpis_settles() {
     // Side by side, 144 DPI then 96: her 144 DPI box, 70 pixels on the first and 98 on the second.
     let across = displays(false, 144, 96);
     let start = (rect(-400, 315, -232, 500), 144);
-    let ((at, dpi), changes) = drain(start, &[rect(-70, 315, 98, 500)], &across);
+    let ((at, dpi), changes) = drain(start, &[(-70, 500)], &across);
     assert_eq!(
         (changes, dpi, across(&at).expect("a display")),
         (1, 96, 96),
@@ -193,7 +197,7 @@ fn placing_her_across_two_displays_of_two_dpis_settles() {
     // One over the other, 144 DPI above 96: her 96 DPI box, her bottom 50 pixels down the second.
     let down = displays(true, 144, 96);
     let start = (rect(200, 300, 312, 423), 96);
-    let ((at, dpi), changes) = drain(start, &[rect(200, -73, 312, 50)], &down);
+    let ((at, dpi), changes) = drain(start, &[(200, 50)], &down);
     assert_eq!(
         (changes, dpi, at.left, at.bottom, at.bottom - at.top),
         (1, 144, 200, 50, 185),
@@ -202,22 +206,30 @@ fn placing_her_across_two_displays_of_two_dpis_settles() {
 }
 
 #[test]
-fn places_that_pile_up_across_two_displays_drain_on_the_last_corner() {
+fn places_that_pile_up_across_two_displays_drain_in_her_dpis_size() {
+    let sizes = |(at, dpi): (RECT, u32)| {
+        let drawn = (at.right - at.left, at.bottom - at.top);
+        (drawn, sized(dpi as f32 / 96.0))
+    };
     // Side by side, 96 DPI then 144; two places wait before either runs, as round 3 set them.
     let across = displays(false, 96, 144);
     let start = (rect(-400, 377, -288, 500), 96);
-    let places = [rect(0, 377, 112, 500), rect(-70, 377, 42, 500)];
-    let ((at, dpi), _) = drain(start, &places, &across);
+    let places = [(0, 500), (-70, 500)];
+    let (window, _) = drain(start, &places, &across);
+    let (drawn, own) = sizes(window);
     assert_eq!(
-        (
-            dpi,
-            at.left,
-            at.right - at.left,
-            at.bottom - at.top,
-            at.bottom
-        ),
-        (96, -70, 112, 123, 500),
-        "a keep whose DPI has passed moves her nowhere"
+        (drawn, window.0.left, window.0.bottom),
+        (own, -70, 500),
+        "a keep whose DPI has passed moves her nowhere; she stands on the last corner"
+    );
+    // Side by side, 144 DPI then 96: the first takes her to 144, and the second lands there.
+    let across = displays(false, 144, 96);
+    let start = (rect(300, 377, 412, 500), 96);
+    let places = [(-100, 500), (-60, 500)];
+    let (drawn, own) = sizes(drain(start, &places, &across).0);
+    assert_eq!(
+        drawn, own,
+        "her size is her DPI's, whatever DPI a place was posted at"
     );
 }
 
@@ -292,7 +304,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edg
     assert_eq!(
         (rect(taken), rect(stood)),
         (rect(suggested), rect(suggested)),
-        "gpui takes Windows' rect, which stands where her corner lies on a display of another DPI"
+        "a keep at a DPI not her window's moves her nowhere: the rect gpui took from Windows stands"
     );
     assert_ne!(
         (made.right - made.left, made.bottom - made.top),
