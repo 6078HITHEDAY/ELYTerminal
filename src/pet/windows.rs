@@ -1,31 +1,45 @@
 //! Ely's window on Windows: a bare popup owned by the main window, so it stays above it and hides with it, sized and moved as it moves.
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicIsize, Ordering},
+};
 
 use anyhow::bail;
 use gpui::{Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+    Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromRect},
     UI::{
-        HiDpi::GetDpiForWindow,
+        HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI},
         WindowsAndMessaging::{
             CallWindowProcW, GWL_STYLE, GWLP_HWNDPARENT, GWLP_WNDPROC, GetWindowInfo,
-            GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, MA_NOACTIVATE, PostMessageW,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-            SetWindowLongPtrW, SetWindowPos, USER_DEFAULT_SCREEN_DPI, WINDOWINFO, WM_APP,
-            WM_DPICHANGED, WM_MOUSEACTIVATE, WNDPROC, WS_CAPTION, WS_POPUP,
+            GetWindowLongPtrW, HWND_NOTOPMOST, MA_NOACTIVATE, PostMessageW, SWP_FRAMECHANGED,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
+            USER_DEFAULT_SCREEN_DPI, WINDOWINFO, WM_APP, WM_DPICHANGED, WM_MOUSEACTIVATE, WNDPROC,
+            WS_CAPTION, WS_POPUP,
         },
     },
 };
 
 use super::{HEAD, ROOM, WIDTH, left, pane};
 
-/// gpui's window procedure, which hers passes every message on to but a press's activation and her place.
+#[cfg(test)]
+mod tests;
+
+/// gpui's window procedure, which hers passes every message on to but a press's activation and her places.
 static GPUI: AtomicIsize = AtomicIsize::new(0);
+
+thread_local! {
+    /// The bottom left corner her last place gave her, on the thread her window lives on.
+    static CORNER: Cell<Option<(i32, i32)>> = const { Cell::new(None) };
+}
 
 /// Her place, posted to her window: Windows sends a new size at once, which gpui hears only outside its own updates.
 const PLACE: u32 = WM_APP;
+/// Her corner at a new DPI, posted so it follows the whole move that brought the change.
+const KEEP: u32 = WM_APP + 1;
 const _: () = assert!(
     size_of::<WPARAM>() == 8,
     "a place packs two i32 into a word"
@@ -91,10 +105,7 @@ impl Glue {
 
 /// Her box at `own` scale, its bottom on `pane` at `scale` over the main window's `client` rect: its place and size in pixels.
 fn stand(client: RECT, scale: f32, own: f32, pane: Bounds<Pixels>) -> ((i32, i32), (i32, i32)) {
-    let size = (
-        (WIDTH * own).round() as i32,
-        ((HEAD + ROOM) * own).round() as i32,
-    );
+    let size = sized(own);
     let (x, y) = (f32::from(pane.origin.x), f32::from(pane.origin.y));
     let at = (
         client.left + ((x + left(pane.size.width)) * scale).round() as i32,
@@ -103,7 +114,15 @@ fn stand(client: RECT, scale: f32, own: f32, pane: Bounds<Pixels>) -> ((i32, i32
     (at, size)
 }
 
-/// Her window's procedure: a press does not activate her window, she takes her place, and at a new DPI keeps her corner; all else is gpui's.
+/// Her box's size in pixels at `own` scale.
+fn sized(own: f32) -> (i32, i32) {
+    (
+        (WIDTH * own).round() as i32,
+        ((HEAD + ROOM) * own).round() as i32,
+    )
+}
+
+/// Her window's procedure: a press does not activate her window, she takes her places, and all else is gpui's.
 unsafe extern "system" fn inactive(
     window: HWND,
     message: u32,
@@ -115,38 +134,86 @@ unsafe extern "system" fn inactive(
         WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
         PLACE => {
             let ((x, y), (width, height)) = (unpack(wparam), unpack(lparam as WPARAM));
-            let flags = SWP_NOZORDER | SWP_NOACTIVATE;
-            let null = std::ptr::null_mut();
-            if unsafe { SetWindowPos(window, null, x, y, width, height, flags) } == 0 {
-                log::error!("pet: her window does not move to {x},{y}");
-            }
+            CORNER.set(Some((x, y + height)));
+            let rect = RECT {
+                left: x,
+                top: y,
+                right: x + width,
+                bottom: y + height,
+            };
+            move_to(window, rect);
             0
         }
         WM_DPICHANGED => {
-            // gpui takes the rect Windows suggests, as a move to another display brings.
-            let (mut before, mut after) = (RECT::default(), RECT::default());
-            let read = unsafe { GetWindowRect(window, &mut before) };
+            // gpui takes the rect Windows suggests; her corner follows once the move is done.
             let answer = unsafe { CallWindowProcW(gpui, window, message, wparam, lparam) };
-            if read == 0 || unsafe { GetWindowRect(window, &mut after) } == 0 {
-                log::error!("pet: her window's place does not read at a new DPI");
-                return answer;
-            }
-            let top = before.bottom - (after.bottom - after.top);
-            let flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
-            let null = std::ptr::null_mut();
-            if unsafe { SetWindowPos(window, null, before.left, top, 0, 0, flags) } == 0 {
-                log::error!("pet: her window does not keep its corner at a new DPI");
-            } else {
-                log::debug!(
-                    "pet: at a new DPI Ely keeps her corner at {},{}",
-                    before.left,
-                    before.bottom
-                );
+            if unsafe { PostMessageW(window, KEEP, wparam & 0xFFFF, 0) } == 0 {
+                log::error!("pet: her corner does not post at a new DPI");
             }
             answer
         }
+        KEEP => {
+            let dpi = wparam as u32;
+            let Some(corner) = CORNER.get() else {
+                log::debug!("pet: at {dpi} DPI Ely has no place to keep yet");
+                return 0;
+            };
+            match keeping(corner, dpi, display_dpi) {
+                Ok(Some(kept)) => {
+                    move_to(window, kept);
+                    log::debug!("pet: at {dpi} DPI Ely keeps her corner at {corner:?}");
+                }
+                Ok(None) => log::debug!(
+                    "pet: at {dpi} DPI Ely stands where Windows suggests, as on her corner she would lie on a display of another"
+                ),
+                Err(error) => log::error!("{error:#}"),
+            }
+            0
+        }
         _ => unsafe { CallWindowProcW(gpui, window, message, wparam, lparam) },
     }
+}
+
+/// Moves her window to `rect`.
+fn move_to(window: HWND, rect: RECT) {
+    let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
+    let flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    let null = std::ptr::null_mut();
+    if unsafe { SetWindowPos(window, null, rect.left, rect.top, width, height, flags) } == 0 {
+        log::error!(
+            "pet: her window does not move to {},{}",
+            rect.left,
+            rect.top
+        );
+    }
+}
+
+/// Her box at `dpi` on the bottom left `corner` her place gave her, if it lies mostly on a display of that DPI, as `dpi_of` reads it; else none, and Windows' rect stands, which sets off no other change.
+fn keeping(
+    (left, bottom): (i32, i32),
+    dpi: u32,
+    dpi_of: impl Fn(&RECT) -> anyhow::Result<u32>,
+) -> anyhow::Result<Option<RECT>> {
+    let (width, height) = sized(dpi as f32 / USER_DEFAULT_SCREEN_DPI as f32);
+    let kept = RECT {
+        left,
+        top: bottom - height,
+        right: left + width,
+        bottom,
+    };
+    Ok((dpi_of(&kept)? == dpi).then_some(kept))
+}
+
+/// The DPI of the display under most of `rect`, which Windows gives a window there.
+fn display_dpi(rect: &RECT) -> anyhow::Result<u32> {
+    let monitor = unsafe { MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST) };
+    let (mut x, mut y) = (0, 0);
+    let read = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) };
+    anyhow::ensure!(
+        read == 0,
+        "pet: the display under her box gives no DPI: {read:#x}"
+    );
+    Ok(x)
 }
 
 fn pack((low, high): (i32, i32)) -> WPARAM {
@@ -165,177 +232,4 @@ fn native(window: &Window) -> anyhow::Result<HWND> {
         bail!("pet: not a Win32 window");
     };
     Ok(win32.hwnd.get() as HWND)
-}
-
-#[cfg(test)]
-mod tests {
-    use gpui::{point, px, size};
-    use windows_sys::{
-        Win32::UI::WindowsAndMessaging::{
-            CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, MSG,
-            PM_REMOVE, PeekMessageW, SendMessageW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-            WS_OVERLAPPEDWINDOW,
-        },
-        w,
-    };
-
-    use super::*;
-
-    /// A hidden window of `style`, at the size Windows picks, as gpui asks for its windows.
-    fn window(style: u32, extended: u32) -> HWND {
-        let window = unsafe {
-            CreateWindowExW(
-                extended,
-                w!("STATIC"),
-                w!(""),
-                style,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null(),
-            )
-        };
-        assert!(!window.is_null(), "a test window");
-        window
-    }
-
-    fn info(window: HWND) -> WINDOWINFO {
-        let mut info = WINDOWINFO {
-            cbSize: size_of::<WINDOWINFO>() as u32,
-            ..Default::default()
-        };
-        assert_ne!(unsafe { GetWindowInfo(window, &mut info) }, 0, "its info");
-        info
-    }
-
-    /// gpui's procedure as far as these tests need it: at a new DPI it takes the rect Windows suggests.
-    unsafe extern "system" fn standin(
-        window: HWND,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if message == WM_DPICHANGED {
-            let rect = unsafe { *(lparam as *const RECT) };
-            let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
-            let flags = SWP_NOZORDER | SWP_NOACTIVATE;
-            let null = std::ptr::null_mut();
-            unsafe { SetWindowPos(window, null, rect.left, rect.top, width, height, flags) };
-            return 0;
-        }
-        unsafe { DefWindowProcW(window, message, wparam, lparam) }
-    }
-
-    #[test]
-    fn her_bottom_stands_on_the_panes_top_edge_whatever_the_two_windows_dpi() {
-        let client = RECT {
-            left: 100,
-            top: 20,
-            right: 1300,
-            bottom: 900,
-        };
-        let pane = Bounds::new(point(px(10.), px(8.)), size(px(800.), px(600.)));
-        for (scale, own) in [(1.0, 1.0), (1.0, 1.5), (1.5, 1.0), (2.0, 1.25)] {
-            let ((x, y), (width, height)) = stand(client, scale, own, pane);
-            let own_box = (
-                (WIDTH * own).round() as i32,
-                ((HEAD + ROOM) * own).round() as i32,
-            );
-            let corner = (
-                100 + ((10.0 + left(px(800.))) * scale).round() as i32,
-                20 + (8.0 * scale).round() as i32,
-            );
-            assert_eq!(
-                ((width, height), (x, y + height)),
-                (own_box, corner),
-                "the main window at {scale}, hers at {own}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_the_panes_top_edge() {
-        let main = window(WS_OVERLAPPEDWINDOW, 0);
-        // gpui's popup: style 0, an overlapped window, which Windows gives a caption.
-        let pet = window(0, WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
-        assert_eq!(
-            info(pet).dwStyle & WS_CAPTION,
-            WS_CAPTION,
-            "framed as gpui makes it"
-        );
-        unsafe { SetWindowLongPtrW(pet, GWLP_WNDPROC, standin as *const () as isize) };
-        let glue = Glue::hold(pet, main).expect("held");
-        let pane = Bounds::new(point(px(0.), px(0.)), size(px(380.), px(280.)));
-        glue.put(1.0, pane).expect("placed");
-        let made = info(pet).rcWindow;
-        let mut message = MSG::default();
-        while unsafe { PeekMessageW(&mut message, pet, 0, 0, PM_REMOVE) } != 0 {
-            unsafe { DispatchMessageW(&message) };
-        }
-        let (her, under) = (info(pet), info(main));
-        let own = unsafe { GetDpiForWindow(pet) } as f32 / 96.0;
-        // A new DPI, whose rect Windows suggests 30 and 40 pixels off, 100 by 60.
-        let at = her.rcWindow;
-        let suggested = RECT {
-            left: at.left + 30,
-            top: at.top + 40,
-            right: at.left + 130,
-            bottom: at.top + 100,
-        };
-        let pointer = &suggested as *const RECT as LPARAM;
-        unsafe { SendMessageW(pet, WM_DPICHANGED, 144 | 144 << 16, pointer) };
-        let later = info(pet).rcWindow;
-        unsafe {
-            DestroyWindow(pet);
-            DestroyWindow(main);
-        }
-        let (outer, inner) = (her.rcWindow, her.rcClient);
-        let frame = (
-            inner.left - outer.left,
-            inner.top - outer.top,
-            outer.right - inner.right,
-            outer.bottom - inner.bottom,
-        );
-        let drawn = (outer.right - outer.left, outer.bottom - outer.top);
-        let own_box = (
-            (WIDTH * own).round() as i32,
-            ((HEAD + ROOM) * own).round() as i32,
-        );
-        let edge = (
-            under.rcClient.left + left(px(380.)).round() as i32,
-            under.rcClient.top,
-        );
-        let kept = (
-            later.left,
-            later.bottom,
-            later.right - later.left,
-            later.bottom - later.top,
-        );
-        assert_eq!(
-            (
-                her.dwStyle & WS_CAPTION,
-                frame,
-                drawn,
-                (outer.left, outer.bottom),
-                kept
-            ),
-            (
-                0,
-                (0, 0, 0, 0),
-                own_box,
-                edge,
-                (outer.left, outer.bottom, 100, 60)
-            ),
-            "bare, in her own box, her bottom on the pane's top edge, kept there at a new DPI"
-        );
-        assert_ne!(
-            (made.right - made.left, made.bottom - made.top),
-            own_box,
-            "no size until her window takes the posted place"
-        );
-    }
 }
