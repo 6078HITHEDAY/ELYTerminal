@@ -98,9 +98,10 @@ impl TerminalView {
         } else {
             Action::Press
         };
-        let went = self.send(&event.keystroke, action, facts, false, cx);
-        self.held
-            .insert(held(&event.keystroke, facts), went == Some(true));
+        let id = held(&event.keystroke, facts);
+        let pressed = self.held.get(&id) == Some(&true);
+        let went = self.send(&event.keystroke, action, facts, pressed, cx);
+        self.held.insert(id, went == Some(true));
         if went.is_some() {
             cx.stop_propagation();
         }
@@ -120,13 +121,13 @@ impl TerminalView {
         }
     }
 
-    /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `record` says that of its press.
+    /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `pressed` says that of a held key's press.
     fn send(
         &mut self,
         keystroke: &Keystroke,
         action: Action,
         facts: Facts,
-        record: bool,
+        pressed: bool,
         cx: &mut Context<Self>,
     ) -> Option<bool> {
         let modifiers = keystroke.modifiers;
@@ -154,12 +155,8 @@ impl TerminalView {
             all: mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
             text: mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
         };
-        // As in Windows Terminal: kitty's flags first, then Windows' records; text stays text.
         #[cfg(windows)]
-        if self.win32
-            && kitty == Kitty::default()
-            && (record || action != Action::Release && !keys::types(&key))
-        {
+        if self.win32 && records(kitty, action, keys::types(&key), pressed) {
             match super::win32::record(keystroke, action) {
                 Some(bytes) => {
                     log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
@@ -174,7 +171,7 @@ impl TerminalView {
             }
         }
         #[cfg(not(windows))]
-        debug_assert!(!record, "only Windows sends records");
+        debug_assert!(!pressed, "only Windows sends records");
         let bytes = keys::encode(&key, mode.contains(TermMode::APP_CURSOR), kitty)?;
         log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
         self.input(bytes, cx);
@@ -253,6 +250,17 @@ struct Facts {
 pub(super) enum Held {
     Code(u16),
     Name(String),
+}
+
+/// Whether a key goes as Windows' record, as in Windows Terminal: kitty's flags go first, text stays text, and a repeat or release goes as its press did.
+#[cfg(any(windows, test))]
+fn records(kitty: Kitty, action: Action, types: bool, pressed: bool) -> bool {
+    kitty == Kitty::default()
+        && match action {
+            Action::Press => !types,
+            Action::Repeat => pressed || !types,
+            Action::Release => pressed,
+        }
 }
 
 fn held(keystroke: &Keystroke, facts: Facts) -> Held {
@@ -345,5 +353,31 @@ impl EntityInputHandler for TerminalView {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_record_press_takes_its_repeats_and_release_with_it() {
+        let plain = Kitty::default();
+        // Ctrl-Shift-] goes as a record; Ctrl and Shift come up while ] repeats and types.
+        assert!(records(plain, Action::Press, false, false));
+        assert!(records(plain, Action::Repeat, true, true));
+        assert!(records(plain, Action::Release, true, true));
+        // A key that types goes as text, and so does its release.
+        assert!(!records(plain, Action::Press, true, false));
+        assert!(!records(plain, Action::Repeat, true, false));
+        assert!(!records(plain, Action::Release, true, false));
+        let kitty = Kitty {
+            disambiguate: true,
+            ..plain
+        };
+        assert!(
+            !records(kitty, Action::Press, false, false),
+            "kitty's flags go first"
+        );
     }
 }
