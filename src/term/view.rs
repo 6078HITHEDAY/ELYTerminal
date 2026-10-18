@@ -70,6 +70,8 @@ pub struct TerminalView {
     /// Keys go as Windows' records, as ConPTY asks.
     #[cfg(windows)]
     pub(super) win32: bool,
+    /// herdr's client leads the session, so herdr opens its panes' links.
+    pub(super) herdr: bool,
     /// Keys whose press this terminal saw, so their releases may go out; true where it went as Windows' record.
     pub(super) held: HashMap<Held, bool>,
     pub(super) finder: Option<Finder>,
@@ -135,6 +137,7 @@ impl TerminalView {
             mouse: MouseMode::default(),
             #[cfg(windows)]
             win32: false,
+            herdr: false,
             held: HashMap::new(),
             finder: None,
             size,

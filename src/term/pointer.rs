@@ -80,13 +80,16 @@ impl TerminalView {
         modifiers: &Modifiers,
         tracking: Tracking,
     ) -> bool {
+        let wheel = matches!(button, Some(Button::WheelUp | Button::WheelDown));
+        // herdr's link key is Ctrl; on macOS Cmd stands for it, the wheel aside.
+        let link = cfg!(target_os = "macos") && self.herdr && modifiers.platform && !wheel;
         let report = Report {
             button,
             gesture,
             cell,
             shift: modifiers.shift,
             alt: modifiers.alt,
-            ctrl: modifiers.control,
+            ctrl: modifiers.control || link,
         };
         let format = self.mouse.format;
         let Some(bytes) = mouse::encode(&report, MouseMode { tracking, format }) else {
@@ -111,7 +114,15 @@ impl TerminalView {
         } else {
             event.modifiers.control
         };
-        if event.button == MouseButton::Left && opens {
+        let tracking = self.tracking(&event.modifiers);
+        // herdr opens its panes' links itself, whole where its drawing wraps them.
+        let herdr = self.herdr && tracking != Tracking::Off;
+        if event.button == MouseButton::Left && opens && herdr {
+            log::debug!(
+                "terminal {}: herdr takes the link press at {cell:?}",
+                self.pty.pid
+            );
+        } else if event.button == MouseButton::Left && opens {
             let link = link_at(&self.pty.term.lock(), point);
             if let Some(link) = link {
                 log::info!("terminal {}: opens {link}", self.pty.pid);
@@ -119,7 +130,6 @@ impl TerminalView {
                 return;
             }
         }
-        let tracking = self.tracking(&event.modifiers);
         if tracking != Tracking::Off {
             let Some(pressed) = button(event.button) else {
                 return;
