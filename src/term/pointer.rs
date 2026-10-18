@@ -115,19 +115,21 @@ impl TerminalView {
             event.modifiers.control
         };
         let tracking = self.tracking(&event.modifiers);
-        // herdr opens its panes' links itself, whole where its drawing wraps them.
-        let herdr = self.herdr && tracking != Tracking::Off;
-        if event.button == MouseButton::Left && opens && herdr {
-            log::debug!(
-                "terminal {}: herdr takes the link press at {cell:?}",
-                self.pty.pid
-            );
-        } else if event.button == MouseButton::Left && opens {
+        if event.button == MouseButton::Left && opens {
             let link = link_at(&self.pty.term.lock(), point);
-            if let Some(link) = link {
-                log::info!("terminal {}: opens {link}", self.pty.pid);
-                cx.open_url(&link);
-                return;
+            // herdr opens web links itself, whole where its drawing wraps them; it opens no other kind.
+            let herdr = self.herdr && tracking != Tracking::Off;
+            match link {
+                Some(link) if !(herdr && web(&link)) => {
+                    log::info!("terminal {}: opens {link}", self.pty.pid);
+                    cx.open_url(&link);
+                    return;
+                }
+                _ if herdr => log::debug!(
+                    "terminal {}: herdr takes the link press at {cell:?}",
+                    self.pty.pid
+                ),
+                _ => {}
             }
         }
         if tracking != Tracking::Off {
@@ -395,6 +397,11 @@ fn everything<T>(term: &Term<T>) -> Option<Selection> {
     Some(all)
 }
 
+/// A link herdr opens: a web one, as its client's `safe_web_url` checks.
+fn web(link: &str) -> bool {
+    link.starts_with("http://") || link.starts_with("https://")
+}
+
 #[cfg(test)]
 mod tests {
     use alacritty_terminal::{
@@ -412,6 +419,12 @@ mod tests {
         parser.advance(&mut term, bytes);
         term.selection = everything(&term);
         term.selection_to_string()
+    }
+
+    #[test]
+    fn herdr_takes_web_links_and_leaves_the_rest() {
+        assert!(web("https://ely.dev/x") && web("http://ely.dev"));
+        assert!(!web("file:///etc/hosts") && !web("mailto:ely@ely.dev"));
     }
 
     #[test]

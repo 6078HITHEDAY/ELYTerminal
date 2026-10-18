@@ -68,7 +68,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | IME: marked text at the cursor, commits to the program | T08 | T08 review | Pass |
 | Selection by character, word, line; Shift extends; mouse reporting; wheel | T09 | `term::mouse`, `term::tap` tests | Pass |
 | Copy, paste, bracketed paste, copy on select, OSC 52 | T09 | T09 review | Pass |
-| OSC 8 and plain links on Cmd-press, Ctrl-press off macOS; inside herdr, herdr opens them whole | T09, T45 | `term::links` tests; on macOS with real herdr 0.9.5 and a stand-in `open` on its PATH, Cmd-press on a URL herdr wraps, on its wrapped tail, on an OSC 8 link and on a URL over three rows opened the whole URL and the OSC 8 target, where before the app opened `.../ELYTermin` and nothing; Cmd-hover underlined the long URL across its rows; outside herdr the app opened the URL itself | Pass |
+| OSC 8 and plain links on Cmd-press, Ctrl-press off macOS; inside herdr, herdr opens them whole | T09, T45 | `term::links` tests; on macOS with real herdr 0.9.5 and a stand-in `open` on its PATH, Cmd-press on a URL herdr wraps, on its wrapped tail, on an OSC 8 link and on a URL over three rows opened the whole URL and the OSC 8 target, where before the app opened `.../ELYTermin` and nothing; Cmd-hover underlined the long URL across its rows; outside herdr the app opened the URL itself; inside herdr `file:///etc/hosts`, which herdr does not open, the app opened, caught by an `NSWorkspace` stand-in | Pass |
 | Focus reporting, title, scrollback limit, find | T10 | `term::find` tests; round 3 failed at the cap, its fix stands on a red-green test | Pass |
 | A bell makes no sound; the row marks it | T10, T12 | T12 review | Pass |
 
