@@ -153,12 +153,16 @@ unsafe extern "system" fn inactive(
             answer
         }
         KEEP => {
-            let dpi = wparam as u32;
+            let (dpi, current) = (wparam as u32, unsafe { GetDpiForWindow(window) });
+            if current == 0 {
+                log::error!("pet: her window's DPI does not read at a new DPI");
+                return 0;
+            }
             let Some(corner) = CORNER.get() else {
                 log::debug!("pet: at {dpi} DPI Ely has no place to keep yet");
                 return 0;
             };
-            match keeping(corner, dpi, display_dpi) {
+            match keeping(corner, dpi, current, display_dpi) {
                 Ok(Some(kept)) => {
                     move_to(window, kept);
                     log::debug!("pet: at {dpi} DPI Ely keeps her corner at {corner:?}");
@@ -188,12 +192,16 @@ fn move_to(window: HWND, rect: RECT) {
     }
 }
 
-/// Her box at `dpi` on the bottom left `corner` her place gave her, if it lies mostly on a display of that DPI, as `dpi_of` reads it; else none, and Windows' rect stands, which sets off no other change.
+/// Her box at `dpi` on the bottom left `corner` her place gave her, while `dpi` is still hers, `current`, and the box lies mostly on a display of that DPI, as `dpi_of` reads it, so the move changes no DPI and posts no other keep; else none, and Windows' rect stands.
 fn keeping(
     (left, bottom): (i32, i32),
     dpi: u32,
+    current: u32,
     dpi_of: impl Fn(&RECT) -> anyhow::Result<u32>,
 ) -> anyhow::Result<Option<RECT>> {
+    if dpi != current {
+        return Ok(None);
+    }
     let (width, height) = sized(dpi as f32 / USER_DEFAULT_SCREEN_DPI as f32);
     let kept = RECT {
         left,
