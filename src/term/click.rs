@@ -92,7 +92,7 @@ pub fn arrows<T>(term: &Term<T>, click: Point) -> Option<i32> {
     })
 }
 
-/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none on a prompt or before the input.
+/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none on a prompt, before the input or below it.
 pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>> {
     if term.mode().contains(TermMode::ALT_SCREEN) {
         return None;
@@ -107,16 +107,18 @@ pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>>
     let end = (back.clone())
         .filter(|&at| at < cursor)
         .find(|&at| prompted(cell(at)));
-    // The newest line typed, its first cell; a shell drawing its prompts again keeps its number.
-    let mut typed = back.filter_map(|at| match part(cell(at)) {
+    // The newest line typed, by its number, which only grows, its first and last cells; a shell drawing its prompts again keeps it.
+    let typed = back.filter_map(|at| match part(cell(at)) {
         Some(Part::Input(line)) => Some((at, line)),
         _ => None,
     });
-    let input = typed.next().map(|(last, line)| {
-        let first =
-            (typed.take_while(|&(_, other)| other == line).last()).map_or(last, |(first, _)| first);
-        (first, line)
+    let newest = typed.fold(None, |newest, (at, line)| match newest {
+        Some((_, _, kept)) if kept > line => newest,
+        Some((_, last, kept)) if kept == line => Some((at, last, line)),
+        _ => Some((at, at, line)),
     });
+    let input = newest.map(|(first, _, line)| (first, line));
+    let bottom = newest.map_or(cursor.0, |(_, last, _)| last.0.max(cursor.0));
     // An older line typed between a prompt and the input leaves that prompt behind.
     let older = |end: (i32, usize), (input, line): ((i32, usize), u32)| {
         (end.0..=input.0)
@@ -139,7 +141,7 @@ pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>>
         (None, Some((input, _))) => (at < input, input.0),
         (None, None) => return None,
     };
-    if before || prompted(cell(at)) {
+    if before || at.0 > bottom || prompted(cell(at)) {
         return None;
     }
     let row = if relative { at.0 - first } else { at.0 } + 1;

@@ -107,11 +107,10 @@ fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
         sent(&typed, click(1, 7), true).as_deref(),
         Some("\x1b[<0;8;1M")
     );
-    let below = sent(&typed, click(2, 3), true);
     assert_eq!(
-        below.as_deref(),
-        Some("\x1b[<0;4;2M"),
-        "a row below goes too"
+        sent(&typed, click(2, 3), true),
+        None,
+        "a row below the input"
     );
     assert_eq!(sent(&typed, click(0, 1), false), None, "before the prompt");
     assert_eq!(sent(&typed, click(1, 0), false), None, "on the prompt");
@@ -252,4 +251,19 @@ fn a_prompt_drawn_again_after_the_typed_text_keeps_its_line() {
         Some("\x1b[<0;3;1M"),
         "from the input's own row"
     );
+}
+
+#[test]
+fn the_newest_line_typed_is_known_by_its_number_not_its_place() {
+    let marked = "\x1b]133;A;click_events=1\x07$ \x1b]133;B\x07";
+    let ran = "\x1b]133;C\x07\x1b]133;D;0\x07";
+    let home = format!("\r\n\r\n\r\n{marked}oldlower{ran}\x1b[H{marked}abcdef");
+    let above = term(20, &home);
+    let at = sent(&above, click(0, 5), false);
+    assert_eq!(
+        at.as_deref(),
+        Some("\x1b[<0;6;1M"),
+        "the prompt at the top, old input below"
+    );
+    assert_eq!(sent(&above, click(3, 4), false), None, "the old line below");
 }
