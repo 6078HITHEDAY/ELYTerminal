@@ -316,3 +316,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T62
 
 - Round 1, 760f054: PASS. 24 poses rendered by gpui beside the build before, rest, breath, tilts, hops, a press in a hop, typing, a shake, the doze, waking and rising, kept her outline above the shoulders and joined the shirt and hair to the edge in every hop; 3,244,407 poses sampled, head bob, tilt and the rotated hair's corners counted, left the shirt 4.4 and the hair 1.3 units below the edge at her highest, 52.7 units; on macOS 48 snaps at the top and bottom edges and 52 through presses dispatched to her window kept her bottom row opaque; check.sh passed with 263 tests. Windows, X11 and Wayland went by their source.
+
+## T63
+
+- Round 1, 3085a94: FAIL. Presses, Enter, Escape, a blur by a press, other rows, closes, retitles, a full reset, long and Unicode names held, and Ely's `ListItem::editor` left other rows as they were; but leaving the app mid-rename blurred the field while the window's focus still pointed at it, the field went, and back in the app the terminal heard no key until pressed. Fixed in ca3809b: a field that closes while it still holds the focus gives it to the shown terminal; a press that took it elsewhere keeps it there.
