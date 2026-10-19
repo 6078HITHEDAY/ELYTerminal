@@ -121,6 +121,18 @@ impl TerminalView {
         }
     }
 
+    /// Presses and lets go of `name` without modifiers, as the keyboard would.
+    pub(super) fn tap_key(&mut self, name: &str, cx: &mut Context<Self>) {
+        let keystroke = Keystroke {
+            modifiers: Default::default(),
+            key: name.into(),
+            key_char: None,
+        };
+        let facts = Facts::default();
+        let record = self.send(&keystroke, Action::Press, facts, false, cx) == Some(true);
+        self.send(&keystroke, Action::Release, facts, record, cx);
+    }
+
     /// Sends what `keystroke` means to the program: none when it is text the input method types, else whether it went as Windows' record; `pressed` says that of a held key's press.
     fn send(
         &mut self,

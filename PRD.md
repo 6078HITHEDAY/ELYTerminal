@@ -57,6 +57,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
 - IME: marked text drawn at the cursor; committed text sent to the program.
 - Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen.
+- Click to move: while the shell reads a line, as its OSC 133 marks say, a plain click on that line, past its prompt, moves the shell's cursor there with arrow keys, as Ghostty's `cursor-click-to-move`.
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
 - Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).

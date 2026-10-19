@@ -271,6 +271,12 @@ fn plain(target: &[u8]) -> Vec<u8> {
     link
 }
 
+/// Whether `cell` belongs to a prompt, its link's id carrying a prompt's number.
+pub(super) fn prompted(cell: &Cell) -> bool {
+    cell.hyperlink()
+        .is_some_and(|link| link.id().starts_with(NUMBERED))
+}
+
 /// The number of the prompt `row` shows, as a link's id carries it.
 fn prompt(row: &Row<Cell>) -> Option<u32> {
     row.into_iter().find_map(|cell| {

@@ -149,3 +149,15 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 31. Release
 
 - [x] T57 Release v0.1.6 with T55, T56 and T58: version 0.1.6; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed.
+
+## 32. User feedback after 0.1.6
+
+- [ ] T59 A plain click on the line typed at the shell prompt moves the cursor there, which a user asked for after 0.1.6, as Ghostty's `cursor-click-to-move`: while the shell's OSC 133 marks say it reads a line, a click that does not drag sends Left or Right arrows, one per character, to the clicked cell of the cursor's line, soft wraps joined; never on the alternate screen, under mouse tracking, with a selection, or before the prompt's end.
+- [ ] T60 Fallback fonts, which a user asked for after 0.1.6: `font_fallbacks` in the settings, a list of installed families tried in order for a character Font family lacks, CJK among them; Settings › Appearance lists them under Font family, each an Ely `FontPicker` with a remove button, and an Add button; each saves only when gpui loads it.
+- [ ] T61 On Windows the IME's candidate window stays at the cursor, which a user found jumping after 0.1.6: find why it moves, fix the cause, and log what the input handler tells the IME.
+- [ ] T62 Ely's body runs on below the edge she holds, which a user asked for after 0.1.6, where a hop lifted her off the window and left a gap under her collar: her shirt continues down, hidden behind the edge, so a hop shows more of her and never a gap.
+- [ ] T63 A double-click on a session's title renames it, which a user asked for after 0.1.6: the row's title turns into a field, Enter keeps the name, Escape drops it; the name shows in the row, the terminal's header and the window's title over the program's own until renamed again, and an empty name gives the title back to the program; it lives as long as the session.
+
+## 33. Release
+
+- [ ] T64 Release v0.1.7 with T59 to T63: version 0.1.7; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese.

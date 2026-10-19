@@ -1,4 +1,5 @@
 mod boxes;
+mod click;
 mod find;
 pub mod frame;
 mod herdr;

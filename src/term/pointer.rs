@@ -28,6 +28,8 @@ pub struct Pointer {
     pub cell: Size<Pixels>,
     /// The left button is down and drawing a selection.
     selecting: bool,
+    /// A plain press's cell, until it drags off it; its release may move the shell's cursor.
+    click: Option<Cell>,
     /// Buttons whose press went to the program.
     pressed: Vec<Button>,
     /// The cell of the last report; motion inside it sends nothing.
@@ -149,6 +151,8 @@ impl TerminalView {
         if event.button != MouseButton::Left {
             return;
         }
+        let plain = event.click_count == 1 && !event.modifiers.modified();
+        self.pointer.click = plain.then_some(point);
         let pid = self.pty.pid;
         let mut term = self.pty.term.lock();
         match (
@@ -183,6 +187,9 @@ impl TerminalView {
     ) {
         let (cell, point, side) = self.cell_at(event.position);
         if self.pointer.selecting && event.pressed_button == Some(MouseButton::Left) {
+            if self.pointer.click.is_some_and(|click| click != point) {
+                self.pointer.click = None;
+            }
             if let Some(selection) = self.pty.term.lock().selection.as_mut() {
                 log::trace!("terminal {}: the selection runs to {point:?}", self.pty.pid);
                 selection.update(point, side);
@@ -207,6 +214,10 @@ impl TerminalView {
     ) {
         if event.button == MouseButton::Left {
             self.end_selection(cx);
+            let click = self.pointer.click.take();
+            if let Some(click) = click.filter(|_| self.selected().is_none()) {
+                self.click_to_move(click, cx);
+            }
         }
         if let Some(released) = button(event.button) {
             let (cell, ..) = self.cell_at(event.position);
@@ -217,6 +228,7 @@ impl TerminalView {
     /// Ends the mouse's gesture as releases would: a hidden terminal hears none.
     pub fn let_go(&mut self, cx: &mut Context<Self>) {
         self.end_selection(cx);
+        self.pointer.click = None;
         for held in self.pointer.pressed.clone() {
             log::debug!("terminal {}: hidden with {held:?} down", self.pty.pid);
             let cell = self

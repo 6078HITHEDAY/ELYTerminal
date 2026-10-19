@@ -85,6 +85,8 @@ pub struct TerminalView {
     pub(super) ended: Option<i32>,
     /// A command started, as OSC 133 C says, since the last one ended.
     pub(super) ran: bool,
+    /// The shell reads a line: OSC 133 B came, and no A or C since.
+    pub(super) reading: bool,
     /// The system notifications it posted.
     pub(super) notices: Notices,
     /// The program's title; empty while it names none.
@@ -146,6 +148,7 @@ impl TerminalView {
             records: Records::default(),
             ended: None,
             ran: false,
+            reading: false,
             notices: Notices::default(),
             title: String::new(),
             front: true,
@@ -274,11 +277,12 @@ impl TerminalView {
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
                 // A new prompt ends what was working, waiting or idle; done and error stay.
                 PtyEvent::Mark(Mark::Prompt) => {
+                    self.reading = false;
                     self.records.prompt();
                     self.restate(cx);
                 }
-                PtyEvent::Mark(Mark::Output) => self.ran = true,
-                PtyEvent::Mark(_) => {}
+                PtyEvent::Mark(Mark::Output) => (self.ran, self.reading) = (true, false),
+                PtyEvent::Mark(Mark::Input) => self.reading = true,
                 PtyEvent::Status(status) => {
                     self.status(status);
                     self.restate(cx);
