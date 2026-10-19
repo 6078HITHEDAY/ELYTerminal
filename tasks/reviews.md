@@ -284,3 +284,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T58
 
 - No review: the owner asked for it at once, in 0.1.6, without one. Checked by scripts/check.sh (244 tests), Linux tests (251) and clippy, Windows gnu clippy, and under Xorg's dummy screen drags of the thumb through 500 lines, with mouse tracking on as well.
+
+## T57
+
+- No review: the owner asked for 0.1.6 without one. v0.1.6 published at 8a9941b once CI run 1342 passed on macOS, Ubuntu and Windows; its disk image from Release run 1343, notarized, its zip and tarball from their scripts on the owner's PC and its WSL; a first build at 9e185ea, held back for the scrollbar, was replaced on the draft and never published; each file downloaded back anonymously matches its SHA-256 in the notes.
