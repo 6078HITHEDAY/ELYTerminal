@@ -212,7 +212,7 @@ impl SettingsWindow {
                 )
         };
         let rows = families.iter().enumerate().map(|(index, family)| {
-            let picker = FontPicker::new(("font_fallback", index), &self.fallbacks[index])
+            let picker = FontPicker::new(keyed(&self.fallbacks[index]), &self.fallbacks[index])
                 .selected(family.clone())
                 .on_change(pick(&this, index));
             let remove = IconButton::new(("remove_fallback", index), IconName::X).on_click({
@@ -233,7 +233,7 @@ impl SettingsWindow {
         });
         let next = families.len();
         let add = if self.adding {
-            let picker = FontPicker::new(("font_fallback", next), &self.fallbacks[next])
+            let picker = FontPicker::new(keyed(&self.fallbacks[next]), &self.fallbacks[next])
                 .on_change(pick(&this, next));
             let cancel = IconButton::new("cancel_fallback", IconName::X).on_click({
                 let this = this.clone();
@@ -294,6 +294,11 @@ impl SettingsWindow {
                 });
             })
     }
+}
+
+/// A fallback picker's id, its input's: Ely's combobox keeps state by id and listens to the input it met first.
+fn keyed(input: &Entity<TextInput>) -> (&'static str, u64) {
+    ("font_fallback", input.entity_id().as_u64())
 }
 
 /// Saves the family picked at fallback `index`, past the last adds one; a refusal shows the saved family again, the list closed.
