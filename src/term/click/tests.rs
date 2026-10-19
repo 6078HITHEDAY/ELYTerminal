@@ -128,7 +128,7 @@ fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
     );
     let right = term(
         20,
-        &format!("{marked}ls\x1b7\x1b[1;17H\x1b]133;A\x07~/a\x1b]133;B\x07\x1b8"),
+        &format!("{marked}\x1b[1;17H\x1b]133;A\x07~/a\x1b]133;B\x07\x1b[1;3Hls"),
     );
     assert_eq!(
         sent(&right, click(0, 18), false),
@@ -139,9 +139,10 @@ fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
         sent(&right, click(0, 3), false).as_deref(),
         Some("\x1b[<0;4;1M")
     );
+    assert_eq!(sent(&right, click(0, 1), false), None, "on the left prompt");
     let empty = term(
         20,
-        "\x1b7\x1b[1;17H\x1b]133;A;click_events=1\x07~/a\x1b]133;B\x07\x1b8ls",
+        "\x1b[1;17H\x1b]133;A;click_events=1\x07~/a\x1b]133;B\x07\x1b[1;1Hls",
     );
     let left = sent(&empty, click(0, 1), false);
     assert_eq!(left.as_deref(), Some("\x1b[<0;2;1M"), "only a right prompt");
@@ -184,5 +185,71 @@ fn input_reads_the_line_its_prompt_started() {
     assert_eq!(
         Shell::Reading(Click::Relative).reads(),
         Shell::Reading(Click::Relative)
+    );
+}
+
+#[test]
+fn a_prompt_that_prints_nothing_starts_the_input_at_its_first_typed_cell() {
+    let empty = "\x1b]133;A;click_events=1\x07\x1b]133;B\x07";
+    let typed = term(20, &format!("echo hi\r\nhi\r\n{empty}abcdef"));
+    let at = sent(&typed, click(2, 3), false);
+    assert_eq!(at.as_deref(), Some("\x1b[<0;4;3M"), "on the d");
+    let relative = sent(&typed, click(2, 3), true);
+    assert_eq!(
+        relative.as_deref(),
+        Some("\x1b[<0;4;1M"),
+        "from the input's row"
+    );
+    assert_eq!(sent(&typed, click(1, 1), false), None, "output above");
+    assert_eq!(
+        sent(&typed, click(0, 2), false),
+        None,
+        "the line run before"
+    );
+    let moved = term(20, &format!("{empty}abcdef\x1b[6D"));
+    let back = sent(&moved, click(0, 4), false);
+    assert_eq!(
+        back.as_deref(),
+        Some("\x1b[<0;5;1M"),
+        "the cursor at the start"
+    );
+    let blank = term(20, &format!("echo hi\r\n{empty}"));
+    assert_eq!(
+        sent(&blank, click(0, 2), false),
+        None,
+        "nothing typed, nothing after"
+    );
+}
+
+#[test]
+fn a_prompt_drawn_again_after_the_typed_text_keeps_its_line() {
+    let marked = "\x1b]133;A;click_events=1\x07";
+    let right = format!("\x1b[1;17H{marked}RIGHT\x1b]133;B\x07\x1b[1;7H");
+    let repainted = term(24, &format!("{marked}\x1b]133;B\x07abcdef{right}"));
+    let at = sent(&repainted, click(0, 3), false);
+    assert_eq!(
+        at.as_deref(),
+        Some("\x1b[<0;4;1M"),
+        "fish's right prompt again"
+    );
+    assert_eq!(
+        sent(&repainted, click(0, 17), false),
+        None,
+        "on that prompt"
+    );
+    let ran = "\x1b]133;C\x07\x1b]133;D;0\x07";
+    let after = format!("$ \x1b]133;B\x07echo hi{ran}\r\nhi\r\n{marked}\x1b]133;B\x07abcdef");
+    let below = term(20, &format!("{marked}{after}"));
+    assert_eq!(sent(&below, click(1, 1), false), None, "the output between");
+    assert_eq!(
+        sent(&below, click(0, 4), false),
+        None,
+        "the line run before"
+    );
+    let typed = sent(&below, click(2, 2), true);
+    assert_eq!(
+        typed.as_deref(),
+        Some("\x1b[<0;3;1M"),
+        "from the input's own row"
     );
 }

@@ -13,7 +13,7 @@ use gpui::Context;
 use super::{
     marks::Click,
     mouse::Tracking,
-    prompts::{prompted, start},
+    prompts::{Part, part, prompted, start},
     view::TerminalView,
 };
 
@@ -92,37 +92,57 @@ pub fn arrows<T>(term: &Term<T>, click: Point) -> Option<i32> {
     })
 }
 
-/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none on the prompt or before its end.
+/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none on a prompt or before the input.
 pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>> {
     if term.mode().contains(TermMode::ALT_SCREEN) {
         return None;
     }
     let grid = term.grid();
-    let cursor = grid.cursor.point;
-    let first = start(term, cursor.line.0)?;
-    let cell = |line: i32, column: usize| &grid[Line(line)][Column(column)];
-    // The prompt ends at its last cell before the cursor; an empty one, at its first row's start.
-    let end = (first..=cursor.line.0)
-        .flat_map(|line| {
-            let width = if line == cursor.line.0 {
-                cursor.column.0
-            } else {
-                term.columns()
-            };
-            (0..width).map(move |column| (line, column))
-        })
-        .filter(|&(line, column)| prompted(cell(line, column)))
-        .last();
+    let cell = |(line, column): (i32, usize)| &grid[Line(line)][Column(column)];
+    let cursor = (grid.cursor.point.line.0, grid.cursor.point.column.0);
+    // ponytail: scans of the rows on the way; index the terminal's own links if long histories lag.
+    let back = (grid.topmost_line().0..=grid.bottommost_line().0)
+        .rev()
+        .flat_map(|line| (0..term.columns()).rev().map(move |column| (line, column)));
+    let end = (back.clone())
+        .filter(|&at| at < cursor)
+        .find(|&at| prompted(cell(at)));
+    // The newest line typed, its first cell; a shell drawing its prompts again keeps its number.
+    let mut typed = back.filter_map(|at| match part(cell(at)) {
+        Some(Part::Input(line)) => Some((at, line)),
+        _ => None,
+    });
+    let input = typed.next().map(|(last, line)| {
+        let first =
+            (typed.take_while(|&(_, other)| other == line).last()).map_or(last, |(first, _)| first);
+        (first, line)
+    });
+    // An older line typed between a prompt and the input leaves that prompt behind.
+    let older = |end: (i32, usize), (input, line): ((i32, usize), u32)| {
+        (end.0..=input.0)
+            .flat_map(|row| {
+                let from = if row == end.0 { end.1 + 1 } else { 0 };
+                let to = if row == input.0 {
+                    input.1
+                } else {
+                    term.columns()
+                };
+                (from..to).map(move |column| (row, column))
+            })
+            .any(|at| matches!(part(cell(at)), Some(Part::Input(other)) if other != line))
+    };
     let at = (click.line.0, click.column.0);
-    let before = end.map_or(at.0 < first, |end| at <= end);
-    if before || prompted(cell(at.0, at.1)) {
+    // Input starts past the prompt's last cell before the cursor, or at its first typed cell where no prompt of its own came before it.
+    let (before, first) = match (end, input) {
+        (Some(end), Some(typed)) if typed.0 > end && older(end, typed) => (at < typed.0, typed.0.0),
+        (Some(end), _) => (at <= end, start(term, end.0)?),
+        (None, Some((input, _))) => (at < input, input.0),
+        (None, None) => return None,
+    };
+    if before || prompted(cell(at)) {
         return None;
     }
-    let row = if relative {
-        click.line.0 - first
-    } else {
-        click.line.0
-    } + 1;
+    let row = if relative { at.0 - first } else { at.0 } + 1;
     if row < 1 {
         return None;
     }
