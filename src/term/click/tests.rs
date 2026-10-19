@@ -139,6 +139,17 @@ fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
         sent(&right, click(0, 3), false).as_deref(),
         Some("\x1b[<0;4;1M")
     );
+    let empty = term(
+        20,
+        "\x1b7\x1b[1;17H\x1b]133;A;click_events=1\x07~/a\x1b]133;B\x07\x1b8ls",
+    );
+    let left = sent(&empty, click(0, 1), false);
+    assert_eq!(left.as_deref(), Some("\x1b[<0;2;1M"), "only a right prompt");
+    assert_eq!(
+        sent(&empty, click(0, 17), false),
+        None,
+        "on that right prompt"
+    );
     let two = term(
         20,
         "\x1b]133;A;click_events=2\x07~/src\r\n> \x1b]133;B\x07ls",

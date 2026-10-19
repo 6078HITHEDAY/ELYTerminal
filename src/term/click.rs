@@ -101,7 +101,7 @@ pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>>
     let cursor = grid.cursor.point;
     let first = start(term, cursor.line.0)?;
     let cell = |line: i32, column: usize| &grid[Line(line)][Column(column)];
-    // The prompt ends at its last cell before the cursor.
+    // The prompt ends at its last cell before the cursor; an empty one, at its first row's start.
     let end = (first..=cursor.line.0)
         .flat_map(|line| {
             let width = if line == cursor.line.0 {
@@ -112,10 +112,10 @@ pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>>
             (0..width).map(move |column| (line, column))
         })
         .filter(|&(line, column)| prompted(cell(line, column)))
-        .last()
-        .expect("a prompt's first row holds its cells");
+        .last();
     let at = (click.line.0, click.column.0);
-    if at <= end || prompted(cell(at.0, at.1)) {
+    let before = end.map_or(at.0 < first, |end| at <= end);
+    if before || prompted(cell(at.0, at.1)) {
         return None;
     }
     let row = if relative {
