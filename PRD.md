@@ -118,6 +118,8 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Option as Alt: off, left, right, both (macOS only).
   - Copy on select.
   - Ely: a switch.
+  - Check for updates automatically: a switch, on by default, which checks at start and once a day.
+  - Updates: what the last check found, and Check now; a newer release brings Download, which opens its page, and one an automatic check finds posts a notification.
   - Shortcuts: every shortcut, as this platform's keys, with a search.
 
 ## 11. Background blur

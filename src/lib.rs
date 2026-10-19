@@ -12,4 +12,5 @@ mod testlog;
 #[cfg(all(test, target_os = "linux"))]
 mod testx11;
 pub mod themes;
+pub mod updates;
 pub mod workspace;

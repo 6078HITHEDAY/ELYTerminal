@@ -13,7 +13,7 @@ use crate::{
     blur, menus,
     settings::{self, SettingsStore},
     term::{ICONS, Launch, MONO, config, input, shell::ShellIntegration, spawn},
-    themes,
+    themes, updates,
     workspace::{self, TITLE, Workspace},
 };
 
@@ -45,15 +45,19 @@ pub fn start(cx: &mut App) -> anyhow::Result<()> {
         );
     }
     SettingsStore::init(cx)?;
+    updates::start(cx);
     ShellIntegration::init(cx)?;
     input::bind_keys(cx);
     workspace::bind_keys(cx);
     settings::window::bind_keys(cx);
     menus::init(cx);
     cx.set_app_identity(APP_ID, TITLE);
-    // A press on a notification goes to the window whose session posted it.
+    // A press on a notification goes to the window whose session posted it, or to a newer release's page.
     cx.on_system_notification_response(|response, cx| {
         let tag = response.tag;
+        if updates::pressed(&tag, cx) {
+            return;
+        }
         let pressed = cx
             .windows()
             .into_iter()

@@ -17,7 +17,7 @@ use gpui::{
 };
 
 use super::{Settings, SettingsStore};
-use crate::{app::APP_ID, menus, term::BLINK};
+use crate::{app::APP_ID, menus, term::BLINK, updates::Updates};
 
 mod appearance;
 mod terminal;
@@ -100,6 +100,7 @@ pub struct SettingsWindow {
     lit: bool,
     _typed: Subscription,
     _settings: Subscription,
+    _updates: Subscription,
     _blink: Task<()>,
 }
 
@@ -133,6 +134,7 @@ impl SettingsWindow {
             lit: true,
             _typed: typed,
             _settings: cx.observe_global::<SettingsStore>(|_, cx| cx.notify()),
+            _updates: cx.observe_global::<Updates>(|_, cx| cx.notify()),
             _blink: Self::blink(cx),
         }
     }

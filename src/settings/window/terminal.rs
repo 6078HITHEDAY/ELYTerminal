@@ -1,7 +1,7 @@
 use ely_gpui_component::{
-    buttons::SegmentedControl,
+    buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
-    forms::{Copy, NumberInput, Paste, PathInput, SelectAll},
+    forms::{Copy, NumberInput, Paste, PathInput, SelectAll, Switch},
     primitives::Severity,
     settings::{KeyboardShortcutsList, SettingsRow, SettingsSection, Shortcut},
     theme::{ActiveTheme, ControlSize},
@@ -15,6 +15,7 @@ use crate::{
     menus::{Bigger, Minimize, Quit, ResetSize, Smaller},
     settings::{OptionAsAlt, SCROLLBACK, SettingsStore, StartIn},
     term::input::{self, Find, NextPrompt, PreviousPrompt},
+    updates::{self, Updates, VERSION},
     workspace::{
         self, CloseSession, LastSession, NewSession, NextSession, PreviousSession, SelectSession,
         TogglePanel, ToggleSessions,
@@ -42,7 +43,7 @@ const PLACES: [&str; 8] = [
 ];
 
 impl SettingsWindow {
-    /// Shell, start in, scrollback, Option as Alt on macOS and copy on select, then the shortcuts.
+    /// Shell, start in, scrollback, Option as Alt on macOS, copy on select, Ely and updates, then the shortcuts.
     pub(super) fn terminal(&self, cx: &Context<Self>) -> Div {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
@@ -106,11 +107,68 @@ impl SettingsWindow {
                 SettingsRow::new("Ely")
                     .description("Peeks over the window, her face as your sessions are")
                     .control(ely),
-            );
+            )
+            .row(
+                SettingsRow::new("Check for updates automatically")
+                    .description("At start and once a day")
+                    .control(auto_check(&this, settings.check_updates)),
+            )
+            .row(updates_row(cx));
         let keys = SettingsSection::new("Shortcuts")
             .row(KeyboardShortcutsList::new(shortcuts(cx), &self.search));
         div().flex().flex_col().gap_6().child(section).child(keys)
     }
+}
+
+/// The switch for automatic checks; turning it on checks at once.
+fn auto_check(this: &Entity<SettingsWindow>, on: bool) -> Switch {
+    let this = this.clone();
+    Switch::new("check_updates", on).on_change(move |on, _, cx| {
+        let change = format!("check_updates is {on}");
+        if set(&this, change, cx, |settings| settings.check_updates = on) && on {
+            updates::check(false, cx);
+        }
+    })
+}
+
+/// What the last check found, a button that checks now, and one that opens a newer release's page.
+fn updates_row(cx: &App) -> SettingsRow {
+    let found = cx.global::<Updates>();
+    let status: SharedString = match found {
+        Updates::Unchecked => format!("ELYTerminal {VERSION}").into(),
+        Updates::Checking => "Checking for a newer release…".into(),
+        Updates::Latest => format!("ELYTerminal {VERSION} is the latest").into(),
+        Updates::Newer { version, .. } => {
+            format!("ELYTerminal {version} is out; this is {VERSION}").into()
+        }
+        Updates::Failed(why) => format!("The check failed: {why}").into(),
+    };
+    let page = match found {
+        Updates::Newer { page, .. } => Some(page.clone()),
+        _ => None,
+    };
+    let check = Button::new("check-updates", "Check now")
+        .size(ControlSize::Sm)
+        .loading(*found == Updates::Checking)
+        .on_click(|_, _, cx| updates::check(false, cx));
+    let open = page.map(|page| {
+        Button::new("open-update", "Download")
+            .primary()
+            .size(ControlSize::Sm)
+            .on_click(move |_, _, cx| {
+                log::info!("updates: Settings opens {page}");
+                cx.open_url(&page);
+            })
+    });
+    let control = div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .children(open)
+        .child(check);
+    SettingsRow::new("Updates")
+        .description(status)
+        .control(control)
 }
 
 /// Where new sessions start, as the settings keep it.

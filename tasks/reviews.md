@@ -276,3 +276,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T55
 
 - No review: the owner asked for 0.1.6 without one. Checked by scripts/check.sh (240 tests), Linux tests (247) and clippy, Windows gnu clippy, an xdotool drag under Xorg, a drag under Sway nested in Xorg, and the owner's own drags on macOS.
+
+## T56
+
+- No review: the owner asked for 0.1.6 without one. Checked by scripts/check.sh (243 tests), Linux tests (250) and clippy, Windows gnu clippy, and under Xorg's dummy screen the start's check, Check now, the switch, and a build named 0.1.4 that found 0.1.5 out and opened its page.

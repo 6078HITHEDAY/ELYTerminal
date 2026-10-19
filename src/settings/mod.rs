@@ -76,6 +76,8 @@ pub struct Settings {
     pub ely: bool,
     /// How far in from the pane's left edge she stands, in points, as a drag left her.
     pub ely_left: f32,
+    /// A check for a newer release at start and once a day.
+    pub check_updates: bool,
     pub show_sessions: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
@@ -109,6 +111,7 @@ impl Default for Settings {
             copy_on_select: false,
             ely: true,
             ely_left: 140.0,
+            check_updates: true,
             show_sessions: true,
             show_panel: true,
             panel: PanelTab::Git,
