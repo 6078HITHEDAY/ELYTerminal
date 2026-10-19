@@ -74,6 +74,21 @@ fn a_change_of_mood_or_a_press_eases_her_from_where_she_is_though_the_act_stays(
 }
 
 #[test]
+fn a_press_on_her_while_she_dozes_wakes_her() {
+    let start = Instant::now();
+    let at = |secs: u64| start + Duration::from_secs(secs);
+    let mut pet = ely(Mood::Calm, start);
+    assert_eq!(pet.pose(at(400)).act, Act::Doze);
+    pet.press(at(400));
+    assert_eq!(pet.pose(at(402)).act, Act::Calm, "awake");
+    assert_eq!(
+        pet.pose(at(701)).act,
+        Act::Doze,
+        "five calm minutes on, asleep again"
+    );
+}
+
+#[test]
 fn she_stands_on_the_top_edge_while_her_box_fits_above_it() {
     assert_eq!(edge(HEAD + ROOM), Edge::Top, "just room for her");
     assert_eq!(edge(400.0), Edge::Top);
