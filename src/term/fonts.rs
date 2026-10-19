@@ -1,7 +1,8 @@
 //! The terminal's font, cell and metrics.
 
 use gpui::{
-    Font, FontFeatures, FontId, FontStyle, FontWeight, Pixels, TextSystem, Window, px, size,
+    Font, FontFallbacks, FontFeatures, FontId, FontStyle, FontWeight, Pixels, TextSystem, Window,
+    px, size,
 };
 
 use super::{ink::Ink, paint::Look};
@@ -19,7 +20,7 @@ pub fn load_font(font: &Font, system: &TextSystem) -> anyhow::Result<FontId> {
     let loaded = system.get_font_for_id(id);
     anyhow::ensure!(
         loaded.is_some_and(|loaded| loaded.family == font.family),
-        "font_family is {:?}, which the terminal cannot load",
+        "the terminal cannot load {:?}",
         font.family
     );
     Ok(id)
@@ -39,7 +40,8 @@ pub(super) fn look(
         } else {
             FontFeatures::disable_ligatures()
         },
-        fallbacks: None,
+        fallbacks: (!settings.font_fallbacks.is_empty())
+            .then(|| FontFallbacks::from_fonts(settings.font_fallbacks.clone())),
         weight: FontWeight::NORMAL,
         style: FontStyle::Normal,
     };

@@ -52,7 +52,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Inside herdr, which passes no OSC 7501 on, herdr's agent states (idle, working, blocked, done) are the session's status records.
 - Grid: colors (named, 256, truecolor, OSC 4/10/11/12), bold, dim, italic, underline (single, double, curly, dotted, dashed), strikethrough, inverse, hidden, wide characters, combining marks.
 - Box drawing (U+2500–U+257F), block elements (U+2580–U+259F) and powerline shapes (U+E0B0–U+E0B7) painted as geometry, so lines and segments join across cells.
-- Fonts: JetBrains Mono by default, any installed font by choice; Nerd Font icons the font lacks come from a bundled Nerd Font.
+- Fonts: JetBrains Mono by default, any installed font by choice, and fallback families tried in order for a character it lacks, a Chinese font after a Latin one among them; Nerd Font icons the font lacks come from a bundled Nerd Font.
 - Cursor: block, bar, underline, hollow block; blinking per setting and per DECSCUSR; hollow when the window is not focused.
 - Keys: xterm encoding with modifiers, application cursor mode, Option as Alt on macOS, the kitty keyboard protocol as the program sets its flags; a key Shift makes a symbol of goes as its own key with Shift, the symbol its alternate, as Ghostty sends it, on macOS and Windows. On Windows keys go as win32-input-mode records while ConPTY asks, as Windows Terminal sends them. Keypad keys type their characters, as Ghostty's do with mode 1035 on by default.
 - IME: marked text drawn at the cursor; committed text sent to the program.
@@ -110,7 +110,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 - Appearance
   - Theme: a grid of previews; on Omarchy, the Omarchy theme first.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
-  - Font family: a list of installed fonts. Font size. Line height. Ligatures.
+  - Font family: a list of installed fonts. Fallbacks: installed families tried in order for a character the family lacks, each added, changed or removed in a list of pickers. Font size. Line height. Ligatures.
   - Cursor: style (block, bar, underline, hollow), blink, with a live preview.
   - Background opacity: a slider. Background blur: a switch.
   - Padding: horizontal and vertical.

@@ -60,6 +60,8 @@ pub struct Settings {
     /// The theme while the system is dark; none keeps `theme`.
     pub dark_theme: Option<String>,
     pub font_family: String,
+    /// Families tried in order for a character Font family lacks.
+    pub font_fallbacks: Vec<String>,
     pub font_size: f32,
     pub line_height: f32,
     pub ligatures: bool,
@@ -97,6 +99,7 @@ impl Default for Settings {
             theme: themes::default_id().into(),
             dark_theme: None,
             font_family: "JetBrains Mono".into(),
+            font_fallbacks: Vec::new(),
             font_size: 13.0,
             line_height: 1.2,
             ligatures: true,
@@ -155,6 +158,10 @@ impl Settings {
             }
         }
         anyhow::ensure!(!self.font_family.is_empty(), "font_family is empty");
+        anyhow::ensure!(
+            !self.font_fallbacks.iter().any(String::is_empty),
+            "font_fallbacks holds an empty family"
+        );
         if !self.shell.is_empty() {
             program_path(&self.shell)?;
         }
@@ -267,6 +274,23 @@ mod tests {
         };
         let error = settings.validate().expect_err("too wide");
         assert_eq!(error.to_string(), "panel_width is 1000, outside 160 to 960");
+    }
+
+    #[test]
+    fn fallback_fonts_are_none_unless_named_and_none_is_empty() {
+        let older: Settings = serde_json::from_str(r#"{"font_family":"Menlo"}"#).expect("parses");
+        assert!(older.font_fallbacks.is_empty(), "a file from before");
+        let named: Settings =
+            serde_json::from_str(r#"{"font_fallbacks":["Kaiti SC","Noto Sans CJK SC"]}"#)
+                .expect("parses");
+        assert_eq!(named.font_fallbacks, ["Kaiti SC", "Noto Sans CJK SC"]);
+        named.validate().expect("named families pass");
+        let empty = Settings {
+            font_fallbacks: vec!["Kaiti SC".into(), String::new()],
+            ..Settings::default()
+        };
+        let error = empty.validate().expect_err("an empty family");
+        assert_eq!(error.to_string(), "font_fallbacks holds an empty family");
     }
 
     #[test]
