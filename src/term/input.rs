@@ -355,6 +355,11 @@ impl EntityInputHandler for TerminalView {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
+        log::debug!(
+            "terminal {}: the input method asks for the caret, {:?}",
+            self.pty.pid,
+            self.caret
+        );
         Some(self.caret)
     }
 
