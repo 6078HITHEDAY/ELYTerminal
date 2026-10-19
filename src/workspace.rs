@@ -29,6 +29,7 @@ use crate::{
 };
 
 mod events;
+mod rename;
 mod widths;
 
 use widths::{Dragged, Side};
@@ -156,6 +157,8 @@ impl Workspace {
         self.sessions.push(Session {
             terminal,
             title: String::new(),
+            name: String::new(),
+            editing: None,
             folder: launch.cwd,
             reports: launch.reports,
             bell: false,
@@ -268,13 +271,9 @@ impl Workspace {
         &self.sessions
     }
 
-    /// The shown session's title, or the app's name while its program names none.
+    /// What the shown session is called.
     fn title(&self) -> &str {
-        self.sessions
-            .get(self.active)
-            .map(|session| session.title.as_str())
-            .filter(|title| !title.is_empty())
-            .unwrap_or(TITLE)
+        self.sessions.get(self.active).map_or(TITLE, Session::named)
     }
 
     fn retitle(&self, window: &mut Window) {

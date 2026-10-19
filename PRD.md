@@ -81,6 +81,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - A list of sessions. Each row: title, then the working directory, home as `~`.
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
+- Rename: a double press on a row's title opens a field in its place; Enter keeps the name, Escape drops it. The name shows in the row, the terminal's header and the window's title over the program's own until renamed again; an empty name gives the title back to the program.
 - A session whose program ends closes its row. The last row closing closes the window.
 - A bell in a hidden session marks its row.
 - A row shows its session's status: working, with its progress where known; waiting on the user, for a permission, a question or a login; done; error; and a mark when the last command failed. Hover shows each record's program, title and message. A hidden session that starts waiting marks its row until it is shown.
