@@ -9,7 +9,7 @@ use objc::{
 };
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
-use super::left;
+use super::{Edge, edge, left};
 
 /// AppKit's `NSWindowAbove`.
 const ABOVE: isize = 1;
@@ -51,17 +51,25 @@ impl Glue {
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge, as far in as its width allows.
-    pub fn place(&self, _: &Window) -> anyhow::Result<()> {
+    /// Stands her on the main window's top edge while her box fits under the top of its screen's visible frame, else on its bottom edge, as far in as its width allows, and gives the edge.
+    pub fn place(&self, _: &Window) -> anyhow::Result<Edge> {
         unsafe {
             let frame: Rect = msg_send![self.main, frame];
+            let screen: *mut Object = msg_send![self.main, screen];
+            anyhow::ensure!(!screen.is_null(), "pet: the main window is on no screen");
+            let visible: Rect = msg_send![screen, visibleFrame];
+            let top = frame.origin.y + frame.height;
+            let edge = edge((visible.origin.y + visible.height - top) as f32);
             let at = Point {
                 x: frame.origin.x + f64::from(left(gpui::px(frame.width as f32))),
-                y: frame.origin.y + frame.height,
+                y: match edge {
+                    Edge::Top => top,
+                    Edge::Bottom => frame.origin.y,
+                },
             };
             let _: () = msg_send![self.pet, setFrameOrigin: at];
+            Ok(edge)
         }
-        Ok(())
     }
 }
 
