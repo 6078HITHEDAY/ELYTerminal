@@ -114,6 +114,31 @@ fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
         "a row below goes too"
     );
     assert_eq!(sent(&typed, click(0, 1), false), None, "before the prompt");
+    assert_eq!(sent(&typed, click(1, 0), false), None, "on the prompt");
+    assert_eq!(
+        sent(&typed, click(1, 1), false),
+        None,
+        "on the prompt's space"
+    );
+    let past = sent(&typed, click(1, 15), false);
+    assert_eq!(
+        past.as_deref(),
+        Some("\x1b[<0;16;2M"),
+        "past the end, the shell decides"
+    );
+    let right = term(
+        20,
+        &format!("{marked}ls\x1b7\x1b[1;17H\x1b]133;A\x07~/a\x1b]133;B\x07\x1b8"),
+    );
+    assert_eq!(
+        sent(&right, click(0, 18), false),
+        None,
+        "a right prompt after the cursor"
+    );
+    assert_eq!(
+        sent(&right, click(0, 3), false).as_deref(),
+        Some("\x1b[<0;4;1M")
+    );
     let two = term(
         20,
         "\x1b]133;A;click_events=2\x07~/src\r\n> \x1b]133;B\x07ls",

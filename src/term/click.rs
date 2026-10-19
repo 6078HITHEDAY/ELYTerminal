@@ -92,16 +92,30 @@ pub fn arrows<T>(term: &Term<T>, click: Point) -> Option<i32> {
     })
 }
 
-/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none before that prompt.
+/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none on the prompt or before its end.
 pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>> {
     if term.mode().contains(TermMode::ALT_SCREEN) {
         return None;
     }
-    let first = start(term, term.grid().cursor.point.line.0)?;
-    let opens = (0..term.columns())
-        .position(|column| prompted(&term.grid()[Line(first)][Column(column)]))
+    let grid = term.grid();
+    let cursor = grid.cursor.point;
+    let first = start(term, cursor.line.0)?;
+    let cell = |line: i32, column: usize| &grid[Line(line)][Column(column)];
+    // The prompt ends at its last cell before the cursor.
+    let end = (first..=cursor.line.0)
+        .flat_map(|line| {
+            let width = if line == cursor.line.0 {
+                cursor.column.0
+            } else {
+                term.columns()
+            };
+            (0..width).map(move |column| (line, column))
+        })
+        .filter(|&(line, column)| prompted(cell(line, column)))
+        .last()
         .expect("a prompt's first row holds its cells");
-    if (click.line.0, click.column.0) < (first, opens) {
+    let at = (click.line.0, click.column.0);
+    if at <= end || prompted(cell(at.0, at.1)) {
         return None;
     }
     let row = if relative {
@@ -129,7 +143,7 @@ impl TerminalView {
         }
         if takes != Click::Arrows {
             let Some(bytes) = press(&self.pty.term.lock(), click, takes == Click::Relative) else {
-                log::debug!("terminal {pid}: a click at {click:?}, before the prompt");
+                log::debug!("terminal {pid}: a click at {click:?}, off the input");
                 return;
             };
             log::debug!("terminal {pid}: a click at {click:?} goes to the shell as {bytes:?}");
