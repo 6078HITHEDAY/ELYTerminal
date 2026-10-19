@@ -262,7 +262,9 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
     let (way, edge) = if wayland {
         ("a Wayland popup", edge)
     } else {
-        ("a window kept there", glue(main, pet, cx)?)
+        let glued = glue(main, pet, cx);
+        let edge = glued.inspect_err(|_| close(pet, "as her window cannot be kept there", cx))?;
+        ("a window kept there", edge)
     };
     let edge = format!("{edge:?}").to_lowercase();
     log::info!(

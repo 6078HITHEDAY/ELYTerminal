@@ -1,4 +1,4 @@
-//! Ely's window on macOS: a child of the main window at its level, so it moves with it and keeps its layer and Space.
+//! Ely's window on macOS: a borderless panel, the main window's child at its level, so it moves with it and keeps its layer and Space.
 
 use anyhow::bail;
 use gpui::Window;
@@ -13,6 +13,8 @@ use super::{Edge, edge, left};
 
 /// AppKit's `NSWindowAbove`.
 const ABOVE: isize = 1;
+/// AppKit's `NSWindowStyleMaskNonactivatingPanel` alone: a panel without the titled frame gpui's popup carries.
+const BORDERLESS_PANEL: usize = 1 << 7;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -36,10 +38,21 @@ pub struct Glue {
 }
 
 impl Glue {
-    /// Makes her window the main window's child, at its level and in its Spaces, with no shadow and never key, so a press leaves the keys with the terminal.
+    /// Makes her window a borderless panel, the main window's child, at its level and in its Spaces, with no shadow and never key, so a press leaves the keys with the terminal.
     pub fn new(pet: &Window, main: &Window) -> anyhow::Result<Self> {
         let (pet, main) = (native(pet)?, native(main)?);
         unsafe {
+            // A titled window gets a frame macOS draws and keeps under the menu bar.
+            let titled: usize = msg_send![pet, styleMask];
+            let _: () = msg_send![pet, setStyleMask: BORDERLESS_PANEL];
+            let mask: usize = msg_send![pet, styleMask];
+            anyhow::ensure!(
+                mask == BORDERLESS_PANEL,
+                "pet: her panel keeps style mask {mask:#x}"
+            );
+            log::info!(
+                "pet: her panel drops its titled frame, style mask {titled:#x} to {mask:#x}"
+            );
             let level: isize = msg_send![main, level];
             let _: () = msg_send![pet, setLevel: level];
             let spaces: usize = msg_send![main, collectionBehavior];
