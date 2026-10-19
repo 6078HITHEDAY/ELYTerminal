@@ -16,6 +16,7 @@ mod pointer;
 mod prompts;
 mod pty;
 mod reports;
+mod scrollbar;
 pub mod shell;
 mod status;
 mod tap;

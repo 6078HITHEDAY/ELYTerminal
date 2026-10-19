@@ -60,6 +60,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
 - Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).
+- A scrollbar over the history, along the terminal's right edge: a drag on its thumb scrolls, whatever the program does with the wheel.
 - Bell: no sound. The session row marks it until the session is shown.
 
 ## 6. Main window and layout

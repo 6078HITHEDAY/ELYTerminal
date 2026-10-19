@@ -280,3 +280,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T56
 
 - No review: the owner asked for 0.1.6 without one. Checked by scripts/check.sh (243 tests), Linux tests (250) and clippy, Windows gnu clippy, and under Xorg's dummy screen the start's check, Check now, the switch, and a build named 0.1.4 that found 0.1.5 out and opened its page.
+
+## T58
+
+- No review: the owner asked for it at once, in 0.1.6, without one. Checked by scripts/check.sh (244 tests), Linux tests (251) and clippy, Windows gnu clippy, and under Xorg's dummy screen drags of the thumb through 500 lines, with mouse tracking on as well.

@@ -28,6 +28,7 @@ use super::{
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
     reports::Notices,
+    scrollbar::{self, Span},
     status::{Records, State},
     zoom,
 };
@@ -413,6 +414,7 @@ impl Render for TerminalView {
         });
         let shown = frame(&term, &ink, &lit);
         let blinks = term.cursor_style().blinking;
+        let span = Span::of(&term);
         drop(term);
         let focused = self.focus.is_focused(window) && window.is_window_active();
         self.blinking = focused && blinks;
@@ -480,9 +482,14 @@ impl Render for TerminalView {
                 root.text_color(ink.fg).child(format!("{error:#}"))
             }
         };
-        div().relative().size_full().child(root).children(
-            self.find_box(cx)
-                .map(|found| div().absolute().top_2().right_4().child(found)),
-        )
+        div()
+            .relative()
+            .size_full()
+            .child(root)
+            .children(scrollbar::bar(span, window, cx))
+            .children(
+                self.find_box(cx)
+                    .map(|found| div().absolute().top_2().right_4().child(found)),
+            )
     }
 }
