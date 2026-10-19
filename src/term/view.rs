@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use super::{
+    click::Shell,
     find::Finder,
     frame::frame,
     ink::Ink,
@@ -85,8 +86,8 @@ pub struct TerminalView {
     pub(super) ended: Option<i32>,
     /// A command started, as OSC 133 C says, since the last one ended.
     pub(super) ran: bool,
-    /// The shell reads a line: OSC 133 B came, and no A or C since.
-    pub(super) reading: bool,
+    /// Where the shell stands, as its OSC 133 marks say.
+    pub(super) shell: Shell,
     /// The system notifications it posted.
     pub(super) notices: Notices,
     /// The program's title; empty while it names none.
@@ -148,7 +149,7 @@ impl TerminalView {
             records: Records::default(),
             ended: None,
             ran: false,
-            reading: false,
+            shell: Shell::Busy,
             notices: Notices::default(),
             title: String::new(),
             front: true,
@@ -276,13 +277,13 @@ impl TerminalView {
                 PtyEvent::Win32(on) => self.win32 = on,
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
                 // A new prompt ends what was working, waiting or idle; done and error stay.
-                PtyEvent::Mark(Mark::Prompt) => {
-                    self.reading = false;
+                PtyEvent::Mark(Mark::Prompt(click)) => {
+                    self.shell = Shell::Prompting(click);
                     self.records.prompt();
                     self.restate(cx);
                 }
-                PtyEvent::Mark(Mark::Output) => (self.ran, self.reading) = (true, false),
-                PtyEvent::Mark(Mark::Input) => self.reading = true,
+                PtyEvent::Mark(Mark::Output) => (self.ran, self.shell) = (true, Shell::Busy),
+                PtyEvent::Mark(Mark::Input) => self.shell = self.shell.reads(),
                 PtyEvent::Status(status) => {
                     self.status(status);
                     self.restate(cx);

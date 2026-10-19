@@ -214,9 +214,14 @@ impl TerminalView {
     ) {
         if event.button == MouseButton::Left {
             self.end_selection(cx);
-            let click = self.pointer.click.take();
-            if let Some(click) = click.filter(|_| self.selected().is_none()) {
-                self.click_to_move(click, cx);
+            let (_, point, _) = self.cell_at(event.position);
+            match self.pointer.click.take() {
+                Some(click) if click != point => log::debug!(
+                    "terminal {}: a press at {click:?} let go at {point:?}",
+                    self.pty.pid
+                ),
+                Some(click) if self.selected().is_none() => self.click_to_move(click, cx),
+                _ => {}
             }
         }
         if let Some(released) = button(event.button) {

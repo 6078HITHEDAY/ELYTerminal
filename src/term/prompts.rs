@@ -285,26 +285,32 @@ fn prompt(row: &Row<Cell>) -> Option<u32> {
     })
 }
 
+/// The first row of the nearest prompt at or above `line`, blank rows within it passed.
+pub(super) fn start<T>(term: &Term<T>, line: i32) -> Option<i32> {
+    let first = term.topmost_line().0;
+    let number = |line: i32| prompt(&term.grid()[Line(line)]);
+    // ponytail: a scan of the rows on the way; index prompt rows if long histories lag.
+    let (found, own) = (first..=line)
+        .rev()
+        .find_map(|line| number(line).map(|own| (line, own)))?;
+    let mut start = found;
+    for above in (first..found).rev() {
+        match number(above) {
+            Some(other) if other != own => break,
+            Some(_) => start = above,
+            None => {}
+        }
+    }
+    Some(start)
+}
+
 /// The display offset that puts the prompt before or after the view's top at the top, as Ghostty jumps.
 pub fn jump<T>(term: &Term<T>, up: bool) -> Option<usize> {
     let top = -(term.grid().display_offset() as i32);
     let (first, last) = (term.topmost_line().0, term.bottommost_line().0);
     let number = |line: i32| prompt(&term.grid()[Line(line)]);
-    // ponytail: a scan of the rows on the way; index prompt rows if long histories lag.
     let found = if up {
-        // The nearest prompt above the view's top, then its first row, blank rows within it passed.
-        let (line, own) = (first..top)
-            .rev()
-            .find_map(|line| number(line).map(|own| (line, own)))?;
-        let mut start = line;
-        for above in (first..line).rev() {
-            match number(above) {
-                Some(other) if other != own => break,
-                Some(_) => start = above,
-                None => {}
-            }
-        }
-        start
+        start(term, top - 1)?
     } else {
         // The prompt at or above the view's top may go on below it; the next one starts.
         let here = (first..=top).rev().find_map(number);

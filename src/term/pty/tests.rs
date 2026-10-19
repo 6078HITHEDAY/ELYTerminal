@@ -5,6 +5,7 @@ use alacritty_terminal::{
 use futures::StreamExt;
 
 use super::*;
+use crate::term::marks::Click;
 use crate::term::{
     notify::Ask,
     status::{Record, State},
@@ -115,7 +116,12 @@ fn osc_133_reaches_the_session_as_marks() {
         "printf '\\033]133;A\\007>\\033]133;B\\007\\033]133;C\\033\\\\x\\033]133;D;3\\007'",
         (40, 4),
     );
-    let marks = [Mark::Prompt, Mark::Input, Mark::Output, Mark::Done(Some(3))];
+    let marks = [
+        Mark::Prompt(Click::Arrows),
+        Mark::Input,
+        Mark::Output,
+        Mark::Done(Some(3)),
+    ];
     assert_eq!(ran.marks, marks);
     assert_eq!(ran.text, ">x");
     assert_eq!(ran.prompt, [0], "the prompt's cell, not the output's");

@@ -1,4 +1,4 @@
-//! A click on the line the shell reads moves its cursor there with arrows, as Ghostty's `cursor-click-to-move`.
+//! A click on the line the shell reads moves its cursor there, as Ghostty's `cursor-click-to-move`: arrows, or the press itself where the shell takes clicks.
 
 use alacritty_terminal::{
     grid::Dimensions,
@@ -10,7 +10,34 @@ use alacritty_terminal::{
 };
 use gpui::Context;
 
-use super::{prompts::prompted, view::TerminalView};
+use super::{
+    marks::Click,
+    mouse::Tracking,
+    prompts::{prompted, start},
+    view::TerminalView,
+};
+
+/// Where the shell stands, as its OSC 133 marks say.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shell {
+    /// A command runs, or nothing said otherwise.
+    #[default]
+    Busy,
+    /// Its prompt draws; the line after it takes a click so.
+    Prompting(Click),
+    /// It reads a line, which takes a click so.
+    Reading(Click),
+}
+
+impl Shell {
+    /// The shell after B: it reads the line its prompt started, which takes arrows without one.
+    pub fn reads(self) -> Self {
+        match self {
+            Self::Prompting(click) | Self::Reading(click) => Self::Reading(click),
+            Self::Busy => Self::Reading(Click::Arrows),
+        }
+    }
+}
 
 /// Arrows from the cursor to `click`, right positive; none when `click` lies off the input after the cursor's prompt, soft wraps joined.
 pub fn arrows<T>(term: &Term<T>, click: Point) -> Option<i32> {
@@ -65,13 +92,48 @@ pub fn arrows<T>(term: &Term<T>, click: Point) -> Option<i32> {
     })
 }
 
+/// The left press, SGR, a shell that takes clicks hears for `click`, its row the screen's or counted from its prompt's first, as kitty and Ghostty send it; none before that prompt.
+pub fn press<T>(term: &Term<T>, click: Point, relative: bool) -> Option<Vec<u8>> {
+    if term.mode().contains(TermMode::ALT_SCREEN) {
+        return None;
+    }
+    let first = start(term, term.grid().cursor.point.line.0)?;
+    let opens = (0..term.columns())
+        .position(|column| prompted(&term.grid()[Line(first)][Column(column)]))
+        .expect("a prompt's first row holds its cells");
+    if (click.line.0, click.column.0) < (first, opens) {
+        return None;
+    }
+    let row = if relative {
+        click.line.0 - first
+    } else {
+        click.line.0
+    } + 1;
+    if row < 1 {
+        return None;
+    }
+    Some(format!("\x1b[<0;{};{row}M", click.column.0 + 1).into_bytes())
+}
+
 impl TerminalView {
-    /// Moves the shell's cursor to `click`, a press and release of an arrow per character, while the shell reads a line.
+    /// Moves the shell's cursor to `click` while it reads a line: arrows, each pressed and let go, or the press where the shell takes clicks.
     pub(super) fn click_to_move(&mut self, click: Point, cx: &mut Context<Self>) {
         let pid = self.pty.pid;
-        if !self.reading {
+        let Shell::Reading(takes) = self.shell else {
             log::debug!("terminal {pid}: a click at {click:?}, no line read");
             return;
+        };
+        if self.mouse.tracking != Tracking::Off {
+            log::debug!("terminal {pid}: a click at {click:?}, the program tracks the mouse");
+            return;
+        }
+        if takes != Click::Arrows {
+            let Some(bytes) = press(&self.pty.term.lock(), click, takes == Click::Relative) else {
+                log::debug!("terminal {pid}: a click at {click:?}, before the prompt");
+                return;
+            };
+            log::debug!("terminal {pid}: a click at {click:?} goes to the shell as {bytes:?}");
+            return self.input(bytes, cx);
         }
         let Some(count) = arrows(&self.pty.term.lock(), click) else {
             log::debug!("terminal {pid}: a click at {click:?}, off the input");

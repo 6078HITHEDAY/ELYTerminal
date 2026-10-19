@@ -89,3 +89,64 @@ fn a_prompt_over_two_lines_keeps_its_input_on_the_last() {
     assert_eq!(arrows(&two, click(1, 2)), Some(-4));
     assert_eq!(arrows(&two, click(0, 3)), None, "the prompt's first line");
 }
+
+/// The press `term` sends for a click at `at`, as text.
+fn sent(term: &Term<VoidListener>, at: Point, relative: bool) -> Option<String> {
+    press(term, at, relative).map(|bytes| String::from_utf8(bytes).expect("ASCII"))
+}
+
+#[test]
+fn a_shell_that_takes_clicks_hears_the_press_where_it_landed() {
+    let marked = "\x1b]133;A;click_events=1\x07$ \x1b]133;B\x07";
+    let typed = term(20, &format!("out\r\n{marked}echo hi"));
+    assert_eq!(
+        sent(&typed, click(1, 7), false).as_deref(),
+        Some("\x1b[<0;8;2M")
+    );
+    assert_eq!(
+        sent(&typed, click(1, 7), true).as_deref(),
+        Some("\x1b[<0;8;1M")
+    );
+    let below = sent(&typed, click(2, 3), true);
+    assert_eq!(
+        below.as_deref(),
+        Some("\x1b[<0;4;2M"),
+        "a row below goes too"
+    );
+    assert_eq!(sent(&typed, click(0, 1), false), None, "before the prompt");
+    let two = term(
+        20,
+        "\x1b]133;A;click_events=2\x07~/src\r\n> \x1b]133;B\x07ls",
+    );
+    let relative = sent(&two, click(1, 3), true);
+    assert_eq!(
+        relative.as_deref(),
+        Some("\x1b[<0;4;2M"),
+        "from the prompt's first row"
+    );
+    let full = term(20, &format!("{marked}vim\x1b[?1049h"));
+    assert_eq!(
+        sent(&full, click(0, 3), false),
+        None,
+        "the alternate screen"
+    );
+    let scrolled = term(20, &format!("{marked}a\r\nb\r\nc\r\nd\r\ne"));
+    assert_eq!(
+        sent(&scrolled, click(-1, 0), false),
+        None,
+        "a row in the history"
+    );
+}
+
+#[test]
+fn input_reads_the_line_its_prompt_started() {
+    assert_eq!(Shell::Busy.reads(), Shell::Reading(Click::Arrows));
+    assert_eq!(
+        Shell::Prompting(Click::Absolute).reads(),
+        Shell::Reading(Click::Absolute)
+    );
+    assert_eq!(
+        Shell::Reading(Click::Relative).reads(),
+        Shell::Reading(Click::Relative)
+    );
+}

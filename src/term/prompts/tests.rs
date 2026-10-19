@@ -63,7 +63,7 @@ fn the_rewrite_reads_a_mark_as_the_session_hears_it() {
         "A", "A;k=i", "N", "B", "I", "C;x", "D;1", "D;abc", "D", "", "AB", "L", "P;k=i", "Q", "a",
     ];
     for body in bodies {
-        let heard = marks::read(body.as_bytes()).map(|mark| mark == Mark::Prompt);
+        let heard = marks::read(body.as_bytes()).map(|mark| matches!(mark, Mark::Prompt(_)));
         assert_eq!(mark(body.as_bytes()), heard, "{body}");
     }
 }
