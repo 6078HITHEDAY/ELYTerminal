@@ -129,7 +129,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 ## 11. Background blur
 
 - macOS: gpui's `WindowBackgroundAppearance::Blurred` (NSVisualEffectView).
-- Windows: gpui's `Blurred` (acrylic accent).
+- Windows: gpui's `Blurred` (acrylic accent). On Windows 10, whose DWM drags an acrylic window seconds behind the pointer, the glass clears while the window moves or sizes and blurs again when it rests; Windows 11 keeps its acrylic throughout.
 - Wayland: gpui's `Blurred` speaks `org_kde_kwin_blur`; ELYTerminal adds `ext_background_effect_v1` on the window's surface, which GNOME 51, Plasma 6.7 and Hyprland support. Hyprland honors it only while its own blur is on, which Omarchy 4.0.4 turns off.
 - X11: ELYTerminal sets `_KDE_NET_WM_BLUR_BEHIND_REGION` (CARDINAL, 32) on the window, as Ghostty does; removes it when blur turns off.
 - A compositor with neither protocol shows transparency without blur. The app logs which path it took.
