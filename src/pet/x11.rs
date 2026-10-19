@@ -4,7 +4,10 @@ use anyhow::{Context as _, bail};
 use gpui::{Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use x11rb::{
-    protocol::xproto::{Atom, AtomEnum, ConfigureWindowAux, ConnectionExt as _, StackMode},
+    protocol::{
+        randr::ConnectionExt as _,
+        xproto::{Atom, AtomEnum, ConfigureWindowAux, ConnectionExt as _, StackMode},
+    },
     rust_connection::RustConnection,
 };
 
@@ -33,16 +36,20 @@ impl Glue {
             main,
             workarea,
         };
-        match glue.work_top(glue.frame()?.0)? {
-            Some(top) => log::info!("pet: the work area starts {top} pixels down the screen"),
+        let (root, _) = glue.frame()?;
+        let monitors = glue.monitors(root)?.len();
+        match glue.work_top(root)? {
+            Some(top) => {
+                log::info!("pet: {monitors} monitors; the work area starts {top} pixels down")
+            }
             None => log::info!(
-                "pet: the window manager names no work area; the screen's top bounds her"
+                "pet: {monitors} monitors; the window manager names no work area, so each monitor's top bounds her"
             ),
         }
         Ok(glue)
     }
 
-    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the work area, else on its bottom edge, as far in as its width allows, stacked just above the main window's frame, and gives the edge.
+    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor under her, or of the work area where that lies lower, else on its bottom edge, as far in as its width allows, stacked just above the main window's frame, and gives the edge.
     pub fn place(&self, main: &Window) -> anyhow::Result<Edge> {
         self.put(main.scale_factor(), pane(main))
     }
@@ -55,15 +62,17 @@ impl Glue {
             .reply()
             .context("pet: the main window's place")?;
         let down = |y: Pixels| i32::from(at.dst_y) + (f32::from(y) * scale).round() as i32;
-        let room = down(pane.origin.y) - self.work_top(root)?.unwrap_or(0);
-        let edge = edge(room as f32 / scale);
+        let x = f32::from(pane.origin.x) + left(pane.size.width);
+        let x = i32::from(at.dst_x) + (x * scale).round() as i32;
+        let top = down(pane.origin.y);
+        let usable = usable(&self.monitors(root)?, self.work_top(root)?, (x, top));
+        let edge = edge(usable.map_or(0.0, |usable| (top - usable) as f32 / scale));
         let bottom = down(match edge {
             Edge::Top => pane.origin.y,
             Edge::Bottom => pane.bottom(),
         });
-        let x = f32::from(pane.origin.x) + left(pane.size.width);
         let aux = ConfigureWindowAux::new()
-            .x(i32::from(at.dst_x) + (x * scale).round() as i32)
+            .x(x)
             .y(bottom - ((HEAD + ROOM) * scale).round() as i32)
             .sibling(frame)
             .stack_mode(StackMode::ABOVE);
@@ -72,6 +81,18 @@ impl Glue {
             .check()
             .context("pet: the X server did not move her window")?;
         Ok(edge)
+    }
+
+    /// Each monitor's x, y, width and height on the root, as RandR names them.
+    fn monitors(&self, root: u32) -> anyhow::Result<Vec<[i32; 4]>> {
+        let reply = (self.connection)
+            .randr_get_monitors(root, true)?
+            .reply()
+            .context("pet: the monitors")?;
+        let monitors = reply.monitors.iter();
+        Ok(monitors
+            .map(|m| [m.x.into(), m.y.into(), m.width.into(), m.height.into()])
+            .collect())
     }
 
     /// The top of the work area the window manager names in `_NET_WORKAREA`, its first desktop's, which managers keep alike; none where it names none.
@@ -111,6 +132,14 @@ impl Glue {
     }
 }
 
+/// The top of the room over `(x, y)`: the top of the monitor it lies on, or the work area's top `area` where that lies lower; none off every monitor.
+fn usable(monitors: &[[i32; 4]], area: Option<i32>, (x, y): (i32, i32)) -> Option<i32> {
+    let [_, top, _, _] = monitors.iter().find(|[left, top, width, height]| {
+        (*left..left + width).contains(&x) && (*top..top + height).contains(&y)
+    })?;
+    Some(area.map_or(*top, |area| area.max(*top)))
+}
+
 /// The X window gpui made for `window`.
 fn native(window: &Window) -> anyhow::Result<u32> {
     let handle = HasWindowHandle::window_handle(window)
@@ -134,6 +163,31 @@ mod tests {
 
     use super::*;
     use crate::testx11::Xvfb;
+
+    #[test]
+    fn the_room_above_runs_to_the_top_of_the_monitor_under_her_or_of_the_work_area() {
+        let stacked = [[0, 0, 1280, 800], [0, 800, 1280, 800]];
+        assert_eq!(
+            usable(&stacked, None, (240, 800)),
+            Some(800),
+            "the lower monitor's top"
+        );
+        assert_eq!(
+            usable(&stacked, Some(0), (240, 800)),
+            Some(800),
+            "a work area over both monitors leaves the lower one's top"
+        );
+        assert_eq!(
+            usable(&stacked, Some(32), (240, 300)),
+            Some(32),
+            "a panel atop the upper one"
+        );
+        assert_eq!(
+            usable(&stacked, None, (2000, 300)),
+            None,
+            "off every monitor"
+        );
+    }
 
     #[test]
     fn she_stands_on_an_edge_of_the_pane_just_above_the_frame_and_hides_with_it() {

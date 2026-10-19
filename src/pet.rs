@@ -4,16 +4,22 @@ mod look;
 #[cfg(target_os = "macos")]
 mod macos;
 mod rig;
+#[cfg(test)]
+mod tests;
 #[cfg(windows)]
 mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
 
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use gpui::{
     App, AppContext as _, Bounds, Context, Decorations, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Pixels, Render, Styled, Subscription, Window,
+    MouseButton, ParentElement, Pixels, Point, Render, Styled, Subscription, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas, div,
     point, popup, px, size,
 };
@@ -36,6 +42,8 @@ const HEAD: f32 = 107.4;
 const ROOM: f32 = 16.0;
 /// How far in from the pane's left edge she holds its top edge.
 const LEFT: f32 = 140.0;
+/// How often she checks her Wayland anchor against the main window.
+const CHECK: Duration = Duration::from_millis(500);
 
 /// The pane edge her bottom stands on: the top, or the bottom, inside the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +51,9 @@ enum Edge {
     Top,
     Bottom,
 }
+
+/// The window she shows in, which the settings open and close.
+type Shown = Rc<RefCell<Option<WindowHandle<Pet>>>>;
 
 /// Ely in her window: she moves all the time, her acts follow the sessions' marks, and a press pets her.
 pub struct Pet {
@@ -56,9 +67,9 @@ pub struct Pet {
     act: Act,
     last: Option<Pose>,
     eased: Option<(Pose, Instant)>,
-    /// How far in from the pane's left edge she opened, and the edge she stands on.
-    left: f32,
+    /// The edge she stands on, and on Wayland the anchor her popup opened at, from the pane's top left, which never moves.
     edge: Edge,
+    anchor: Option<Point<Pixels>>,
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
     _watch: Vec<Subscription>,
@@ -66,7 +77,7 @@ pub struct Pet {
 
 /// Shows Ely over `main` while the settings want her.
 pub fn follow(main: WindowHandle<Workspace>, cx: &mut App) {
-    let shown: Rc<RefCell<Option<WindowHandle<Pet>>>> = Rc::default();
+    let shown: Shown = Rc::default();
     let sync = {
         let shown = shown.clone();
         move |cx: &mut App| {
@@ -83,29 +94,17 @@ pub fn follow(main: WindowHandle<Workspace>, cx: &mut App) {
     };
     sync(cx);
     cx.observe_global::<SettingsStore>(sync).detach();
-    // A Wayland popup keeps the place it opened at, so she opens again where a new width puts her.
-    let moved = main.update(cx, |_, window, cx| {
-        cx.observe_window_bounds(window, move |_, window, cx| {
-            let Some(pet) = *shown.borrow() else {
-                return;
-            };
-            let at = (left(pane(window).size.width), wayland_edge(window));
-            if wayland(window) && pet.read(cx).is_ok_and(|pet| (pet.left, pet.edge) != at) {
-                let shown = shown.clone();
-                cx.defer(move |cx| {
-                    close(
-                        pet,
-                        "to stand where the window's new size or state puts her",
-                        cx,
-                    );
-                    *shown.borrow_mut() = open_pet(main, cx);
-                });
+    // gpui hears a change of state alone as no change of bounds, and sends an unseen popup no frames.
+    if main
+        .update(cx, |_, window, _| wayland(window))
+        .is_ok_and(|wayland| wayland)
+    {
+        cx.spawn(async move |cx| {
+            while cx.update(|cx| reanchor(main, &shown, cx)).is_ok() {
+                cx.background_executor().timer(CHECK).await;
             }
         })
-    });
-    match moved {
-        Ok(moved) => moved.detach(),
-        Err(error) => log::error!("pet: the main window's width goes unwatched: {error:#}"),
+        .detach();
     }
 }
 
@@ -150,35 +149,67 @@ fn wayland_edge(window: &Window) -> Edge {
     }
 }
 
+/// Where she stands over a Wayland window: the edge, and her anchor counted from the pane's top left, as gpui's popups count.
+fn wayland_spot(window: &Window) -> (Edge, Point<Pixels>) {
+    let pane = pane(window);
+    let edge = wayland_edge(window);
+    let y = match edge {
+        Edge::Top => px(0.),
+        Edge::Bottom => pane.size.height - px(1.),
+    };
+    (edge, point(px(left(pane.size.width)), y))
+}
+
+/// Opens her again over a Wayland `main` once its size or state moves the anchor her popup opened at, which never moves.
+fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyhow::Result<()> {
+    let spot = main.update(cx, |_, window, _| wayland_spot(window))?;
+    let Some(pet) = *shown.borrow() else {
+        return Ok(());
+    };
+    if pet
+        .read(cx)
+        .is_ok_and(|pet| (pet.edge, pet.anchor) == (spot.0, Some(spot.1)))
+    {
+        return Ok(());
+    }
+    close(
+        pet,
+        "to stand where the window's new size or state puts her",
+        cx,
+    );
+    *shown.borrow_mut() = open_pet(main, cx);
+    Ok(())
+}
+
 /// Opens her window on `main`'s pane: a popup Wayland's compositor places, else a window kept there.
 fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHandle<Pet>> {
-    let (bounds, pane, wayland, edge) = main.update(cx, |_, window, _| {
-        let wayland = wayland(window);
-        let edge = if wayland {
-            wayland_edge(window)
-        } else {
-            Edge::Top
-        };
-        (window.bounds(), pane(window), wayland, edge)
+    let (bounds, pane, wayland, (edge, spot)) = main.update(cx, |_, window, _| {
+        (
+            window.bounds(),
+            pane(window),
+            wayland(window),
+            wayland_spot(window),
+        )
     })?;
     let at = left(pane.size.width);
     let room = size(px(WIDTH), px(HEAD + ROOM));
-    let kind = if wayland {
-        let (y, anchor) = match edge {
-            Edge::Top => (pane.origin.y, popup::PopupAnchor::TopLeft),
-            Edge::Bottom => (pane.bottom() - px(1.), popup::PopupAnchor::BottomLeft),
+    let (edge, kind) = if wayland {
+        let anchor = match edge {
+            Edge::Top => popup::PopupAnchor::TopLeft,
+            Edge::Bottom => popup::PopupAnchor::BottomLeft,
         };
-        WindowKind::AnchoredPopup(popup::PopupOptions {
+        let kind = WindowKind::AnchoredPopup(popup::PopupOptions {
             parent: main.into(),
-            anchor_rect: Bounds::new(point(pane.origin.x + px(at), y), size(px(1.), px(1.))),
+            anchor_rect: Bounds::new(pane.origin + spot, size(px(1.), px(1.))),
             anchor,
             gravity: popup::PopupGravity::TopRight,
             constraint_adjustment: popup::PopupConstraintAdjustment::empty(),
             offset: point(px(0.), px(0.)),
             grab: false,
-        })
+        });
+        (edge, kind)
     } else {
-        WindowKind::PopUp
+        (Edge::Top, WindowKind::PopUp)
     };
     let origin = bounds.origin + pane.origin + point(px(at), -room.height);
     let options = WindowOptions {
@@ -221,8 +252,8 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 act: Act::Calm,
                 last: None,
                 eased: None,
-                left: at,
                 edge,
+                anchor: wayland.then_some(spot),
                 glue: None,
                 _watch: vec![feel],
             }
@@ -383,103 +414,5 @@ impl Render for Pet {
                 cx.notify();
             }),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::{look::Mark, *};
-
-    /// Her, `mood` since `since`, come long before.
-    fn ely(mood: Mood, since: Instant) -> Pet {
-        Pet {
-            rig: Rc::new(Rig::new()),
-            mood,
-            since,
-            shown: since - Duration::from_secs(60),
-            petted: None,
-            act: Act::Calm,
-            last: None,
-            eased: None,
-            left: LEFT,
-            edge: Edge::Top,
-            glue: None,
-            _watch: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn a_change_of_mood_or_a_press_eases_her_from_where_she_is_though_the_act_stays() {
-        let start = Instant::now();
-        let at = |ms: u64| start + Duration::from_millis(ms);
-        // A wait hops her, a press winks, and a program starts working inside the wink.
-        let mut pet = ely(Mood::Waiting, start);
-        pet.press(at(2250));
-        let before = pet.pose(at(2750));
-        pet.feel(Mood::Working, at(2750));
-        let after = pet.pose(at(2751));
-        assert_eq!((before.act, after.act), (Act::Wink, Act::Wink));
-        assert!(
-            (after.lift - before.lift).abs() < 1.0,
-            "no drop: {} then {}",
-            before.lift,
-            after.lift
-        );
-        let marks: Vec<Mark> = after.marks.iter().map(|(mark, _)| *mark).collect();
-        assert!(
-            marks.contains(&Mark::Bang),
-            "the wait's mark fades: {marks:?}"
-        );
-        // An old finish clears mid-glance: calm before and after, her eyes turn back at her pace.
-        let mut pet = ely(Mood::Done, start);
-        let before = pet.pose(at(13_600));
-        pet.feel(Mood::Calm, at(13_600));
-        let after = pet.pose(at(13_601));
-        assert_eq!((before.act, after.act), (Act::Calm, Act::Calm));
-        assert!(
-            before.look.0 < -5.0 && (after.look.0 - before.look.0).abs() < 0.5,
-            "no snap: {:?} then {:?}",
-            before.look,
-            after.look
-        );
-        let later = pet.pose(at(14_000));
-        assert!(
-            pet.eased.is_none() && later.look.0.abs() < 0.5,
-            "eased in by then"
-        );
-        // A second press mid-hop restarts the wink without a drop.
-        let mut pet = ely(Mood::Calm, start);
-        pet.press(at(1000));
-        let before = pet.pose(at(1300));
-        pet.press(at(1300));
-        let after = pet.pose(at(1301));
-        assert!(
-            before.lift > 10.0 && (after.lift - before.lift).abs() < 1.0,
-            "no drop: {} then {}",
-            before.lift,
-            after.lift
-        );
-    }
-
-    #[test]
-    fn she_stands_on_the_top_edge_while_her_box_fits_above_it() {
-        assert_eq!(edge(HEAD + ROOM), Edge::Top, "just room for her");
-        assert_eq!(edge(400.0), Edge::Top);
-        assert_eq!(edge(HEAD + ROOM - 0.5), Edge::Bottom, "half a point short");
-        assert_eq!(edge(0.0), Edge::Bottom, "a window at the work area's top");
-        assert_eq!(edge(-30.0), Edge::Bottom, "a window above it");
-    }
-
-    #[test]
-    fn she_holds_the_edge_of_any_pane() {
-        assert_eq!(left(px(1200.)), LEFT);
-        assert_eq!(left(px(200.)), 200.0 - WIDTH);
-        assert_eq!(
-            left(px(100.)),
-            0.0,
-            "narrower than she is, she stands at its left"
-        );
     }
 }
