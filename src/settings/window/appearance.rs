@@ -217,15 +217,16 @@ impl SettingsWindow {
                 .on_change(pick(&this, index));
             let remove = IconButton::new(("remove_fallback", index), IconName::X).on_click({
                 let (this, family) = (this.clone(), family.clone());
-                move |_, _, cx| {
-                    set(
-                        &this,
-                        format!("font_fallbacks drops {family:?}"),
-                        cx,
-                        |settings| {
-                            settings.font_fallbacks.remove(index);
-                        },
-                    );
+                move |_, window, cx| {
+                    let dropped = format!("font_fallbacks drops {family:?}");
+                    let removed = set(&this, dropped, cx, |settings| {
+                        settings.font_fallbacks.remove(index);
+                    });
+                    // Each input left keeps its own family, and none the dropped one.
+                    if removed {
+                        this.update(cx, |this, _| this.fallbacks.remove(index));
+                        window.blur(cx);
+                    }
                 }
             });
             row(index, picker, remove)
@@ -236,7 +237,10 @@ impl SettingsWindow {
                 .on_change(pick(&this, next));
             let cancel = IconButton::new("cancel_fallback", IconName::X).on_click({
                 let this = this.clone();
-                move |_, _, cx| this.update(cx, |this, cx| this.leave_adding(cx))
+                move |_, window, cx| {
+                    this.update(cx, |this, cx| this.leave_adding(cx));
+                    window.blur(cx);
+                }
             });
             row(next, picker, cancel)
         } else {
