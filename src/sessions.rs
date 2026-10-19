@@ -172,7 +172,7 @@ fn editor(
         .on_key_down(move |event, window, cx| {
             if event.keystroke.key == "escape" {
                 cx.stop_propagation();
-                workspace.update(cx, |this, cx| this.end_rename(id, false, true, window, cx));
+                workspace.update(cx, |this, cx| this.end_rename(id, false, window, cx));
             }
         })
         .child(Input::new(input).size(ControlSize::Sm))

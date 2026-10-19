@@ -26,8 +26,7 @@ impl Workspace {
             &input,
             window,
             move |this, _, event, window, cx| match event {
-                InputEvent::Submit => this.end_rename(id, true, true, window, cx),
-                InputEvent::Blur => this.end_rename(id, true, false, window, cx),
+                InputEvent::Submit | InputEvent::Blur => this.end_rename(id, true, window, cx),
                 InputEvent::Changed | InputEvent::Focus => {}
             },
         );
@@ -37,12 +36,11 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Closes the field renaming the session `id` names, `keep`ing what it holds or not, the shown terminal `focused` again or not.
+    /// Closes the field renaming the session `id` names, `keep`ing what it holds or not; a focus it still holds goes to the shown terminal.
     pub fn end_rename(
         &mut self,
         id: EntityId,
         keep: bool,
-        focused: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -58,6 +56,8 @@ impl Workspace {
             return;
         };
         let pid = session.terminal.read(cx).pid();
+        // A window that goes inactive blurs the field yet keeps its focus there.
+        let held = input.focus_handle(cx).is_focused(window);
         if !keep {
             log::debug!("app: session {pid} keeps its name");
         } else {
@@ -68,7 +68,7 @@ impl Workspace {
                 log::info!("app: session {pid} is named {:?}", session.name);
             }
         }
-        if focused && let Some(shown) = self.sessions.get(self.active) {
+        if held && let Some(shown) = self.sessions.get(self.active) {
             window.focus(&shown.terminal.focus_handle(cx), cx);
         }
         self.retitle(window);
