@@ -1,7 +1,7 @@
 //! Ely's window on X11: gpui's popup, which no window manager places, put on an edge of the main window's pane and just above it.
 
 use anyhow::{Context as _, bail};
-use gpui::{Bounds, Pixels, Window};
+use gpui::{Bounds, Pixels, Window, px};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use x11rb::{
     protocol::{
@@ -49,7 +49,7 @@ impl Glue {
         Ok(glue)
     }
 
-    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor under her, or of the work area where that lies lower, else on its bottom edge, as far in as its width allows, stacked just above the main window's frame, and gives the edge.
+    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor holding most of the pane, or of the work area where that lies lower, else on its bottom edge, as far in as its width allows, stacked just above the main window's frame, and gives the edge.
     pub fn place(&self, main: &Window) -> anyhow::Result<Edge> {
         self.put(main.scale_factor(), pane(main))
     }
@@ -62,17 +62,22 @@ impl Glue {
             .reply()
             .context("pet: the main window's place")?;
         let down = |y: Pixels| i32::from(at.dst_y) + (f32::from(y) * scale).round() as i32;
-        let x = f32::from(pane.origin.x) + left(pane.size.width);
-        let x = i32::from(at.dst_x) + (x * scale).round() as i32;
-        let top = down(pane.origin.y);
-        let usable = usable(&self.monitors(root)?, self.work_top(root)?, (x, top));
+        let across = |x: Pixels| i32::from(at.dst_x) + (f32::from(x) * scale).round() as i32;
+        let (west, top) = (across(pane.origin.x), down(pane.origin.y));
+        let rect = [
+            west,
+            top,
+            across(pane.right()) - west,
+            down(pane.bottom()) - top,
+        ];
+        let usable = usable(&self.monitors(root)?, self.work_top(root)?, rect);
         let edge = edge(usable.map_or(0.0, |usable| (top - usable) as f32 / scale));
         let bottom = down(match edge {
             Edge::Top => pane.origin.y,
             Edge::Bottom => pane.bottom(),
         });
         let aux = ConfigureWindowAux::new()
-            .x(x)
+            .x(across(pane.origin.x + px(left(pane.size.width))))
             .y(bottom - ((HEAD + ROOM) * scale).round() as i32)
             .sibling(frame)
             .stack_mode(StackMode::ABOVE);
@@ -132,11 +137,18 @@ impl Glue {
     }
 }
 
-/// The top of the room over `(x, y)`: the top of the monitor it lies on, or the work area's top `area` where that lies lower; none off every monitor.
-fn usable(monitors: &[[i32; 4]], area: Option<i32>, (x, y): (i32, i32)) -> Option<i32> {
-    let [_, top, _, _] = monitors.iter().find(|[left, top, width, height]| {
-        (*left..left + width).contains(&x) && (*top..top + height).contains(&y)
-    })?;
+/// The top of the room over a pane at `[x, y, width, height]`: the top of the monitor holding most of it, as Windows and macOS pick a window's display, or the work area's top `area` where that lies lower; none off every monitor.
+fn usable(monitors: &[[i32; 4]], area: Option<i32>, pane: [i32; 4]) -> Option<i32> {
+    let shared = |monitor: &&[i32; 4]| {
+        let overlap = |i: usize| {
+            let end = (monitor[i] + monitor[i + 2]).min(pane[i] + pane[i + 2]);
+            i64::from((end - monitor[i].max(pane[i])).max(0))
+        };
+        overlap(0) * overlap(1)
+    };
+    let [_, top, _, _] = (monitors.iter())
+        .filter(|monitor| shared(monitor) > 0)
+        .max_by_key(shared)?;
     Some(area.map_or(*top, |area| area.max(*top)))
 }
 
@@ -165,25 +177,38 @@ mod tests {
     use crate::testx11::Xvfb;
 
     #[test]
-    fn the_room_above_runs_to_the_top_of_the_monitor_under_her_or_of_the_work_area() {
+    fn the_room_above_runs_to_the_top_of_the_monitor_holding_most_of_the_pane_or_of_the_work_area()
+    {
         let stacked = [[0, 0, 1280, 800], [0, 800, 1280, 800]];
+        let low = [100, 800, 900, 600];
         assert_eq!(
-            usable(&stacked, None, (240, 800)),
+            usable(&stacked, None, low),
             Some(800),
-            "the lower monitor's top"
+            "the lower one's top"
         );
         assert_eq!(
-            usable(&stacked, Some(0), (240, 800)),
+            usable(&stacked, Some(0), low),
             Some(800),
             "a work area over both monitors leaves the lower one's top"
         );
         assert_eq!(
-            usable(&stacked, Some(32), (240, 300)),
+            usable(&stacked, Some(32), [100, 300, 900, 400]),
             Some(32),
             "a panel atop the upper one"
         );
         assert_eq!(
-            usable(&stacked, None, (2000, 300)),
+            usable(&stacked, None, [100, 500, 900, 400]),
+            Some(0),
+            "across both, the upper one holds most"
+        );
+        let staggered = [[0, 0, 1280, 1024], [1280, 400, 1280, 800]];
+        assert_eq!(
+            usable(&staggered, Some(0), [1100, 400, 1000, 600]),
+            Some(400),
+            "the right one holds most, though she stands over the left"
+        );
+        assert_eq!(
+            usable(&stacked, None, [2000, 300, 900, 400]),
             None,
             "off every monitor"
         );
