@@ -138,4 +138,4 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 29. Release
 
-- [ ] T54 Release v0.1.5 with T51 to T53: version 0.1.5; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed.
+- [x] T54 Release v0.1.5 with T51 to T53: version 0.1.5; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed.
