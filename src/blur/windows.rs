@@ -31,6 +31,8 @@ static GPUI: AtomicIsize = AtomicIsize::new(0);
 
 /// A window's property while it is blurred, which its moves read.
 const BLURRED: PCWSTR = w!("ElyTerminalBlurred");
+/// A window's property while it moves or sizes, which a change of its blur reads.
+const MOVING: PCWSTR = w!("ElyTerminalMoving");
 
 /// gpui's accents: acrylic for Blurred, a clear gradient for Transparent.
 const ACRYLIC: u32 = 4;
@@ -61,14 +63,20 @@ impl Moves {
         Ok(Some(Self { window }))
     }
 
-    /// Notes whether the window is blurred, as its moves read it.
+    /// Notes whether the window is blurred, as its moves read it; one blurred mid-move stays clear until the move ends.
     pub fn blurred(&self, on: bool) {
-        if on {
-            if unsafe { SetPropW(self.window, BLURRED, 1 as _) } == 0 {
-                log::error!("blur: the window's blurred mark does not set");
-            }
-        } else {
+        if !on {
             unsafe { RemovePropW(self.window, BLURRED) };
+            return;
+        }
+        if unsafe { SetPropW(self.window, BLURRED, 1 as _) } == 0 {
+            log::error!("blur: the window's blurred mark does not set");
+        }
+        if !unsafe { GetPropW(self.window, MOVING) }.is_null() {
+            match accent(self.window, CLEAR) {
+                Ok(()) => log::debug!("blur: blurred mid-move, the window moves clear"),
+                Err(error) => log::error!("{error:#}"),
+            }
         }
     }
 }
@@ -83,22 +91,34 @@ unsafe extern "system" fn moving(
     let gpui: WNDPROC = unsafe { std::mem::transmute(GPUI.load(Ordering::Relaxed)) };
     let blurred = !unsafe { GetPropW(window, BLURRED) }.is_null();
     match message {
-        WM_ENTERSIZEMOVE if blurred => match accent(window, CLEAR) {
-            Ok(()) => log::debug!("blur: the window moves clear"),
-            Err(error) => log::error!("{error:#}"),
-        },
-        WM_EXITSIZEMOVE if blurred => {
-            match accent(window, ACRYLIC) {
-                Ok(()) => log::debug!("blur: the window rests blurred again"),
-                Err(error) => log::error!("{error:#}"),
+        WM_ENTERSIZEMOVE => {
+            if unsafe { SetPropW(window, MOVING, 1 as _) } == 0 {
+                log::error!("blur: the window's moving mark does not set");
             }
-            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
-            if unsafe { SetWindowPos(window, std::ptr::null_mut(), 0, 0, 0, 0, flags) } == 0 {
-                log::error!("blur: DWM hears of no new frame after the move");
+            if blurred {
+                match accent(window, CLEAR) {
+                    Ok(()) => log::debug!("blur: the window moves clear"),
+                    Err(error) => log::error!("{error:#}"),
+                }
+            }
+        }
+        WM_EXITSIZEMOVE => {
+            unsafe { RemovePropW(window, MOVING) };
+            if blurred {
+                match accent(window, ACRYLIC) {
+                    Ok(()) => log::debug!("blur: the window rests blurred again"),
+                    Err(error) => log::error!("{error:#}"),
+                }
+                let flags =
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED;
+                if unsafe { SetWindowPos(window, std::ptr::null_mut(), 0, 0, 0, 0, flags) } == 0 {
+                    log::error!("blur: DWM hears of no new frame after the move");
+                }
             }
         }
         WM_NCDESTROY => {
             unsafe { RemovePropW(window, BLURRED) };
+            unsafe { RemovePropW(window, MOVING) };
         }
         _ => {}
     }
