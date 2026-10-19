@@ -437,3 +437,24 @@ fn an_unknown_shell_starts_without_integration() {
     assert_eq!(launch.program, Some(("/bin/sh".into(), Vec::new())));
     assert!(launch.env.is_empty());
 }
+
+#[test]
+fn each_shell_reads_a_dropped_path_its_own_way() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = folder("quote");
+    for (name, quote) in [
+        ("zsh", Quote::Posix),
+        ("fish", Quote::Posix),
+        ("pwsh", Quote::PowerShell),
+        ("powershell", Quote::PowerShell),
+        ("cmd", Quote::Cmd),
+        ("other", Quote::Posix),
+    ] {
+        let program = dir.join(name);
+        fs::write(&program, "").expect("a program");
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).expect("its mode");
+        let shell = program.to_str().expect("utf-8");
+        let launch = launch(shell, PathBuf::from("/"), &dir).expect("a launch");
+        assert_eq!(launch.quote, quote, "{name}");
+    }
+}

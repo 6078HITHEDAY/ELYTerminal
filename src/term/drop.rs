@@ -7,11 +7,25 @@ use gpui::{Context, ExternalPaths};
 
 use super::view::TerminalView;
 
-/// What a shell reads specially in a path, which Ghostty escapes in one dropped.
-const SPECIAL: &str = "\\ ()[]{}<>\"'`!#$&;|*?";
+/// What a POSIX shell reads specially in a path: Ghostty's list, and zsh's `extendedglob` marks.
+const SPECIAL: &str = "\\ ()[]{}<>\"'`!#$&;|*?^~";
 
-/// The text `paths` type, each followed by a space: escaped for a Unix shell, or quoted when it holds a space, as Windows Terminal quotes it.
-pub fn typed(paths: &[PathBuf], windows: bool) -> anyhow::Result<String> {
+/// PowerShell's single quotes, each one doubled inside a quoted string.
+const SINGLE: [char; 5] = ['\'', '\u{2018}', '\u{2019}', '\u{201a}', '\u{201b}'];
+
+/// How a session's shell reads a path typed into it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Quote {
+    /// sh, bash, zsh, fish: a backslash before each special character.
+    Posix,
+    /// Single quotes, which expand nothing.
+    PowerShell,
+    /// Double quotes, past which cmd still expands `%`.
+    Cmd,
+}
+
+/// The text `paths` type, each followed by a space, as `quote` keeps each one literal.
+pub fn typed(paths: &[PathBuf], quote: Quote) -> anyhow::Result<String> {
     paths
         .iter()
         .map(|path| {
@@ -21,21 +35,34 @@ pub fn typed(paths: &[PathBuf], windows: bool) -> anyhow::Result<String> {
                 !text.chars().any(char::is_control),
                 "{text:?} holds a control character, which would act as typed"
             );
-            Ok(if windows && text.contains(' ') {
-                format!("\"{text}\" ")
-            } else if windows {
-                format!("{text} ")
-            } else {
-                let mut escaped = String::with_capacity(text.len() + 1);
-                for ch in text.chars() {
+            let mut out = String::with_capacity(text.len() + 3);
+            match quote {
+                Quote::Posix => text.chars().for_each(|ch| {
                     if SPECIAL.contains(ch) {
-                        escaped.push('\\');
+                        out.push('\\');
                     }
-                    escaped.push(ch);
+                    out.push(ch);
+                }),
+                Quote::PowerShell => {
+                    out.push('\'');
+                    text.chars().for_each(|ch| {
+                        if SINGLE.contains(&ch) {
+                            out.push(ch);
+                        }
+                        out.push(ch);
+                    });
+                    out.push('\'');
                 }
-                escaped.push(' ');
-                escaped
-            })
+                Quote::Cmd => {
+                    anyhow::ensure!(
+                        !text.contains(['%', '"']),
+                        "{text:?} holds % or \", which cmd reads inside quotes"
+                    );
+                    out = format!("\"{text}\"");
+                }
+            }
+            out.push(' ');
+            Ok(out)
         })
         .collect()
 }
@@ -43,10 +70,14 @@ pub fn typed(paths: &[PathBuf], windows: bool) -> anyhow::Result<String> {
 impl TerminalView {
     /// Types the dropped paths at the cursor as a paste; a path it cannot type stops the drop.
     pub(super) fn drop_paths(&mut self, dropped: &ExternalPaths, cx: &mut Context<Self>) {
-        let paths = dropped.paths();
-        match typed(paths, cfg!(windows)) {
+        let (paths, quote) = (dropped.paths(), self.pty.quote);
+        match typed(paths, quote) {
             Ok(text) => {
-                log::info!("terminal {}: {} paths dropped", self.pty.pid, paths.len());
+                log::info!(
+                    "terminal {}: {} paths dropped, quoted for {quote:?}",
+                    self.pty.pid,
+                    paths.len()
+                );
                 self.paste_text(&text, cx);
             }
             Err(error) => log::error!(
@@ -58,40 +89,4 @@ impl TerminalView {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn paths(all: &[&str]) -> Vec<PathBuf> {
-        all.iter().map(PathBuf::from).collect()
-    }
-
-    #[test]
-    fn a_unix_path_escapes_what_a_shell_reads_specially() {
-        let typed = |all: &[&str]| typed(&paths(all), false).unwrap();
-        assert_eq!(typed(&["/tmp/a.txt"]), "/tmp/a.txt ");
-        assert_eq!(typed(&["/tmp/my file.png"]), "/tmp/my\\ file.png ");
-        assert_eq!(typed(&["/a/it's (1)&$x"]), "/a/it\\'s\\ \\(1\\)\\&\\$x ");
-        assert_eq!(typed(&["/a/中文 b"]), "/a/中文\\ b ");
-        assert_eq!(
-            typed(&["/a", "/b c"]),
-            "/a /b\\ c ",
-            "each followed by a space"
-        );
-    }
-
-    #[test]
-    fn a_windows_path_is_quoted_when_it_holds_a_space() {
-        let typed = |all: &[&str]| typed(&paths(all), true).unwrap();
-        assert_eq!(typed(&["C:\\a.txt"]), "C:\\a.txt ");
-        assert_eq!(
-            typed(&["C:\\My Files\\b.txt", "D:\\c"]),
-            "\"C:\\My Files\\b.txt\" D:\\c "
-        );
-    }
-
-    #[test]
-    fn a_path_with_a_control_character_types_nothing() {
-        let error = typed(&paths(&["/ok", "/tmp/a\nls"]), false).unwrap_err();
-        assert!(error.to_string().contains("control character"), "{error}");
-    }
-}
+mod tests;

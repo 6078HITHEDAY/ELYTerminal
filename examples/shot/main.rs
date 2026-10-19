@@ -5,7 +5,11 @@ fn main() {
     use std::time::Duration;
 
     use ely_gpui_component::Assets;
-    use elyterminal::{app, settings::window::SettingsWindow, term::Launch};
+    use elyterminal::{
+        app,
+        settings::window::SettingsWindow,
+        term::{Launch, Quote},
+    };
     use gpui::AnyWindowHandle;
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
@@ -25,6 +29,7 @@ fn main() {
         cwd: std::env::current_dir().expect("a current folder"),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     gpui_platform::application()
         .with_assets(Assets)

@@ -5,7 +5,7 @@ use alacritty_terminal::{
 use futures::StreamExt;
 
 use super::*;
-use crate::term::marks::Click;
+use crate::term::{drop::Quote, marks::Click};
 use crate::term::{
     notify::Ask,
     status::{Record, State},
@@ -35,6 +35,7 @@ fn run(script: &str, size: (usize, usize)) -> Ran {
         cwd: std::env::temp_dir(),
         env: vec![("ELY".into(), "ok".into())],
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, mut events) =
         spawn(&launch, size, (8, 16), config(&Settings::default())).expect("sh starts");
@@ -241,6 +242,7 @@ fn the_foreground_is_the_program_s_own_group() {
         cwd: std::env::temp_dir(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, _events) =
         spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
@@ -270,6 +272,7 @@ fn close_after_ready(script: &str, reaped: &str) {
         cwd: std::env::temp_dir(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let (pty, mut events) =
         spawn(&launch, (20, 4), (8, 16), config(&Settings::default())).expect("sh starts");
@@ -316,6 +319,7 @@ fn a_missing_folder_stops_the_start() {
         cwd: "/nonexistent/ely".into(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let error = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()))
         .err()
@@ -334,6 +338,7 @@ fn a_folder_that_cannot_be_entered_stops_the_start() {
         cwd: folder.clone(),
         env: Vec::new(),
         reports: false,
+        quote: Quote::Posix,
     };
     let started = spawn(&launch, (20, 4), (8, 16), config(&Settings::default()));
     std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).expect("700");

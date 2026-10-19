@@ -59,7 +59,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 - Mouse: select by character, word (double press) and line (triple press); Shift extends; mouse reporting (X10, normal, button, any; SGR and UTF-8); wheel scrolls back, or reports, or sends arrows on the alternate screen.
 - Click to move: while the shell reads a line, as its OSC 133 marks say, a plain click on that line, past its prompt, moves the shell's cursor there, as Ghostty's `cursor-click-to-move`: a shell that takes clicks, as fish does, hears the click; others get arrow keys.
 - Clipboard: copy, paste (bracketed when asked), copy on select per setting, OSC 52 writes.
-- Drop: files dropped on the terminal type their paths at the cursor, as macOS Terminal does, each escaped for the shell, or quoted on Windows, and followed by a space.
+- Drop: files dropped on the terminal type their paths at the cursor, as macOS Terminal does, each kept literal for the session's shell and followed by a space.
 - Links: OSC 8 and plain URLs; Cmd-press (Ctrl-press off macOS) opens them. Inside herdr, while it takes the mouse, herdr opens them, web links only, as herdr does, whole where its pane wraps them, and underlines them while the key is held; with Shift the terminal opens what it sees.
 - Focus reporting, title (OSC 0/2), scrollback limit per setting, find in scrollback (Ely's `FindWidget`).
 - A scrollbar over the history, along the terminal's right edge: a drag on its thumb scrolls, whatever the program does with the wheel.
