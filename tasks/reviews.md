@@ -312,3 +312,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T61
 
 - No review: the owner closed it once it did not reproduce. On the owner's Windows 11 PC (26H2, 150%), with WeType and powershell.exe, 23 compositions put the candidate box at the caret: three on one line, then one on each of three lines below, fifteen committed and begun again at once, the caret stepping 4 cells each time, and eight under a status line redrawn every 100 ms with the cursor hidden; each caret the IME asked for matched the cursor. Microsoft Pinyin went untested.
+
+## T62
+
+- Round 1, 760f054: PASS. 24 poses rendered by gpui beside the build before, rest, breath, tilts, hops, a press in a hop, typing, a shake, the doze, waking and rising, kept her outline above the shoulders and joined the shirt and hair to the edge in every hop; 3,244,407 poses sampled, head bob, tilt and the rotated hair's corners counted, left the shirt 4.4 and the hair 1.3 units below the edge at her highest, 52.7 units; on macOS 48 snaps at the top and bottom edges and 52 through presses dispatched to her window kept her bottom row opaque; check.sh passed with 263 tests. Windows, X11 and Wayland went by their source.
