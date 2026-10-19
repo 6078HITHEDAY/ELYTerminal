@@ -69,6 +69,20 @@ fn main() {
                             aim = settings.expect("a settings window");
                             capture::front(number(aim, cx)).expect("the window on screen");
                         }
+                        spec if spec.starts_with("drop@") => {
+                            let paths =
+                                std::env::var("SHOT_DROP").expect("SHOT_DROP names the paths");
+                            let event = typing::drop(&spec[5..], &paths).expect("a drop");
+                            // A drag moves over frames before it lands.
+                            for step in event {
+                                aim.update(cx, |_, window, cx| window.dispatch_event(step, cx))
+                                    .expect("the window lives");
+                                cx.background_executor()
+                                    .timer(Duration::from_millis(120))
+                                    .await;
+                            }
+                            log::info!("shot: dropped {paths:?} at {}", &spec[5..]);
+                        }
                         spec => typing::post(spec, number(aim, cx)).expect("a key event"),
                     }
                     if spec.starts_with("to:") {

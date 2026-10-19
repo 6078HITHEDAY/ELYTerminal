@@ -378,6 +378,11 @@ impl TerminalView {
             log::debug!("terminal {}: no text to paste", self.pty.pid);
             return;
         };
+        self.paste_text(&text, cx);
+    }
+
+    /// `text` to the program as a paste, bracketed when it asked.
+    pub(super) fn paste_text(&mut self, text: &str, cx: &mut Context<Self>) {
         let bracketed = self
             .pty
             .term
@@ -390,7 +395,7 @@ impl TerminalView {
             text.chars().count(),
             if bracketed { ", bracketed" } else { "" }
         );
-        self.input(keys::paste(&text, bracketed), cx);
+        self.input(keys::paste(text, bracketed), cx);
     }
 }
 

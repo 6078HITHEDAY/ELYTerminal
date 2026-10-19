@@ -12,20 +12,20 @@ use ely_gpui_component::{
 };
 use futures::StreamExt;
 use gpui::{
-    Bounds, Context, EventEmitter, FocusHandle, Focusable, Font, FontFeatures, FontId, FontStyle,
-    FontWeight, IntoElement, MouseButton, ParentElement, Pixels, Render, Styled, Subscription,
-    Task, TextSystem, Window, div, prelude::*, px, size,
+    Bounds, Context, EventEmitter, ExternalPaths, FocusHandle, Focusable, IntoElement, MouseButton,
+    ParentElement, Pixels, Render, Styled, Subscription, Task, Window, div, prelude::*, px,
 };
 
 use super::{
     click::Shell,
     find::Finder,
+    fonts::look,
     frame::frame,
     ink::Ink,
     input::{self, Find, Held, NextPrompt, PreviousPrompt},
     marks::Mark,
     mouse::MouseMode,
-    paint::{self, Look},
+    paint,
     pointer::Pointer,
     pty::{Events, Pty, PtyEvent, config, fit},
     reports::Notices,
@@ -33,16 +33,7 @@ use super::{
     status::{Records, State},
     zoom,
 };
-use crate::{
-    settings::{Settings, SettingsStore},
-    themes,
-};
-
-/// The bundled Nerd Font that draws icons any font lacks; gpui loads no font without an `m`.
-pub const ICONS: &str = "JetBrainsMono Nerd Font Mono";
-
-/// The bundled code font, the default.
-pub const MONO: &str = "JetBrains Mono";
+use crate::{settings::SettingsStore, themes};
 
 /// How long the cursor shows, then hides, while it blinks.
 pub const BLINK: Duration = Duration::from_millis(600);
@@ -349,65 +340,6 @@ impl TerminalView {
     }
 }
 
-/// `font` as gpui loads it; gpui falls back to another font without a word, and loads none without an `m`.
-pub fn load_font(font: &Font, system: &TextSystem) -> anyhow::Result<FontId> {
-    let id = system.resolve_font(font);
-    let loaded = system.get_font_for_id(id);
-    anyhow::ensure!(
-        loaded.is_some_and(|loaded| loaded.family == font.family),
-        "font_family is {:?}, which the terminal cannot load",
-        font.family
-    );
-    Ok(id)
-}
-
-/// Font, cell and metrics at `points` on this window.
-fn look(settings: &Settings, points: f32, ink: &Ink, window: &Window) -> anyhow::Result<Look> {
-    let font = Font {
-        family: settings.font_family.clone().into(),
-        features: if settings.ligatures {
-            FontFeatures::default()
-        } else {
-            FontFeatures::disable_ligatures()
-        },
-        fallbacks: None,
-        weight: FontWeight::NORMAL,
-        style: FontStyle::Normal,
-    };
-    let text = px(points);
-    let system = window.text_system();
-    let id = load_font(&font, system)?;
-    let advance = system
-        .advance(id, text, 'M')
-        .map_err(|error| anyhow::anyhow!("{} cannot measure M: {error}", settings.font_family))?;
-    let scale = window.scale_factor();
-    let snap = |length: Pixels| px((f32::from(length) * scale).round() / scale);
-    let cell = size(
-        snap(advance.width).max(px(1.)),
-        snap(text * settings.line_height),
-    );
-    let (ascent, descent) = (system.ascent(id, text), system.descent(id, text).abs());
-    let icons = Font {
-        family: ICONS.into(),
-        features: FontFeatures::default(),
-        ..font.clone()
-    };
-    Ok(Look {
-        font_id: id,
-        icons,
-        baseline: (cell.height - ascent - descent) / 2. + ascent,
-        descent,
-        rule: snap((text / 14.).max(px(1.))),
-        size: text,
-        cell,
-        font,
-        cursor: ink.cursor,
-        cursor_text: ink.cursor_text,
-        fg: ink.fg,
-        bg: ink.bg,
-    })
-}
-
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let settings = SettingsStore::get(cx).clone();
@@ -454,6 +386,7 @@ impl Render for TerminalView {
             .on_any_mouse_down(cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::wheel))
+            .on_drop(cx.listener(|view, paths: &ExternalPaths, _, cx| view.drop_paths(paths, cx)))
             .size_full()
             .px(px(settings.padding_x))
             .py(px(settings.padding_y))
