@@ -18,10 +18,10 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext as _, Bounds, Context, Decorations, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Pixels, Point, Render, Styled, Subscription, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, canvas, div,
-    point, popup, px, size,
+    App, AppContext as _, Bounds, Context, Decorations, DispatchPhase, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, Styled, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowHandle, WindowKind, WindowOptions, canvas, div, point, popup, px, size,
 };
 
 #[cfg(target_os = "macos")]
@@ -40,8 +40,6 @@ use crate::{settings::SettingsStore, workspace::Workspace};
 const WIDTH: f32 = 112.0;
 const HEAD: f32 = 107.4;
 const ROOM: f32 = 16.0;
-/// How far in from the pane's left edge she holds its top edge.
-const LEFT: f32 = 140.0;
 /// How often she checks her Wayland anchor against the main window.
 const CHECK: Duration = Duration::from_millis(500);
 
@@ -70,6 +68,10 @@ pub struct Pet {
     /// The edge she stands on, and on Wayland the anchor her popup opened at, from the pane's top left, which never moves.
     edge: Edge,
     anchor: Option<Point<Pixels>>,
+    /// How far in from the pane's left edge she stands, and a drag under way: the pointer's x where it began and where she stood then.
+    at: f32,
+    drag: Option<(f32, f32)>,
+    main: WindowHandle<Workspace>,
     /// What keeps her window on the main window's edge, where the platform does not.
     glue: Option<platform::Glue>,
     _watch: Vec<Subscription>,
@@ -125,9 +127,9 @@ fn close(pet: WindowHandle<Pet>, why: &str, cx: &mut App) {
     }
 }
 
-/// How far in from the pane's left edge she stands on a pane `width` points wide: `LEFT`, or less on a narrow pane, so she holds its edge.
-fn left(width: Pixels) -> f32 {
-    LEFT.min(f32::from(width) - WIDTH).max(0.0)
+/// How far in from the pane's left edge she stands on a pane `width` points wide: `at`, or less on a narrow pane, so she holds its edge.
+fn left(width: Pixels, at: f32) -> f32 {
+    at.min(f32::from(width) - WIDTH).max(0.0)
 }
 
 /// The edge she stands on with `room` points free above the pane, up to the top of the work area of the main window's display.
@@ -150,19 +152,20 @@ fn wayland_edge(window: &Window) -> Edge {
 }
 
 /// Where she stands over a Wayland window: the edge, and her anchor counted from the pane's top left, as gpui's popups count.
-fn wayland_spot(window: &Window) -> (Edge, Point<Pixels>) {
+fn wayland_spot(window: &Window, at: f32) -> (Edge, Point<Pixels>) {
     let pane = pane(window);
     let edge = wayland_edge(window);
     let y = match edge {
         Edge::Top => px(0.),
         Edge::Bottom => pane.size.height - px(1.),
     };
-    (edge, point(px(left(pane.size.width)), y))
+    (edge, point(px(left(pane.size.width, at)), y))
 }
 
 /// Opens her again over a Wayland `main` once its size or state moves the anchor her popup opened at, which never moves.
 fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyhow::Result<()> {
-    let spot = main.update(cx, |_, window, _| wayland_spot(window))?;
+    let at = SettingsStore::get(cx).ely_left;
+    let spot = main.update(cx, |_, window, _| wayland_spot(window, at))?;
     let Some(pet) = *shown.borrow() else {
         return Ok(());
     };
@@ -174,7 +177,7 @@ fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyho
     }
     close(
         pet,
-        "to stand where the window's new size or state puts her",
+        "to stand where the window's size or state, or a drag, puts her",
         cx,
     );
     *shown.borrow_mut() = open_pet(main, cx);
@@ -183,15 +186,16 @@ fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyho
 
 /// Opens her window on `main`'s pane: a popup Wayland's compositor places, else a window kept there.
 fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHandle<Pet>> {
+    let kept = SettingsStore::get(cx).ely_left;
     let (bounds, pane, wayland, (edge, spot)) = main.update(cx, |_, window, _| {
         (
             window.bounds(),
             pane(window),
             wayland(window),
-            wayland_spot(window),
+            wayland_spot(window, kept),
         )
     })?;
-    let at = left(pane.size.width);
+    let at = left(pane.size.width, kept);
     let room = size(px(WIDTH), px(HEAD + ROOM));
     let (edge, kind) = if wayland {
         let anchor = match edge {
@@ -254,6 +258,9 @@ fn show(main: WindowHandle<Workspace>, cx: &mut App) -> anyhow::Result<WindowHan
                 eased: None,
                 edge,
                 anchor: wayland.then_some(spot),
+                at: kept,
+                drag: None,
+                main,
                 glue: None,
                 _watch: vec![feel],
             }
@@ -282,7 +289,7 @@ fn glue(
     main.update(cx, |_, main, cx| {
         pet.update(cx, |pet, window, cx| {
             let glue = platform::Glue::new(window, main)?;
-            pet.edge = glue.place(main)?;
+            pet.edge = glue.place(main, pet.at)?;
             pet.glue = Some(glue);
             pet._watch
                 .push(cx.observe_window_bounds(main, |pet, main, _| pet.place(main)));
@@ -371,7 +378,7 @@ impl Pet {
         let Some(glue) = &self.glue else {
             return;
         };
-        match glue.place(main) {
+        match glue.place(main, self.at) {
             Ok(edge) if edge != self.edge => {
                 let name = format!("{edge:?}").to_lowercase();
                 log::info!("pet: Ely moves to the pane's {name} edge");
@@ -379,6 +386,58 @@ impl Pet {
             }
             Ok(_) => {}
             Err(error) => log::error!("{error:#}"),
+        }
+    }
+
+    /// Takes hold of her for a drag along her edge, the pointer `local` in her window.
+    fn grab(&mut self, local: Pixels, scale: f32) {
+        match self.pointer(local, scale) {
+            Ok(x) => self.drag = Some((x, self.at)),
+            Err(error) => log::error!("{error:#}"),
+        }
+    }
+
+    /// Moves her along her edge after the pointer, inside the pane.
+    fn slide(&mut self, local: Pixels, scale: f32, cx: &mut App) {
+        let Some((from, at)) = self.drag else {
+            return;
+        };
+        let x = match self.pointer(local, scale) {
+            Ok(x) => x,
+            Err(error) => {
+                self.drag = None;
+                return log::error!("{error:#}");
+            }
+        };
+        let main = self.main;
+        let slid = main.update(cx, |_, main, _| {
+            let room = (f32::from(pane(main).size.width) - WIDTH).max(0.0);
+            // Whole points, so the kept place carries no float noise.
+            self.at = (at + x - from).round().clamp(0.0, room.floor());
+            self.place(main);
+        });
+        if let Err(error) = slid {
+            log::debug!("pet: the main window does not read: {error:#}");
+        }
+    }
+
+    /// Lets go of her, the settings keeping where the drag left her, where a Wayland popup then opens again.
+    fn release(&mut self, cx: &mut App) {
+        if self.drag.take().is_none() || SettingsStore::get(cx).ely_left == self.at {
+            return;
+        }
+        let at = self.at;
+        match SettingsStore::update(cx, |settings| settings.ely_left = at) {
+            Ok(()) => log::info!("pet: Ely stands {at} points in from the pane's left edge"),
+            Err(error) => log::error!("pet: where Ely stands is not kept: {error:#}"),
+        }
+    }
+
+    /// The pointer's x in points: on the screen where her glue moves her window, else in her window, which a drag leaves in place.
+    fn pointer(&self, local: Pixels, scale: f32) -> anyhow::Result<f32> {
+        match &self.glue {
+            Some(glue) => glue.pointer(scale),
+            None => Ok(local.into()),
         }
     }
 
@@ -402,17 +461,32 @@ impl Render for Pet {
         // gpui gives a hidden window no frames, so she rests while unseen.
         window.request_animation_frame();
         let rig = self.rig.clone();
+        let this = cx.entity();
         let drawn = canvas(
             |_, _, _| {},
             move |bounds, _, window, cx| {
                 let head = point(bounds.origin.x, bounds.origin.y + px(ROOM));
                 rig.paint(head, &pose, window, cx);
+                // Her window keeps the pointer while the button is held, inside it or not.
+                let held = this.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Bubble && event.dragging() {
+                        let scale = window.scale_factor();
+                        held.update(cx, |pet, cx| pet.slide(event.position.x, scale, cx));
+                    }
+                });
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                        this.update(cx, |pet, cx| pet.release(cx));
+                    }
+                });
             },
         );
         div().size_full().child(drawn.size_full()).on_mouse_down(
             MouseButton::Left,
-            cx.listener(|pet, _, _, cx| {
+            cx.listener(|pet, event: &MouseDownEvent, window, cx| {
                 pet.press(Instant::now());
+                pet.grab(event.position.x, window.scale_factor());
                 cx.notify();
             }),
         )

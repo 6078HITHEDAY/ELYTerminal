@@ -9,14 +9,14 @@ use anyhow::bail;
 use gpui::{Bounds, Pixels, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+    Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect, MonitorFromWindow,
     },
     UI::{
         HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI},
         WindowsAndMessaging::{
-            CallWindowProcW, GWL_STYLE, GWLP_HWNDPARENT, GWLP_WNDPROC, GetWindowInfo,
+            CallWindowProcW, GWL_STYLE, GWLP_HWNDPARENT, GWLP_WNDPROC, GetCursorPos, GetWindowInfo,
             GetWindowLongPtrW, HWND_NOTOPMOST, MA_NOACTIVATE, PostMessageW, SWP_FRAMECHANGED,
             SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
             USER_DEFAULT_SCREEN_DPI, WINDOWINFO, WM_APP, WM_DPICHANGED, WM_MOUSEACTIVATE, WNDPROC,
@@ -77,13 +77,21 @@ impl Glue {
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge while her box fits under the top of its display's work area, else on its bottom edge, as far in as its width allows, and gives the edge.
-    pub fn place(&self, main: &Window) -> anyhow::Result<Edge> {
-        self.put(main.scale_factor(), pane(main))
+    /// Stands her on the main window's top edge while her box fits under the top of its display's work area, else on its bottom edge, `at` in as far as its width allows, and gives the edge.
+    pub fn place(&self, main: &Window, at: f32) -> anyhow::Result<Edge> {
+        self.put(main.scale_factor(), pane(main), at)
     }
 
-    /// Posts her bottom left corner on an edge of `pane` at `scale`, in the main window's points; her window sizes her at the DPI it has when the place lands, as gpui did not when it opened her off the display.
-    fn put(&self, scale: f32, pane: Bounds<Pixels>) -> anyhow::Result<Edge> {
+    /// The pointer's x on the screen, in points at `scale`.
+    pub fn pointer(&self, scale: f32) -> anyhow::Result<f32> {
+        let mut at = POINT::default();
+        let read = unsafe { GetCursorPos(&mut at) };
+        anyhow::ensure!(read != 0, "pet: the pointer's place does not read");
+        Ok(at.x as f32 / scale)
+    }
+
+    /// Posts her bottom left corner on an edge of `pane` at `scale`, `at` points in, in the main window's points; her window sizes her at the DPI it has when the place lands, as gpui did not when it opened her off the display.
+    fn put(&self, scale: f32, pane: Bounds<Pixels>, at: f32) -> anyhow::Result<Edge> {
         let mut main = WINDOWINFO {
             cbSize: size_of::<WINDOWINFO>() as u32,
             ..Default::default()
@@ -97,9 +105,9 @@ impl Glue {
         let monitor = unsafe { MonitorFromWindow(self.main, MONITOR_DEFAULTTONEAREST) };
         let read = unsafe { GetMonitorInfoW(monitor, &mut display) };
         anyhow::ensure!(read != 0, "pet: the main window's display does not read");
-        let (_, top) = stand(main.rcClient, scale, pane, Edge::Top);
+        let (_, top) = stand(main.rcClient, scale, pane, Edge::Top, at);
         let edge = edge((top - display.rcWork.top) as f32 / scale);
-        let corner = stand(main.rcClient, scale, pane, edge);
+        let corner = stand(main.rcClient, scale, pane, edge, at);
         let posted = unsafe { PostMessageW(self.pet, PLACE, pack(corner), 0) };
         anyhow::ensure!(posted != 0, "pet: her place does not post");
         log::debug!("pet: Ely is to stand on {corner:?}, the pane's {edge:?} edge");
@@ -107,13 +115,13 @@ impl Glue {
     }
 }
 
-/// Her bottom left corner on `edge` of `pane` at `scale` over the main window's `client` rect, in pixels.
-fn stand(client: RECT, scale: f32, pane: Bounds<Pixels>, edge: Edge) -> (i32, i32) {
+/// Her bottom left corner on `edge` of `pane`, `at` points in, at `scale` over the main window's `client` rect, in pixels.
+fn stand(client: RECT, scale: f32, pane: Bounds<Pixels>, edge: Edge, at: f32) -> (i32, i32) {
     let y = match edge {
         Edge::Top => pane.origin.y,
         Edge::Bottom => pane.bottom(),
     };
-    let x = f32::from(pane.origin.x) + left(pane.size.width);
+    let x = f32::from(pane.origin.x) + left(pane.size.width, at);
     (
         client.left + (x * scale).round() as i32,
         client.top + (f32::from(y) * scale).round() as i32,

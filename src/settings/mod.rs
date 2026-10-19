@@ -74,6 +74,8 @@ pub struct Settings {
     pub copy_on_select: bool,
     /// Ely peeks over the main window's top edge.
     pub ely: bool,
+    /// How far in from the pane's left edge she stands, in points, as a drag left her.
+    pub ely_left: f32,
     pub show_sessions: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
@@ -106,6 +108,7 @@ impl Default for Settings {
             option_as_alt: OptionAsAlt::Off,
             copy_on_select: false,
             ely: true,
+            ely_left: 140.0,
             show_sessions: true,
             show_panel: true,
             panel: PanelTab::Git,
@@ -124,6 +127,7 @@ pub const PADDING: RangeInclusive<f32> = 0.0..=64.0;
 pub const SCROLLBACK: RangeInclusive<u32> = 0..=100_000;
 pub const COLUMN: RangeInclusive<f32> = 160.0..=960.0;
 pub const WINDOW: RangeInclusive<f32> = 100.0..=16384.0;
+pub const ELY_LEFT: RangeInclusive<f32> = 0.0..=16384.0;
 
 impl Settings {
     /// Every value inside its range, every theme built in; the error names the field.
@@ -138,6 +142,7 @@ impl Settings {
         within("panel_width", self.panel_width, &COLUMN)?;
         within("window_width", self.window_width, &WINDOW)?;
         within("window_height", self.window_height, &WINDOW)?;
+        within("ely_left", self.ely_left, &ELY_LEFT)?;
         for (field, id) in [
             ("theme", Some(&self.theme)),
             ("dark_theme", self.dark_theme.as_ref()),

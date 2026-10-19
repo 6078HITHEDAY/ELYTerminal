@@ -49,20 +49,29 @@ impl Glue {
         Ok(glue)
     }
 
-    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor holding most of the pane, or of the work area where that lies lower, else on its bottom edge, as far in as its width allows, stacked just above the main window's frame, and gives the edge.
-    pub fn place(&self, main: &Window) -> anyhow::Result<Edge> {
-        self.put(main.scale_factor(), pane(main))
+    /// Stands her on the main window's pane, on its top edge while her box fits under the top of the monitor holding most of the pane, or of the work area where that lies lower, else on its bottom edge, `at` in as far as its width allows, stacked just above the main window's frame, and gives the edge.
+    pub fn place(&self, main: &Window, at: f32) -> anyhow::Result<Edge> {
+        self.put(main.scale_factor(), pane(main), at)
+    }
+
+    /// The pointer's x on the screen, in points at `scale`.
+    pub fn pointer(&self, scale: f32) -> anyhow::Result<f32> {
+        let reply = (self.connection)
+            .query_pointer(self.pet)?
+            .reply()
+            .context("pet: the pointer's place")?;
+        Ok(f32::from(reply.root_x) / scale)
     }
 
     /// Places her at `scale` on an edge of `pane`, in the main window's points.
-    fn put(&self, scale: f32, pane: Bounds<Pixels>) -> anyhow::Result<Edge> {
+    fn put(&self, scale: f32, pane: Bounds<Pixels>, at: f32) -> anyhow::Result<Edge> {
         let (root, frame) = self.frame()?;
-        let at = (self.connection)
+        let origin = (self.connection)
             .translate_coordinates(self.main, root, 0, 0)?
             .reply()
             .context("pet: the main window's place")?;
-        let down = |y: Pixels| i32::from(at.dst_y) + (f32::from(y) * scale).round() as i32;
-        let across = |x: Pixels| i32::from(at.dst_x) + (f32::from(x) * scale).round() as i32;
+        let down = |y: Pixels| i32::from(origin.dst_y) + (f32::from(y) * scale).round() as i32;
+        let across = |x: Pixels| i32::from(origin.dst_x) + (f32::from(x) * scale).round() as i32;
         let (west, top) = (across(pane.origin.x), down(pane.origin.y));
         let rect = [
             west,
@@ -77,7 +86,7 @@ impl Glue {
             Edge::Bottom => pane.bottom(),
         });
         let aux = ConfigureWindowAux::new()
-            .x(across(pane.origin.x + px(left(pane.size.width))))
+            .x(across(pane.origin.x + px(left(pane.size.width, at))))
             .y(bottom - ((HEAD + ROOM) * scale).round() as i32)
             .sibling(frame)
             .stack_mode(StackMode::ABOVE);
@@ -269,7 +278,7 @@ mod tests {
             workarea,
         };
         let pane = Bounds::new(point(px(10.), px(10.)), size(px(380.), px(280.)));
-        let roomy = glue.put(2.0, pane).expect("she is placed");
+        let roomy = glue.put(2.0, pane, 140.0).expect("she is placed");
         let check = x11rb::connect(Some(&xvfb.display))
             .expect("the check connects")
             .0;
@@ -280,7 +289,7 @@ mod tests {
             .expect("her place");
         let tall = ((HEAD + ROOM) * 2.0).round() as i32;
         let stands = (
-            100 + ((10.0 + left(px(380.))) * 2.0).round() as i32,
+            100 + ((10.0 + left(px(380.), 140.0)) * 2.0).round() as i32,
             440 - tall,
         );
         assert_eq!(
@@ -322,7 +331,7 @@ mod tests {
             .expect("the request")
             .check()
             .expect("a work area");
-        let cramped = glue.put(2.0, pane).expect("she is placed again");
+        let cramped = glue.put(2.0, pane, 140.0).expect("she is placed again");
         let low = check
             .get_geometry(pet)
             .expect("the request")

@@ -3,7 +3,7 @@
 use anyhow::bail;
 use gpui::Window;
 use objc::{
-    msg_send,
+    class, msg_send,
     runtime::{NO, Object, YES},
     sel, sel_impl,
 };
@@ -64,8 +64,8 @@ impl Glue {
         Ok(Self { pet, main })
     }
 
-    /// Stands her on the main window's top edge while her box fits under the top of its screen's visible frame, else on its bottom edge, as far in as its width allows, and gives the edge.
-    pub fn place(&self, _: &Window) -> anyhow::Result<Edge> {
+    /// Stands her on the main window's top edge while her box fits under the top of its screen's visible frame, else on its bottom edge, `at` in as far as its width allows, and gives the edge.
+    pub fn place(&self, _: &Window, at: f32) -> anyhow::Result<Edge> {
         unsafe {
             let frame: Rect = msg_send![self.main, frame];
             let screen: *mut Object = msg_send![self.main, screen];
@@ -74,7 +74,7 @@ impl Glue {
             let top = frame.origin.y + frame.height;
             let edge = edge((visible.origin.y + visible.height - top) as f32);
             let at = Point {
-                x: frame.origin.x + f64::from(left(gpui::px(frame.width as f32))),
+                x: frame.origin.x + f64::from(left(gpui::px(frame.width as f32), at)),
                 y: match edge {
                     Edge::Top => top,
                     Edge::Bottom => frame.origin.y,
@@ -83,6 +83,12 @@ impl Glue {
             let _: () = msg_send![self.pet, setFrameOrigin: at];
             Ok(edge)
         }
+    }
+
+    /// The pointer's x on the screen, in points.
+    pub fn pointer(&self, _: f32) -> anyhow::Result<f32> {
+        let at: Point = unsafe { msg_send![class!(NSEvent), mouseLocation] };
+        Ok(at.x as f32)
     }
 }
 

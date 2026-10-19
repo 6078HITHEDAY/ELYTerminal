@@ -102,14 +102,14 @@ fn her_bottom_stands_on_either_edge_of_the_pane_whatever_the_two_windows_dpi() {
     let pane = Bounds::new(point(px(10.), px(8.)), size(px(800.), px(600.)));
     for (scale, dpi) in [(1.0, 96), (1.0, 144), (1.5, 96), (2.0, 120)] {
         for (edge, y) in [(Edge::Top, 8.0), (Edge::Bottom, 608.0)] {
-            let her = boxed(stand(client, scale, pane, edge), dpi);
+            let her = boxed(stand(client, scale, pane, edge, 140.0), dpi);
             let own = dpi as f32 / 96.0;
             let own_box = (
                 (WIDTH * own).round() as i32,
                 ((HEAD + ROOM) * own).round() as i32,
             );
             let corner = (
-                100 + ((10.0 + left(px(800.))) * scale).round() as i32,
+                100 + ((10.0 + left(px(800.), 140.0)) * scale).round() as i32,
                 20 + (y * scale).round() as i32,
             );
             assert_eq!(
@@ -272,7 +272,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pa
     let work = work_area(main);
     move_main(main, (work.left + 200, work.top + 400));
     let pane = Bounds::new(point(px(0.), px(0.)), size(px(380.), px(280.)));
-    let roomy = glue.put(1.0, pane).expect("placed");
+    let roomy = glue.put(1.0, pane, 140.0).expect("placed");
     let made = info(pet).rcWindow;
     deliver(pet);
     let (her, under) = (info(pet), info(main));
@@ -297,7 +297,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pa
     let (suggested, taken, stood) = change(display + 48);
     // At the work area's top the main window leaves her no room above it.
     move_main(main, (work.left + 200, work.top));
-    let cramped = glue.put(1.0, pane).expect("placed again");
+    let cramped = glue.put(1.0, pane, 140.0).expect("placed again");
     deliver(pet);
     let (inside, low) = (info(pet).rcWindow, info(main).rcClient);
     unsafe {
@@ -317,7 +317,7 @@ fn the_large_framed_popup_gpui_makes_stands_bare_in_her_box_on_an_edge_of_the_pa
         ((HEAD + ROOM) * own).round() as i32,
     );
     let edge = (
-        under.rcClient.left + left(px(380.)).round() as i32,
+        under.rcClient.left + left(px(380.), 140.0).round() as i32,
         under.rcClient.top,
     );
     let rect = |rect: RECT| (rect.left, rect.top, rect.right, rect.bottom);

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use gpui::WindowId;
+
 use super::{look::Mark, *};
 
 /// Her, `mood` since `since`, come long before.
@@ -15,6 +17,9 @@ fn ely(mood: Mood, since: Instant) -> Pet {
         eased: None,
         edge: Edge::Top,
         anchor: None,
+        at: 140.0,
+        drag: None,
+        main: WindowHandle::new(WindowId::from(1)),
         glue: None,
         _watch: Vec::new(),
     }
@@ -98,11 +103,14 @@ fn she_stands_on_the_top_edge_while_her_box_fits_above_it() {
 }
 
 #[test]
-fn she_holds_the_edge_of_any_pane() {
-    assert_eq!(left(px(1200.)), LEFT);
-    assert_eq!(left(px(200.)), 200.0 - WIDTH);
+fn she_holds_the_edge_of_any_pane_where_a_drag_left_her() {
+    assert_eq!(left(px(1200.), 140.0), 140.0);
+    assert_eq!(left(px(1200.), 900.0), 900.0, "dragged right");
+    assert_eq!(left(px(1200.), 0.0), 0.0, "dragged to its left end");
+    assert_eq!(left(px(600.), 900.0), 600.0 - WIDTH, "a narrower pane");
+    assert_eq!(left(px(200.), 140.0), 200.0 - WIDTH);
     assert_eq!(
-        left(px(100.)),
+        left(px(100.), 140.0),
         0.0,
         "narrower than she is, she stands at its left"
     );
