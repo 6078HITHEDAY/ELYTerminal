@@ -288,3 +288,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T57
 
 - No review: the owner asked for 0.1.6 without one. v0.1.6 published at 8a9941b once CI run 1342 passed on macOS, Ubuntu and Windows; its disk image from Release run 1343, notarized, its zip and tarball from their scripts on the owner's PC and its WSL; a first build at 9e185ea, held back for the scrollbar, was replaced on the draft and never published; each file downloaded back anonymously matches its SHA-256 in the notes.
+
+## T59
+
+- Round 1, 82cfe91: FAIL. fish 4.9 moves a code point per Left, so a counted click put `X` inside `é`; fish's redraw dropped the wrap flag of a long line, so a second click on its next row moved nothing; a press let go in another cell still moved the cursor; a program that turned on mouse tracking while the button was down still got arrows. Fixed in 0c55d41: OSC 133 A's `click_events`, which fish sends on its own, makes the click go to the shell as an SGR press, as kitty and Ghostty send it; the release must land in the press's cell, and the program must track no mouse at the release.
