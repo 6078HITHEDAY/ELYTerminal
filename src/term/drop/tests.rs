@@ -40,14 +40,22 @@ fn a_powershell_path_is_single_quoted_with_its_quotes_doubled() {
 }
 
 #[test]
-fn a_cmd_path_is_double_quoted_and_one_with_a_percent_types_nothing() {
+fn a_cmd_path_is_double_quoted_its_trailing_backslashes_doubled_and_one_cmd_expands_types_nothing()
+{
     let typed = |all: &[&str]| typed_as(Quote::Cmd, all);
     assert_eq!(
         typed(&["C:\\My Files\\a&b^c.txt", "D:\\c"]),
         "\"C:\\My Files\\a&b^c.txt\" \"D:\\c\" "
     );
-    let percent = super::typed(&[PathBuf::from("C:\\%PATH%.txt")], Quote::Cmd);
-    assert!(percent.is_err(), "{percent:?}");
+    assert_eq!(
+        typed(&["C:\\", "D:\\clip.mp4"]),
+        "\"C:\\\\\" \"D:\\clip.mp4\" ",
+        "a root's backslash"
+    );
+    for name in ["C:\\%PATH%.txt", "C:\\!DROP!.txt"] {
+        let refused = super::typed(&[PathBuf::from(name)], Quote::Cmd);
+        assert!(refused.is_err(), "{name}: {refused:?}");
+    }
 }
 
 #[test]

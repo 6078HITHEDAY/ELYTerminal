@@ -20,7 +20,7 @@ pub enum Quote {
     Posix,
     /// Single quotes, which expand nothing.
     PowerShell,
-    /// Double quotes, past which cmd still expands `%`.
+    /// Double quotes, past which cmd still expands `%` and, under `/v:on`, `!`.
     Cmd,
 }
 
@@ -55,10 +55,12 @@ pub fn typed(paths: &[PathBuf], quote: Quote) -> anyhow::Result<String> {
                 }
                 Quote::Cmd => {
                     anyhow::ensure!(
-                        !text.contains(['%', '"']),
-                        "{text:?} holds % or \", which cmd reads inside quotes"
+                        !text.contains(['%', '!', '"']),
+                        "{text:?} holds %, ! or \", which cmd reads inside quotes"
                     );
-                    out = format!("\"{text}\"");
+                    // A program reads a backslash before the closing quote as a quote.
+                    let trailing = text.len() - text.trim_end_matches('\\').len();
+                    out = format!("\"{text}{}\"", "\\".repeat(trailing));
                 }
             }
             out.push(' ');
