@@ -264,3 +264,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T52
 
 - Round 1, 0eb8fc5: PASS. The reviewer ran the two new tests against the parent's look.rs, where after the wink she stayed Doze with Lines eyes, and against the change, where they passed; its probes covered the 299.999 and 300 s edges, a second press counting again, an old press before a new mood, a finish's count, work, waits and errors, a press with no records at all, the zs fading, and 242 poses over three weeks; check.sh passed with 240 tests and Linux with 247. A native click, frame by frame, and five real minutes went unexercised.
+
+## T53
+
+- Round 1, a6c044f: PASS. On macOS 27.2 the reviewer read her panel back as mask 0x80, no shadow, key only if needed, never key, a child of the main window, its frame and content rect alike; her window 112 by 124, inside the bottom edge under the menu bar; the top 32 rows and the outer columns of her picture clear; abc reached cat. A probe that kept setStyleMask: from taking logged 'pet: Ely goes, as her window cannot be kept there' and 'pet: her panel keeps style mask 0x8081', left no child window, and the main window still took abc. check.sh passed with 240 tests. This macOS draws no edge for a titled panel, so the hairline's going awaits the owner's macOS; Windows and Linux rest on the captures supplied.
