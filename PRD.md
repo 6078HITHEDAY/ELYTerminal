@@ -16,11 +16,11 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 ## 2. Foundation
 
 - One binary crate, `elyterminal`, edition 2024, Rust 1.95.
-- Ely from git.zacharyzhang.com by pinned rev. gpui, gpui_platform from crates.io `gpui-pre` at the exact version Ely pins.
+- Ely from github.com/ELY-Open-Source by pinned rev. gpui, gpui_platform from crates.io `gpui-pre` at the exact version Ely pins.
 - `alacritty_terminal` 0.26 for the grid, the parser and the pseudo-terminal, as Ely uses it.
 - Logs through `log` to stderr, `RUST_LOG` sets the level. No log setting in the app.
-- CI on Gitea Actions: macOS builds, tests and lints; Ubuntu and Windows build and test.
-- Repo `ELYTerminal` on git.zacharyzhang.com, private until v0.1.1, public since. No credential in any file or commit.
+- CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test.
+- Repo `ELY-Open-Source/ELYTerminal` on GitHub, public; it lived on git.zacharyzhang.com until v0.1.7. No credential in any file or commit.
 
 ## 3. Settings model and storage
 
@@ -153,7 +153,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
 
 ## 15. Release
 
-- A release on Gitea, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon, signed with Developer ID and notarized), a Windows zip (x86_64) and a Linux tarball (x86_64).
+- A release on GitHub, tagged `vVERSION`, carries three builds: the macOS disk image (Apple silicon, signed with Developer ID and notarized), a Windows zip (x86_64) and a Linux tarball (x86_64).
 - The Windows executable carries the icon. The Linux tarball carries the icon and a desktop entry, and the window names itself after it, `com.zacharyzhang.elyterminal`, as the macOS bundle does.
 - Each build comes from its platform's script: `scripts/mac-app.sh`, `scripts/windows-zip.ps1`, `scripts/linux-tar.sh`. The macOS one runs on the signing runner, through the Release workflow.
 

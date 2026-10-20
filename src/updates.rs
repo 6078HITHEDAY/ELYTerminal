@@ -1,4 +1,4 @@
-//! Checks for a newer release through curl and Gitea's API: at start and once a day while the settings ask, and whenever Settings asks at once.
+//! Checks for a newer release through curl and GitHub's API: at start and once a day while the settings ask, and whenever Settings asks at once.
 
 use std::{
     process::{Command, Stdio},
@@ -12,8 +12,7 @@ use serde::Deserialize;
 use crate::{settings::SettingsStore, workspace::TITLE};
 
 /// The latest published release.
-const LATEST: &str =
-    "https://git.zacharyzhang.com/api/v1/repos/ZacharyZhang-NY/ELYTerminal/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ELYTerminal/releases/latest";
 /// How long an automatic check waits for the next.
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 /// The tag a newer release's notification carries.
@@ -115,7 +114,7 @@ pub fn pressed(tag: &str, cx: &mut App) -> bool {
     true
 }
 
-/// The latest release, which curl fetches from Gitea's API.
+/// The latest release, which curl fetches from GitHub's API.
 fn latest() -> anyhow::Result<Release> {
     let mut command = Command::new("curl");
     #[cfg(windows)]
@@ -198,8 +197,8 @@ mod tests {
     }
 
     #[test]
-    fn gitea_s_release_reads() {
-        let body = r#"{"id":213,"tag_name":"v0.1.5","name":"ELYTerminal 0.1.5","html_url":"https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal/releases/tag/v0.1.5","draft":false,"assets":[]}"#;
+    fn github_s_release_reads() {
+        let body = r#"{"id":213,"tag_name":"v0.1.5","name":"ELYTerminal 0.1.5","html_url":"https://github.com/ELY-Open-Source/ELYTerminal/releases/tag/v0.1.5","draft":false,"assets":[]}"#;
         let release: Release = serde_json::from_str(body).expect("a release");
         assert_eq!(release.tag_name, "v0.1.5");
         assert!(release.html_url.ends_with("/releases/tag/v0.1.5"));

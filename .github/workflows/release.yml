@@ -7,7 +7,9 @@ on:
 jobs:
   macos:
     # The owner's login session, whose keychain holds the Developer ID identity.
-    runs-on: macos-signing
+    runs-on: [self-hosted, macos-signing]
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       # The runner's PATH lacks the host's rustup.
@@ -26,8 +28,7 @@ jobs:
           scripts/mac-app.sh
       - name: Put the disk image on the release
         env:
-          RELEASE_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
-          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(cargo pkgid)
           scripts/release-asset.sh "target/release/ELYTerminal-${version##*[#@]}.dmg"

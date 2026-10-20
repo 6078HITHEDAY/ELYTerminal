@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT"
 description = "A terminal on GPUI and Ely."
-repository = "https://git.zacharyzhang.com/ZacharyZhang-NY/ELYTerminal"
+repository = "https://github.com/ELY-Open-Source/ELYTerminal"
 publish = false
 
 [dependencies]
@@ -13,7 +13,7 @@ alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
 base64 = "0.22"
 dirs = "7"
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components.git", rev = "7f7a715d797d8450eed4f17ae8002b5427d01d28" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "7f7a715d797d8450eed4f17ae8002b5427d01d28" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
