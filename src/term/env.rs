@@ -56,25 +56,28 @@ pub fn fresh() -> HashMap<String, String> {
     for (key, value) in &raw {
         let value = expand(value, &raw, &held);
         if is_path(key) {
-            // The registry lists the folders a fresh logon has; this process may hold others.
-            let mut joined = value;
-            let mut seen: HashSet<String> = joined
-                .split(';')
-                .filter(|entry| !entry.is_empty())
-                .map(|entry| entry.trim_end_matches('\\').to_lowercase())
-                .collect();
+            // A folder once is enough; Windows' own keys list many twice, and cmd.exe reads 8191
+            // characters of PATH at most. The registry's order stands: the machine's first.
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut joined = String::with_capacity(value.len());
+            let mut push = |entry: &str, joined: &mut String| {
+                if seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
+                    if !joined.is_empty() {
+                        joined.push(';');
+                    }
+                    joined.push_str(entry);
+                }
+            };
+            for entry in value.split(';').filter(|entry| !entry.is_empty()) {
+                push(entry, &mut joined);
+            }
             if let Some(previous) = lookup(key, &held) {
                 for entry in previous.split(';').filter(|entry| !entry.is_empty()) {
                     // A `%NAME%` this process was started with is stale, since the registry's expansion replaced it.
                     if entry.contains('%') {
                         continue;
                     }
-                    if seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
-                        if !joined.ends_with(';') {
-                            joined.push(';');
-                        }
-                        joined.push_str(entry);
-                    }
+                    push(entry, &mut joined);
                 }
             }
             env.insert(key.clone(), joined);

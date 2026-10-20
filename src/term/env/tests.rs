@@ -62,4 +62,15 @@ fn a_session_gets_the_registry_path() {
         path.to_lowercase().contains("system32"),
         "the system folders are there: {path}"
     );
+    // cmd.exe reads 8191 characters of PATH at most, so a folder may appear once and no more.
+    assert!(
+        path.len() <= 8191,
+        "PATH is {} characters, past what cmd.exe reads: {path}",
+        path.len()
+    );
+    let mut seen = std::collections::HashSet::new();
+    for entry in path.split(';').filter(|entry| !entry.is_empty()) {
+        let key = entry.trim_end_matches('\\').to_lowercase();
+        assert!(seen.insert(key), "{entry} is listed twice");
+    }
 }
