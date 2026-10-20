@@ -109,6 +109,15 @@ pub fn spawn(
     cell: (u16, u16),
     config: Config,
 ) -> anyhow::Result<(Pty, Events)> {
+    // Windows reads the registry afresh, so a folder added since this process opened still reaches a session.
+    #[cfg(windows)]
+    let mut env = {
+        let mut env = super::env::fresh();
+        env.insert("TERM".to_string(), "xterm-256color".to_string());
+        env.insert("COLORTERM".to_string(), "truecolor".to_string());
+        env
+    };
+    #[cfg(not(windows))]
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
