@@ -1,10 +1,4 @@
-//! Windows gives a new session the environment the registry holds now, not the one this process
-//! started with, as Windows Terminal's `compatibility.reloadEnvironmentVariables` does: a folder
-//! added to `PATH` after ELYTerminal opened reaches the next session, and `%SCOOP_PATH%` is
-//! expanded rather than passed as text.
-//!
-//! A path variable takes the registry's value, since that is the fresh one, then what this process
-//! holds that it lacks, so a folder the app was started with survives without repeating.
+//! Windows gives a new session the environment the registry holds now, not the one this process started with, as Windows Terminal's `compatibility.reloadEnvironmentVariables` does: a folder added to `PATH` after ELYTerminal opened reaches the next session, and `%SCOOP_PATH%` is expanded rather than passed as text.
 
 use std::collections::{HashMap, HashSet};
 
@@ -19,71 +13,94 @@ const MACHINE: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Envi
 const USER: &str = "Environment";
 const VOLATILE: &str = "Volatile Environment";
 
+/// The most a Windows environment block holds, in characters.
+const BLOCK_LIMIT: usize = 32_767;
+
 /// The environment a session starts with: this process's, brought up to date from the registry.
 pub fn fresh() -> HashMap<String, String> {
-    let held: HashMap<String, String> = std::env::vars_os()
-        .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
-        .collect();
-    let mut env = held.clone();
-    let mut raw: HashMap<String, String> = HashMap::new();
+    let held = held();
+    let mut raw: Vec<(String, String)> = Vec::new();
     for (root, path) in [
         (HKEY_LOCAL_MACHINE, MACHINE),
         (HKEY_CURRENT_USER, USER),
         (HKEY_CURRENT_USER, VOLATILE),
     ] {
         match read(root, path) {
-            // A path variable joins what the earlier key listed, as Windows Terminal's `concat_var` does.
-            Ok(found) => {
-                for (key, value) in found {
-                    match raw.get_mut(&key) {
-                        Some(joined) if is_path(&key) => {
-                            if !joined.ends_with(';') {
-                                joined.push(';');
-                            }
-                            joined.push_str(&value);
-                        }
-                        _ => {
-                            raw.insert(key, value);
-                        }
-                    }
-                }
-            }
+            Ok(found) => raw = join(raw, found),
             Err(error) => {
                 log::error!("pty: cannot read {path}, whose variables stay as they were: {error}")
             }
         }
     }
-    for (key, value) in &raw {
-        let value = expand(value, &raw, &held);
-        if is_path(key) {
-            // A folder once is enough; Windows' own keys list many twice, and cmd.exe reads 8191
-            // characters of PATH at most. The registry's order stands: the machine's first.
-            let mut seen: HashSet<String> = HashSet::new();
-            let mut joined = String::with_capacity(value.len());
-            let mut push = |entry: &str, joined: &mut String| {
-                if seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
-                    if !joined.is_empty() {
-                        joined.push(';');
-                    }
-                    joined.push_str(entry);
-                }
-            };
-            for entry in value.split(';').filter(|entry| !entry.is_empty()) {
-                push(entry, &mut joined);
+    merge(&held, raw)
+}
+
+/// The folders `Path` holds now, as `PATH` lists them.
+pub fn path() -> Option<String> {
+    let env = fresh();
+    env.iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Path"))
+        .map(|(_, value)| value.clone())
+}
+
+/// What this process holds; a variable that is not text stays as the system has it.
+fn held() -> HashMap<String, String> {
+    let mut held = HashMap::new();
+    for (key, value) in std::env::vars_os() {
+        match (key.into_string(), value.into_string()) {
+            (Ok(key), Ok(value)) => {
+                held.insert(key, value);
             }
-            if let Some(previous) = lookup(key, &held) {
-                for entry in previous.split(';').filter(|entry| !entry.is_empty()) {
-                    // A `%NAME%` this process was started with is stale, since the registry's expansion replaced it.
-                    if entry.contains('%') {
-                        continue;
-                    }
-                    push(entry, &mut joined);
-                }
-            }
-            env.insert(key.clone(), joined);
-        } else {
-            env.insert(key.clone(), value);
+            _ => log::debug!("pty: an environment variable is not text, so the system keeps it"),
         }
+    }
+    held
+}
+
+/// The registry's variables, one name each, matched as Windows matches a name.
+fn join(raw: Vec<(String, String)>, found: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut raw = raw;
+    for (key, value) in found {
+        match raw
+            .iter_mut()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&key))
+        {
+            // A path variable joins what the earlier key listed, as Windows Terminal's `concat_var` does.
+            Some((_, joined)) if is_path(&key) => {
+                if !joined.ends_with(';') {
+                    joined.push(';');
+                }
+                joined.push_str(&value);
+            }
+            Some((_, joined)) => *joined = value,
+            None => raw.push((key, value)),
+        }
+    }
+    raw
+}
+
+/// The environment a session starts with: the registry's variables over what this process holds.
+fn merge(held: &HashMap<String, String>, raw: Vec<(String, String)>) -> HashMap<String, String> {
+    let mut env = held.clone();
+    for (key, value) in &raw {
+        let value = expand(value, &raw, held);
+        let value = if is_path(key) {
+            dedupe(&value, held, key)
+        } else {
+            value
+        };
+        // The registry's name replaces the one this process holds, matched as Windows matches it.
+        env.retain(|name, _| !name.eq_ignore_ascii_case(key));
+        env.insert(key.clone(), value);
+    }
+    let size: usize = env
+        .iter()
+        .map(|(name, value)| name.len() + value.len() + 1)
+        .sum();
+    if size > BLOCK_LIMIT {
+        log::error!(
+            "pty: the environment is {size} characters, past what Windows holds: {BLOCK_LIMIT}"
+        );
     }
     env
 }
@@ -95,9 +112,41 @@ fn is_path(name: &str) -> bool {
         .any(|known| known.eq_ignore_ascii_case(name))
 }
 
+/// The folders a path variable lists, each once: the registry's order stands, then what this process holds that the registry lacks.
+fn dedupe(value: &str, held: &HashMap<String, String>, key: &str) -> String {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut joined = String::with_capacity(value.len());
+    let mut push = |entry: &str, joined: &mut String| {
+        if seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
+            if !joined.is_empty() {
+                joined.push(';');
+            }
+            joined.push_str(entry);
+        }
+    };
+    for entry in value.split(';').filter(|entry| !entry.is_empty()) {
+        push(entry, &mut joined);
+    }
+    if let Some(previous) = lookup(key, held) {
+        for entry in previous.split(';').filter(|entry| !entry.is_empty()) {
+            // A `%NAME%` this process was started with is stale, since the registry's expansion replaced it.
+            if entry.contains('%') {
+                continue;
+            }
+            push(entry, &mut joined);
+        }
+    }
+    joined
+}
+
 /// `value` with each `%NAME%` replaced from the registry, else from what this process holds.
-fn expand(value: &str, raw: &HashMap<String, String>, held: &HashMap<String, String>) -> String {
-    let find = |name: &str| lookup(name, raw).or_else(|| lookup(name, held));
+fn expand(value: &str, raw: &[(String, String)], held: &HashMap<String, String>) -> String {
+    let find = |name: &str| {
+        raw.iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, found)| found.clone())
+            .or_else(|| lookup(name, held))
+    };
     let mut text = value.to_string();
     for _ in 0..8 {
         let mut changed = false;
@@ -143,18 +192,18 @@ fn lookup(name: &str, map: &HashMap<String, String>) -> Option<String> {
 }
 
 /// Each string value `root\path` holds, as written, so `%NAME%` stays for `expand`.
-fn read(root: HKEY, path: &str) -> Result<HashMap<String, String>, String> {
+fn read(root: HKEY, path: &str) -> Result<Vec<(String, String)>, String> {
     let mut key: HKEY = std::ptr::null_mut();
     let wide = wide(path);
     // SAFETY: `wide` outlives the call, and `key` is closed once no longer read.
     let status = unsafe { RegOpenKeyExW(root, wide.as_ptr(), 0, KEY_READ, &mut key) };
     if status == ERROR_FILE_NOT_FOUND {
-        return Ok(HashMap::new());
+        return Ok(Vec::new());
     }
     if status != ERROR_SUCCESS {
         return Err(format!("RegOpenKeyExW({path}) failed, {status}"));
     }
-    let mut found = HashMap::new();
+    let mut found = Vec::new();
     let mut name = vec![0u16; 1024];
     let mut data = vec![0u8; 128 * 1024];
     let mut index = 0u32;
@@ -191,7 +240,7 @@ fn read(root: HKEY, path: &str) -> Result<HashMap<String, String>, String> {
             continue;
         }
         let text = String::from_utf16_lossy(&utf16(&data, data_len as usize));
-        found.insert(name, text);
+        found.push((name, text));
     }
     // SAFETY: `key` came from RegOpenKeyExW and is closed once.
     unsafe { RegCloseKey(key) };

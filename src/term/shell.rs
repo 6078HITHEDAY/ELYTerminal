@@ -139,6 +139,11 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         }
         _ => {
             launch.reports = false;
+            // Windows has no login shell of its own, so the shell that was chosen runs as it is.
+            #[cfg(windows)]
+            {
+                launch.program = Some((path.clone(), Vec::new()));
+            }
             log::info!("shell integration: none for {path}; its folder goes unreported")
         }
     }
@@ -154,8 +159,10 @@ fn default_shell() -> anyhow::Result<String> {
 /// `pwsh`, as Windows Terminal takes it, else the Windows PowerShell the system ships, else `cmd`.
 #[cfg(windows)]
 fn default_shell() -> anyhow::Result<String> {
+    // The registry's PATH, so a shell in a folder added since this process opened is found.
+    let folders = super::env::path().unwrap_or_default();
     for name in ["pwsh", "powershell", "cmd"] {
-        match crate::settings::program_path(name) {
+        match crate::settings::program_path_in(name, &folders) {
             // An App Execution Alias is a stub that starts only while its package is installed.
             Ok(found) if !alias(&found) => return Ok(found),
             Ok(found) => log::info!("shell integration: {found} is an alias, so passed by"),

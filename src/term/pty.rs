@@ -181,10 +181,15 @@ fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std
 #[cfg(windows)]
 fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std::io::Result<Raw> {
     let options = tty::Options {
-        shell: launch
-            .program
-            .clone()
-            .map(|(program, args)| tty::Shell::new(program, args)),
+        shell: launch.program.clone().map(|(program, args)| {
+            // alacritty puts the program into the command line as it is, and Windows reads the first word of it, so a path with a space needs its quotes.
+            let program = if program.contains(' ') {
+                format!("\"{program}\"")
+            } else {
+                program
+            };
+            tty::Shell::new(program, args)
+        }),
         working_directory: Some(launch.cwd.clone()),
         drain_on_exit: true,
         env,
