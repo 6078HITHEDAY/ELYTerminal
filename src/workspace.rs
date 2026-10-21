@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton, SegmentedControl},
-    lists::List,
+    motion::Reorder,
     primitives::{FocusScope, IconName},
     shell::{ColumnShell, ResizeBorder, ShellColumn},
     theme::ControlSize,
@@ -20,16 +20,14 @@ use crate::{
     git::panel::{Acted, GitPanel},
     menus,
     sessions::{self, Session, orb},
-    settings::{PanelTab, Settings, SettingsStore, StartIn, window::OpenSettings},
-    term::{
-        Events, Launch, Pty, TerminalView, config,
-        shell::{ShellIntegration, launch},
-        spawn,
-    },
+    settings::{PanelTab, Settings, SettingsStore, window::OpenSettings},
+    term::{Events, Launch, Pty, TerminalView},
 };
 
 mod events;
 mod rename;
+mod reorder;
+mod session;
 mod widths;
 
 use widths::{Dragged, Side};
@@ -152,6 +150,10 @@ impl Workspace {
         let events = cx.subscribe_in(&terminal, window, move |this, _, event, window, cx| {
             this.session_event(id, event, window, cx)
         });
+        let shell = launch
+            .program
+            .as_ref()
+            .map_or_else(String::new, |(program, _)| program.clone());
         let pid = terminal.read(cx).pid();
         log::info!("app: session {pid} opens in {}", launch.cwd.display());
         self.sessions.push(Session {
@@ -160,6 +162,7 @@ impl Workspace {
             name: String::new(),
             editing: None,
             folder: launch.cwd,
+            shell,
             reports: launch.reports,
             bell: false,
             waiting: false,
@@ -191,31 +194,6 @@ impl Workspace {
                 }
             })
         });
-    }
-
-    /// A session of the shell the settings name, in home or the shown session's folder.
-    fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(home) = dirs::home_dir() else {
-            log::error!("app: no home folder, so no new session");
-            return;
-        };
-        let settings = SettingsStore::get(cx);
-        let folder = match settings.start_in {
-            StartIn::Home => home,
-            StartIn::Session => self
-                .sessions
-                .get(self.active)
-                .map_or(home, |session| session.folder.clone()),
-        };
-        let started = launch(&settings.shell, folder, &cx.global::<ShellIntegration>().0)
-            .and_then(|launch| Ok((spawn(&launch, (80, 24), (8, 16), config(settings))?, launch)));
-        match started {
-            Ok(((pty, events), launch)) => {
-                self.add(pty, events, launch, window, cx);
-                self.select(self.sessions.len() - 1, window, cx);
-            }
-            Err(error) => log::error!("app: no new session: {error:#}"),
-        }
     }
 
     /// Shows session `index`, clears its bell and its waiting mark, and gives its terminal the keys.
@@ -387,9 +365,18 @@ impl Render for Workspace {
             let home = dirs::home_dir();
             let rows = self.sessions.iter().enumerate().map(|(index, session)| {
                 let active = index == self.active;
-                sessions::row(&workspace, index, session, active, home.as_deref(), now, cx)
+                let pid = session.terminal.read(cx).pid();
+                let row =
+                    sessions::row(&workspace, index, session, active, home.as_deref(), now, cx);
+                (pid.to_string(), row)
             });
-            let list = List::new().children(rows);
+            let dragged = workspace.clone();
+            let list = rows.fold(
+                Reorder::new("session-rows").on_reorder(move |from, to, _, cx| {
+                    dragged.update(cx, |this, cx| this.reorder(from, to, cx))
+                }),
+                |list, (key, row)| list.row(key, div().pb_0p5().child(row)),
+            );
             let new = IconButton::new("new-session", IconName::Plus)
                 .variant(ButtonVariant::Ghost)
                 .size(ControlSize::Sm)

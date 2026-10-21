@@ -163,3 +163,8 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 33. Release
 
 - [x] T64 Release v0.1.7 with T59 to T63, T65 and T66: version 0.1.7; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese.
+
+## 34. Sessions: a right press, and a drag
+
+- [x] T67 A right press on a session's row opens a menu, which the owner asked for: Duplicate session opens a session of the shell that row runs, in the folder it last reported, right after the row and shown, so a PowerShell session opens PowerShell and a cmd session cmd; Close session closes the row. The shell a session starts is kept on it; a shell that reports no folder, as cmd does, duplicates into the folder it started in. The owner right-pressed a PowerShell row and Duplicate session opened a PowerShell session in the same folder; check, clippy and the 239 tests pass on Windows with the GNU target, since this machine has no MSVC.
+- [x] T68 A drag on a session's row moves it to another place in the list, which the owner asked for: the held row follows the pointer, the others glide aside, and the session shown stays shown. The owner dragged rows on Windows and the list kept the order; `workspace::reorder::tests` keeps the shown index on its row as rows cross it either way.
