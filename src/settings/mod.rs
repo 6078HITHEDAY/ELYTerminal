@@ -73,6 +73,8 @@ pub struct Settings {
     pub padding_y: f32,
     pub scrollback: u32,
     pub option_as_alt: OptionAsAlt,
+    /// Option and Command edit text by word and line, as macOS's text does.
+    pub natural_text_editing: bool,
     pub copy_on_select: bool,
     /// Ely peeks over the main window's top edge.
     pub ely: bool,
@@ -111,6 +113,7 @@ impl Default for Settings {
             padding_y: 8.0,
             scrollback: 10_000,
             option_as_alt: OptionAsAlt::Off,
+            natural_text_editing: false,
             copy_on_select: false,
             ely: true,
             ely_left: 140.0,
