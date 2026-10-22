@@ -17,7 +17,7 @@ pub fn split(folder: &Path) -> Option<(&str, String)> {
     if end == host.len() {
         return None;
     }
-    let inside = text[end..].replace('\\', "/");
+    let inside = to_linux(&text[end..].replace('\\', "/"));
     Some((
         &text[..end],
         if inside.is_empty() {
@@ -35,10 +35,29 @@ pub fn distro(share: &str) -> &str {
 
 /// A path git printed inside `share`'s distribution, as Windows names it.
 pub fn join(share: &str, inside: &Path) -> PathBuf {
-    PathBuf::from(format!(
-        "{share}{}",
-        inside.display().to_string().replace('/', "\\")
-    ))
+    let inside = to_windows(&inside.display().to_string()).replace('/', "\\");
+    PathBuf::from(format!("{share}{inside}"))
+}
+
+/// Whether WSL shows `c` to Windows as U+F000 plus `c`: a control character, or one NTFS refuses.
+fn escaped(c: char) -> bool {
+    c < ' ' || "\"*:<>?\\|".contains(c)
+}
+
+/// A Linux name as Windows reads it through WSL's share, as WSL's `escape.cpp` writes it.
+pub fn to_windows(name: &str) -> String {
+    let escape = |c: char| char::from_u32(0xF000 + c as u32).expect("U+F000 to U+F07F");
+    name.chars()
+        .map(|c| if escaped(c) { escape(c) } else { c })
+        .collect()
+}
+
+/// A name from WSL's share as Linux names it.
+fn to_linux(name: &str) -> String {
+    let plain = |c: char| (c as u32).checked_sub(0xF000).and_then(char::from_u32);
+    name.chars()
+        .map(|c| plain(c).filter(|plain| escaped(*plain)).unwrap_or(c))
+        .collect()
 }
 
 #[cfg(test)]
@@ -47,21 +66,21 @@ mod tests {
 
     #[test]
     fn a_wsl_share_names_its_distribution_and_the_path_inside() {
-        let folder = Path::new(r"\\wsl.localhost\Ubuntu-24.04\home\me\my repo");
+        let folder = Path::new("\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\my repo\u{f03a}x");
         let (share, inside) = split(folder).expect("a WSL folder");
-        assert_eq!(
-            (share, inside.as_str()),
-            (r"\\wsl.localhost\Ubuntu-24.04", "/home/me/my repo")
-        );
+        assert_eq!(share, r"\\wsl.localhost\Ubuntu-24.04");
+        assert_eq!(inside, "/home/me/my repo:x");
         assert_eq!(distro(share), "Ubuntu-24.04");
+        let top = join(share, Path::new("/home/me/a:b\\c\u{7}"));
+        let shown = "\\\\wsl.localhost\\Ubuntu-24.04\\home\\me\\a\u{f03a}b\u{f05c}c\u{f007}";
+        assert_eq!(top, PathBuf::from(shown));
         assert_eq!(
-            join(share, Path::new("/home/me")),
-            PathBuf::from(r"\\wsl.localhost\Ubuntu-24.04\home\me")
+            to_linux("\u{f02e}\u{f03a}"),
+            "\u{f02e}:",
+            "a dot is no escape"
         );
-        assert_eq!(
-            split(Path::new(r"\\WSL$\Debian")),
-            Some((r"\\WSL$\Debian", "/".into()))
-        );
+        let old = split(Path::new(r"\\WSL$\Debian"));
+        assert_eq!(old, Some((r"\\WSL$\Debian", "/".into())));
         assert_eq!(split(Path::new(r"\\wsl.localhost\")), None);
         assert_eq!(split(Path::new(r"\\server\share\x")), None);
         assert_eq!(split(Path::new(r"C:\Users\me")), None);

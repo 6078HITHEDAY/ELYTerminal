@@ -242,6 +242,9 @@ pub fn changes(folder: &Path) -> anyhow::Result<Option<Vec<(PathBuf, GitStatus)>
     };
     let status = ["status", "--porcelain=v2", "-z", "--", "."];
     let (_, records) = parse(&run(folder, &status, &[])?)?;
+    // WSL's git names files as Linux does; Files reads them through the share.
+    #[cfg(windows)]
+    let shared = wsl::split(folder).is_some();
     records
         .into_iter()
         .map(|record| {
@@ -254,7 +257,13 @@ pub fn changes(folder: &Path) -> anyhow::Result<Option<Vec<(PathBuf, GitStatus)>
             let mut path = folder.to_path_buf();
             for part in rest.split(|&byte| byte == b'/') {
                 if !part.is_empty() {
-                    path.push(path_of(part)?);
+                    let part = path_of(part)?;
+                    #[cfg(windows)]
+                    let part = match shared {
+                        true => PathBuf::from(wsl::to_windows(&part.display().to_string())),
+                        false => part,
+                    };
+                    path.push(part);
                 }
             }
             Ok((path, status))

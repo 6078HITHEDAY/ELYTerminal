@@ -11,13 +11,10 @@ if status is-interactive
         if set -q ELY_WSL
             # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
             set dir (wslpath -w $PWD 2>/dev/null | string replace -a '\\' / | string collect)
-            switch "$dir"
-                case '//*'
-                    set dir (string sub -s 3 -- $dir | string collect)
-                case '?:*'
-                    set dir /$dir
-                case '*'
-                    set dir
+            if string match -qr '^[A-Za-z]:' -- $dir
+                set dir /$dir
+            else if not string match -qr '^//' -- $dir
+                set dir
             end
         end
         test -n "$dir"; and printf '\e]7;file://%s\a' (string escape --style=url -- $dir)

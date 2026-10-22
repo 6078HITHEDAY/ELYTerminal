@@ -175,32 +175,27 @@ fn other_hosts_and_bad_uris_give_none() {
 }
 
 #[test]
-fn windows_reads_a_drive_a_share_or_a_wsl_distribution() {
+fn windows_reads_a_drive_or_a_share_wsl_s_among_them() {
     let windows = |body: &str| folder_on(body.as_bytes(), true);
     let wsl = r"\\wsl.localhost\Ubuntu\home\a b";
-    assert_eq!(
-        windows("file://wsl.localhost/Ubuntu/home/a%20b"),
-        Some(PathBuf::from(wsl))
-    );
+    let share = windows("file:////wsl.localhost/Ubuntu/home/a%20b");
+    assert_eq!(share, Some(PathBuf::from(wsl)));
     let old = r"\\wsl$\Debian\x";
-    assert_eq!(windows("file://wsl%24/Debian/x"), Some(PathBuf::from(old)));
     assert_eq!(
-        windows("file:///C%3A/Users/me"),
-        Some(PathBuf::from("C:/Users/me"))
+        windows("file:////wsl%24/Debian/x"),
+        Some(PathBuf::from(old))
     );
+    let drive = windows("file:///C%3A/Users/me");
+    assert_eq!(drive, Some(PathBuf::from("C:/Users/me")));
     assert_eq!(
-        windows("file:////server/share/x"),
-        Some(PathBuf::from(r"\\server\share\x"))
+        windows("file://wsl.localhost/Ubuntu/x"),
+        None,
+        "another host"
     );
     assert_eq!(
         windows("file:///home/me"),
         None,
         "a Linux path names no Windows folder"
-    );
-    assert_eq!(
-        unix(b"file://wsl.localhost/Ubuntu/x"),
-        None,
-        "WSL's share is Windows' own"
     );
 }
 

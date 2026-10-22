@@ -15,10 +15,10 @@ if [[ -o interactive ]]; then
       builtin printf '\e]133;D;%s\a' $ret
       _ely_ran=
     fi
-    if [[ -n $ELY_WSL ]]; then
+    if [[ -n ${ELY_WSL-} ]]; then
       # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
       dir=${"$(wslpath -w $PWD 2>/dev/null)"//\\//}
-      case $dir in //*) dir=${dir#//} ;; ?:*) dir=/$dir ;; *) dir= ;; esac
+      case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
     fi
     for char in ${(s::)dir}; do
       case $char in

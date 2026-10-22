@@ -30,7 +30,7 @@ _ely_prompt() {
     # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
     dir=$(wslpath -w "$PWD" 2>/dev/null) || dir=
     dir=${dir//\\//}
-    case $dir in //*) dir=${dir#//} ;; ?:*) dir=/$dir ;; *) dir= ;; esac
+    case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
   fi
   for (( i = 0; i < ${#dir}; i++ )); do
     char=${dir:i:1}
