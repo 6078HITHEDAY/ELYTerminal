@@ -116,7 +116,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Background opacity: a slider. Background blur: a switch.
   - Padding: horizontal and vertical.
 - Terminal
-  - Shell: a path; empty runs the login shell.
+  - Shell: a path; empty runs the login shell, on Windows `pwsh`, else `powershell`, else `cmd`. On Windows a session takes the registry's environment as it starts.
   - Start in: Home, or the active session's folder.
   - Scrollback lines.
   - Option as Alt: off, left, right, both (macOS only).
