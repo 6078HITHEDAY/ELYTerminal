@@ -22,7 +22,7 @@ use super::{
     fonts::look,
     frame::frame,
     ink::Ink,
-    input::{self, Find, Held, NextPrompt, PreviousPrompt},
+    input::{self, Find, Held, NextPrompt, PreviousPrompt, Went},
     marks::Mark,
     mouse::MouseMode,
     paint,
@@ -65,8 +65,8 @@ pub struct TerminalView {
     pub(super) win32: bool,
     /// herdr's client leads the session, so herdr opens its panes' links.
     pub(super) herdr: bool,
-    /// Keys whose press this terminal saw, so their releases may go out; true where it went as Windows' record.
-    pub(super) held: HashMap<Held, bool>,
+    /// Keys whose press this terminal saw, so their releases may go out, each with how its press went.
+    pub(super) held: HashMap<Held, Went>,
     pub(super) finder: Option<Finder>,
     pub(super) size: (usize, usize),
     /// How many folders the program has reported.
