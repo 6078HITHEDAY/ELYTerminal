@@ -1,4 +1,10 @@
-use std::{collections::HashMap, path::PathBuf, process::ExitStatus, rc::Rc, time::Duration};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    process::ExitStatus,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use alacritty_terminal::{
     event::Event,
@@ -75,8 +81,8 @@ pub struct TerminalView {
     pub(super) records: Records,
     /// The status its shell's last command ended with; none before one, or when it gave none.
     pub(super) ended: Option<i32>,
-    /// A command started, as OSC 133 C says, since the last one ended.
-    pub(super) ran: bool,
+    /// A command started, as OSC 133 C says, since the last one ended, at the moment C came.
+    pub(super) ran: Option<Instant>,
     /// Where the shell stands, as its OSC 133 marks say.
     pub(super) shell: Shell,
     /// The system notifications it posted.
@@ -139,7 +145,7 @@ impl TerminalView {
             reports: 0,
             records: Records::default(),
             ended: None,
-            ran: false,
+            ran: None,
             shell: Shell::Busy,
             notices: Notices::default(),
             title: String::new(),
@@ -273,7 +279,10 @@ impl TerminalView {
                     self.records.prompt();
                     self.restate(cx);
                 }
-                PtyEvent::Mark(Mark::Output) => (self.ran, self.shell) = (true, Shell::Busy),
+                PtyEvent::Mark(Mark::Output) => {
+                    self.ran = Some(Instant::now());
+                    self.shell = Shell::Busy;
+                }
                 PtyEvent::Mark(Mark::Input) => self.shell = self.shell.reads(),
                 PtyEvent::Status(status) => {
                     self.status(status);

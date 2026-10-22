@@ -83,6 +83,17 @@ fn a_notification_says_its_text_as_text() {
 }
 
 #[test]
+fn a_command_ran_short_of_ran_for_posts_nothing() {
+    let start = Instant::now();
+    assert!(!ran_long(start, start), "no time ran");
+    assert!(
+        !ran_long(start, start + RAN_FOR - Duration::from_nanos(1)),
+        "just under stays quiet"
+    );
+    assert!(ran_long(start, start + RAN_FOR), "the boundary tells");
+}
+
+#[test]
 fn a_session_posts_unless_it_is_the_one_shown_in_an_active_window() {
     assert!(!unseen(true, true));
     assert!(unseen(true, false), "the window inactive");
