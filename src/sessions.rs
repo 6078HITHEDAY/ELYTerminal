@@ -7,16 +7,20 @@ use ely_gpui_component::{
     buttons::{ButtonVariant, IconButton},
     forms::{Input, TextInput},
     lists::ListItem,
+    menus::ContextMenu,
     primitives::{Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize},
 };
-use gpui::{AnyElement, App, Entity, SharedString, Subscription, div, prelude::*, rems};
+use gpui::{
+    AnyElement, App, Entity, IntoElement, SharedString, Subscription, div, prelude::*, rems,
+};
 
 use crate::{
     term::{Kind, Record, Records, State, TerminalView},
     workspace::{TITLE, Workspace},
 };
 
+mod menu;
 pub mod orb;
 
 use orb::Look;
@@ -32,6 +36,8 @@ pub struct Session {
     pub editing: Option<(Entity<TextInput>, Subscription)>,
     /// The folder it reports, else the one it started in.
     pub folder: PathBuf,
+    /// The program it runs, as its path; empty for the login shell.
+    pub shell: String,
     /// Its shell has integration, or it reported a folder anyway.
     pub reports: bool,
     /// A bell rang while it was hidden.
@@ -113,7 +119,7 @@ pub fn row(
     home: Option<&Path>,
     now: Instant,
     cx: &App,
-) -> ListItem {
+) -> impl IntoElement {
     let terminal = session.terminal.read(cx);
     let pid = terminal.pid() as usize;
     let (select, close) = (workspace.clone(), workspace.clone());
@@ -148,17 +154,22 @@ pub fn row(
     let bell = session
         .bell
         .then(|| Icon::new(IconName::Bell).color(cx.theme().colors.warning));
-    if mark.is_none() && bell.is_none() {
-        return item;
-    }
-    item.leading(
-        div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .children(mark)
-            .children(bell),
-    )
+    let item = if mark.is_none() && bell.is_none() {
+        item
+    } else {
+        item.leading(
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .children(mark)
+                .children(bell),
+        )
+    };
+    let id = session.terminal.entity_id();
+    ContextMenu::new(("session-menu", pid), menu::row(workspace, id))
+        .w_full()
+        .child(item)
 }
 
 /// The field a session's row renames it with; Escape drops what it holds.

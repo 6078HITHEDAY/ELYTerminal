@@ -81,6 +81,8 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 
 - A list of sessions. Each row: title, then the working directory, home as `~`.
 - New session (+ and Cmd-T), close (row's ×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab and Ctrl-Shift-Tab).
+- A right press on a row opens a menu at the pointer: Duplicate session opens a session of the shell that row runs, in the folder it last reported, right after it and shown; Close session closes the row. A shell that reports no folder, as cmd does, duplicates into the folder it started in.
+- A drag on a row moves it to another place in the list, and the session shown stays shown.
 - Rename: a double press on a row's title opens a field in its place; Enter keeps the name, Escape drops it. The name shows in the row, the terminal's header and the window's title over the program's own until renamed again; an empty name gives the title back to the program.
 - A session whose program ends closes its row. The last row closing closes the window.
 - A bell in a hidden session marks its row.

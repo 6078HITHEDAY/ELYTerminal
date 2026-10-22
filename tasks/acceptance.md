@@ -103,6 +103,8 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | New (+, Cmd-T), close (×, Cmd-W), select (press, Cmd-1…9, Ctrl-Tab) | T12 | 2026-10-15: + opened session 2, a press showed session 1 again | Pass |
 | A program's end closes its row; the last row closes the window | T12 | T12 review | Pass |
 | A bell in a hidden session marks its row | T12 | T12 review | Pass |
+| A right press on a row opens a menu at the pointer: Duplicate session opens the shell's session in the reported folder, right after it and shown; Close session closes the row | T70 | 2026-10-21: the owner right-pressed a PowerShell session's row on Windows and Duplicate session opened a PowerShell session in the same folder; Close session runs the `close()` the row's × runs; the shell is kept from `Launch.program`, so `launch` gives the same program and its integration back; `cargo check --all-targets`, `clippy -D warnings` and `cargo test` (239 pass) on the GNU target, the only one this machine can link | Pass |
+| A drag on a row moves it to another place, and the session shown stays shown | T70 | 2026-10-21: the owner dragged rows on Windows and the list kept the order; `workspace::reorder::tests`: `the_shown_session_follows_its_row` keeps the shown index on its row while rows cross it either way; Ely's `Reorder` holds the drag and measures the rows; check, clippy and test pass on the GNU target | Pass |
 
 ## 8. Right panel: Files
 
