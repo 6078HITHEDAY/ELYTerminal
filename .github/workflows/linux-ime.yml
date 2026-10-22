@@ -14,11 +14,15 @@ jobs:
     container: ubuntu:22.04
     timeout-minutes: 60
     env:
+      CARGO_HOME: /root/.cargo
+      RUSTUP_HOME: /root/.rustup
       CARGO_BUILD_JOBS: 2
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_INCREMENTAL: 0
     steps:
       - name: Prepare the clean Linux test environment
+        env:
+          HOME: /root
         run: |
           apt-get update
           apt-get install -y --no-install-recommends build-essential ca-certificates curl git \
