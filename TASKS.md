@@ -167,7 +167,7 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 34. Issues and pull requests after 0.1.7
 
 - [x] T67 Windows sessions take the registry's environment and a default shell of `pwsh`, then `powershell`, then `cmd`, from PR #5: a folder added to `PATH` after ELYTerminal opened reaches the next session, a `%NAME%` the registry holds is expanded, `PATH` names each folder once, and the chosen program runs as chosen, a path with a space too.
-- [ ] T68 A session whose shell is `wsl` follows its folder, which a user asked for in issue #3: the distribution's bash, zsh or fish loads ELYTerminal's integration, its OSC 7 maps to `\\wsl.localhost\DISTRO\PATH`, or to the drive a `/mnt` path names, so Files and Git follow it, git running inside the distribution.
+- [x] T68 A session whose shell is `wsl` follows its folder, which a user asked for in issue #3: the distribution's bash, zsh or fish loads ELYTerminal's integration, its OSC 7 maps to `\\wsl.localhost\DISTRO\PATH`, or to the drive a `/mnt` path names, so Files and Git follow it, git running inside the distribution.
 - [ ] T69 Natural text editing on macOS, from PR #8: a Settings › Terminal switch, off by default, sends Option and Command's editing keys as readline's bytes.
 - [ ] T70 A right press on a session's row duplicates or closes it, and a drag moves the row, from PR #9, which issue #7 asked for: Duplicate session opens the shell that row runs in the folder it last reported, right after it and shown.
 - [ ] T71 A command's end posts a notification only after the command ran 5 seconds, as Ghostty's `notify-on-command-finish-after`, from PR #11, which issue #10 asked for: omp's own OSC 133 marks around each message post nothing.
