@@ -12,7 +12,8 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize, IconSize},
 };
 use gpui::{
-    AnyElement, App, Entity, IntoElement, SharedString, Subscription, div, prelude::*, rems,
+    AnyElement, App, Entity, IntoElement, MouseButton, SharedString, Subscription, div, prelude::*,
+    rems,
 };
 
 use crate::{
@@ -180,6 +181,8 @@ fn editor(
 ) -> impl IntoElement {
     let (workspace, id) = (workspace.clone(), session.terminal.entity_id());
     div()
+        // A press selecting text stays the field's: the row would lift it for a drag.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_key_down(move |event, window, cx| {
             if event.keystroke.key == "escape" {
                 cx.stop_propagation();
