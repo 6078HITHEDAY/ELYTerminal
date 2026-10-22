@@ -341,3 +341,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 112598b: FAIL. fish 4, which reads `?` as no glob, passed every drive folder by; a network share went as another host's folder; names WSL shows Windows through U+F000 escapes reached git as they were; zsh under `nounset` lost its folder outside WSL. Fixed in 84ea235: fish matches a drive by regex; every share goes with an empty host, and `tap` lost its WSL host rule; `git::wsl` maps the escapes both ways, Files' marks too; zsh reads `${ELY_WSL-}`.
 - Round 2, 84ea235: PASS. Round 1's 90-case matrix, its launcher and git harnesses, 130 escape cases and 11 parser cases held; check.sh, the Windows clippy and the Linux tests passed; the owner's PC followed `/tmp/ely t68/re:po` and read its git through `wsl.exe`.
+
+## T69
+
+- Round 1, 60ea60e: FAIL. A key's release took the natural editing path by the modifiers left at release, so Option-Left let go after Option sent kitty's Left release, and Left pressed plain lost its own once Option went down. Fixed in 4f54998: each held key remembers how its press went, bytes, a Windows record or natural editing, and its repeats and release follow it.
+- Round 2, 4f54998: PASS. The finding's three chords and its reverse held under kitty's flags 31; Windows' record rule matched the old one in 576 combinations; check.sh and the Linux and Windows lints passed.
