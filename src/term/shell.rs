@@ -220,8 +220,12 @@ mod windows_tests {
     use super::{SCRIPTS, alias, first_shell};
 
     #[test]
-    fn the_scripts_end_lines_as_unix_shells_read_them() {
-        for (name, text) in SCRIPTS {
+    fn the_scripts_wsl_runs_end_lines_as_unix_shells_read_them() {
+        // PowerShell reads a carriage return; WSL's shells do not.
+        for (name, text) in SCRIPTS
+            .iter()
+            .filter(|(name, _)| !name.starts_with("pwsh/"))
+        {
             assert!(!text.contains('\r'), "{name} holds a carriage return");
         }
     }
