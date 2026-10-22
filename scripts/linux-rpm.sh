@@ -9,6 +9,8 @@ linux_stage "$work/payload"
 strip --strip-unneeded "$work/payload/usr/bin/elyterminal"
 desktop-file-validate "$work/payload/usr/share/applications/$id.desktop"
 mkdir -p "$work/rpmbuild/SPECS" "$work/rpmbuild/SOURCES"
+mkdir "$work/rpmdb"
+rpm --dbpath "$work/rpmdb" --initdb
 tar -C "$work/payload" -czf "$work/rpmbuild/SOURCES/payload.tar.gz" .
 cat > "$work/rpmbuild/SPECS/elyterminal.spec" <<EOF
 Name: elyterminal
@@ -44,6 +46,7 @@ tar -xzf %{SOURCE0} -C %{buildroot}
 %license /usr/share/doc/elyterminal
 EOF
 rpmbuild -bb --target x86_64 --define "_topdir $work/rpmbuild" \
+    --define "_dbpath $work/rpmdb" \
     --define '_build_id_links none' --define 'debug_package %{nil}' \
     --define '__os_install_post %{nil}' "$work/rpmbuild/SPECS/elyterminal.spec"
 cp "$work/rpmbuild/RPMS/x86_64/elyterminal-$version-1.x86_64.rpm" "$out/"

@@ -59,6 +59,8 @@ ELF dependency scans supply native library requirements. Libraries loaded at
 runtime and external programs need explicit requirements as well: Git uses
 `git`, update checks use `curl`, and desktop links use `xdg-open`.
 Native package copies are stripped; the tarball keeps the original binary.
+RPM builds use an isolated temporary database, so an unprivileged builder
+does not need a user or system RPM database.
 `man elyterminal` describes startup and the settings location.
 
 The release binary statically links FreeType. `freetype-sys` builds its bundled
