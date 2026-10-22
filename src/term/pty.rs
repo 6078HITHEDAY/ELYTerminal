@@ -111,21 +111,30 @@ pub fn spawn(
 ) -> anyhow::Result<(Pty, Events)> {
     // Windows reads the registry afresh, so a folder added since this process opened still reaches a session.
     #[cfg(windows)]
-    let mut env = {
-        let mut env = super::env::fresh();
-        env.insert("TERM".to_string(), "xterm-256color".to_string());
-        env.insert("COLORTERM".to_string(), "truecolor".to_string());
-        env
+    let env = {
+        let mut env = super::env::fresh()?;
+        env.set("TERM", "xterm-256color".into());
+        env.set("COLORTERM", "truecolor".into());
+        if env.get("LANG").is_none() {
+            env.set("LANG", "en_US.UTF-8".into());
+        }
+        for (name, value) in &launch.env {
+            env.set(name, value.clone());
+        }
+        env.into_map()
     };
     #[cfg(not(windows))]
-    let mut env = HashMap::from([
-        ("TERM".to_string(), "xterm-256color".to_string()),
-        ("COLORTERM".to_string(), "truecolor".to_string()),
-    ]);
-    if std::env::var_os("LANG").is_none() {
-        env.insert("LANG".into(), "en_US.UTF-8".into());
-    }
-    env.extend(launch.env.iter().cloned());
+    let env = {
+        let mut env = HashMap::from([
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("COLORTERM".to_string(), "truecolor".to_string()),
+        ]);
+        if std::env::var_os("LANG").is_none() {
+            env.insert("LANG".into(), "en_US.UTF-8".into());
+        }
+        env.extend(launch.env.iter().cloned());
+        env
+    };
     let size = fit(columns, lines, cell);
     let raw = start(launch, env, size).map_err(|error| {
         anyhow::anyhow!(

@@ -160,14 +160,24 @@ fn default_shell() -> anyhow::Result<String> {
 #[cfg(windows)]
 fn default_shell() -> anyhow::Result<String> {
     // The registry's PATH, so a shell in a folder added since this process opened is found.
-    let folders = super::env::path().unwrap_or_default();
+    first_shell(&super::env::path()?)
+}
+
+/// The first of `pwsh`, `powershell` and `cmd` that `folders` hold outside `WindowsApps`.
+#[cfg(windows)]
+fn first_shell(folders: &str) -> anyhow::Result<String> {
     for name in ["pwsh", "powershell", "cmd"] {
-        match crate::settings::program_path_in(name, &folders) {
-            // An App Execution Alias is a stub that starts only while its package is installed.
-            Ok(found) if !alias(&found) => return Ok(found),
-            Ok(found) => log::info!("shell integration: {found} is an alias, so passed by"),
-            Err(error) => log::info!("shell integration: no {name}: {error:#}"),
+        for folder in env::split_paths(folders) {
+            match crate::settings::program_path_in(name, &folder) {
+                // An App Execution Alias is a stub that starts only while its package is installed.
+                Ok(found) if alias(&found) => {
+                    log::info!("shell integration: {found} is an alias, so passed by")
+                }
+                Ok(found) => return Ok(found),
+                Err(_) => {}
+            }
         }
+        log::info!("shell integration: no {name} on PATH");
     }
     anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
 }
@@ -186,7 +196,27 @@ mod tests;
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::alias;
+    use super::{alias, first_shell};
+
+    #[test]
+    fn an_alias_hides_no_pwsh_later_on_path() {
+        let root = std::env::temp_dir().join(format!("elyterminal-shells-{}", std::process::id()));
+        let folders = ["WindowsApps", "PS7", "System32"].map(|name| root.join(name));
+        for (folder, file) in folders
+            .iter()
+            .zip(["pwsh.exe", "pwsh.exe", "powershell.exe"])
+        {
+            std::fs::create_dir_all(folder).expect("a folder");
+            std::fs::write(folder.join(file), "").expect("a program");
+        }
+        let path = std::env::join_paths(&folders).expect("a PATH");
+        let found = first_shell(path.to_str().expect("text"));
+        std::fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!(
+            found.expect("a shell"),
+            folders[1].join("pwsh.exe").display().to_string()
+        );
+    }
 
     #[test]
     fn an_app_execution_alias_is_recognised_by_its_folder() {

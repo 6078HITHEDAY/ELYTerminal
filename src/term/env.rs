@@ -1,221 +1,225 @@
-//! Windows gives a new session the environment the registry holds now, not the one this process started with, as Windows Terminal's `compatibility.reloadEnvironmentVariables` does: a folder added to `PATH` after ELYTerminal opened reaches the next session, and `%SCOOP_PATH%` is expanded rather than passed as text.
+//! A Windows session's environment, read from the registry as it starts, as Windows Terminal's `til::env::regenerate` reads it: a folder added to `PATH` after ELYTerminal opened reaches the next session.
 
 use std::collections::{HashMap, HashSet};
 
-use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
-use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_EXPAND_SZ, REG_SZ, RegCloseKey,
-    RegEnumValueW, RegOpenKeyExW,
+use anyhow::bail;
+use windows_sys::Win32::{
+    Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS},
+    Globalization::{CSTR_EQUAL, CompareStringOrdinal},
+    System::Registry::{
+        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_EXPAND_SZ, REG_SZ, RegCloseKey,
+        RegEnumValueW, RegOpenKeyExW, RegQueryInfoKeyW,
+    },
 };
 
-/// The variables Windows reads again for each session, in the order `til::env::regenerate` reads them.
-const MACHINE: &str = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment";
-const USER: &str = "Environment";
-const VOLATILE: &str = "Volatile Environment";
+/// The keys Windows reads a user's variables from, in its order.
+const KEYS: [(HKEY, &str); 3] = [
+    (
+        HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+    ),
+    (HKEY_CURRENT_USER, "Environment"),
+    (HKEY_CURRENT_USER, "Volatile Environment"),
+];
 
-/// The most a Windows environment block holds, in characters.
-const BLOCK_LIMIT: usize = 32_767;
+/// Variables whose names match as Windows matches them, ignoring case.
+#[derive(Debug, Default)]
+pub struct Env(Vec<(String, String)>);
 
-/// The environment a session starts with: this process's, brought up to date from the registry.
-pub fn fresh() -> HashMap<String, String> {
-    let held = held();
-    let mut raw: Vec<(String, String)> = Vec::new();
-    for (root, path) in [
-        (HKEY_LOCAL_MACHINE, MACHINE),
-        (HKEY_CURRENT_USER, USER),
-        (HKEY_CURRENT_USER, VOLATILE),
-    ] {
-        match read(root, path) {
-            Ok(found) => raw = join(raw, found),
-            Err(error) => {
-                log::error!("pty: cannot read {path}, whose variables stay as they were: {error}")
-            }
+impl Env {
+    pub fn get(&self, name: &str) -> Option<&str> {
+        let found = self.0.iter().find(|(held, _)| same(held, name));
+        found.map(|(_, value)| value.as_str())
+    }
+
+    /// Sets `name`, replacing it under any case.
+    pub fn set(&mut self, name: &str, value: String) {
+        match self.0.iter_mut().find(|(held, _)| same(held, name)) {
+            Some((_, held)) => *held = value,
+            None => self.0.push((name.to_string(), value)),
         }
     }
-    merge(&held, raw)
-}
 
-/// The folders `Path` holds now, as `PATH` lists them.
-pub fn path() -> Option<String> {
-    let env = fresh();
-    env.iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Path"))
-        .map(|(_, value)| value.clone())
-}
-
-/// What this process holds; a variable that is not text stays as the system has it.
-fn held() -> HashMap<String, String> {
-    let mut held = HashMap::new();
-    for (key, value) in std::env::vars_os() {
-        match (key.into_string(), value.into_string()) {
-            (Ok(key), Ok(value)) => {
-                held.insert(key, value);
+    /// Adds folders to a path variable, as `til::env::concat_var` does.
+    fn concat(&mut self, name: &str, value: String) {
+        match self.0.iter_mut().find(|(held, _)| same(held, name)) {
+            Some((_, held)) => {
+                if !held.ends_with(';') {
+                    held.push(';');
+                }
+                held.push_str(&value);
             }
-            _ => log::debug!("pty: an environment variable is not text, so the system keeps it"),
+            None => self.0.push((name.to_string(), value)),
+        }
+    }
+
+    pub fn into_map(self) -> HashMap<String, String> {
+        self.0.into_iter().collect()
+    }
+}
+
+/// The environment a session starts with: this process's, brought up to date from the registry.
+pub fn fresh() -> anyhow::Result<Env> {
+    let held = held();
+    let mut env = Env(held
+        .0
+        .iter()
+        .filter(|(name, _)| !is_path(name))
+        .cloned()
+        .collect());
+    for (root, key) in KEYS {
+        apply(&mut env, &read(root, key)?);
+    }
+    for (name, value) in &mut env.0 {
+        if is_path(name) {
+            *value = dedupe(value, held.get(name));
+        }
+    }
+    Ok(env)
+}
+
+/// The folders `Path` holds now.
+pub fn path() -> anyhow::Result<String> {
+    match fresh()?.get("Path") {
+        Some(path) => Ok(path.to_string()),
+        None => bail!("pty: neither the registry nor this process names a Path"),
+    }
+}
+
+/// What this process holds; a variable that is not text is left to alacritty, which passes the rest on.
+fn held() -> Env {
+    let mut held = Env::default();
+    for (name, value) in std::env::vars_os() {
+        match (name.into_string(), value.into_string()) {
+            (Ok(name), Ok(value)) => held.set(&name, value),
+            _ => log::debug!("pty: an environment variable is not text, so alacritty passes it"),
         }
     }
     held
 }
 
-/// The registry's variables, one name each, matched as Windows matches a name.
-fn join(raw: Vec<(String, String)>, found: Vec<(String, String)>) -> Vec<(String, String)> {
-    let mut raw = raw;
-    for (key, value) in found {
-        match raw
-            .iter_mut()
-            .find(|(name, _)| name.eq_ignore_ascii_case(&key))
-        {
-            // A path variable joins what the earlier key listed, as Windows Terminal's `concat_var` does.
-            Some((_, joined)) if is_path(&key) => {
-                if !joined.ends_with(';') {
-                    joined.push(';');
-                }
-                joined.push_str(&value);
+/// One key's values, as Windows applies them: plain text first, then text to expand, each expanded once.
+fn apply(env: &mut Env, values: &[(String, u32, String)]) {
+    for pass in [REG_SZ, REG_EXPAND_SZ] {
+        for (name, kind, value) in values {
+            // Windows Terminal reads a path variable stored as plain text as one to expand.
+            let kind = if is_path(name) { REG_EXPAND_SZ } else { *kind };
+            if kind != pass || value.is_empty() {
+                continue;
             }
-            Some((_, joined)) => *joined = value,
-            None => raw.push((key, value)),
+            let value = expand(value, env);
+            if is_path(name) {
+                env.concat(name, value);
+            } else {
+                env.set(name, value);
+            }
         }
     }
-    raw
 }
 
-/// The environment a session starts with: the registry's variables over what this process holds.
-fn merge(held: &HashMap<String, String>, raw: Vec<(String, String)>) -> HashMap<String, String> {
-    let mut env = held.clone();
-    for (key, value) in &raw {
-        let value = expand(value, &raw, held);
-        let value = if is_path(key) {
-            dedupe(&value, held, key)
-        } else {
-            value
-        };
-        // The registry's name replaces the one this process holds, matched as Windows matches it.
-        env.retain(|name, _| !name.eq_ignore_ascii_case(key));
-        env.insert(key.clone(), value);
-    }
-    let size: usize = env
-        .iter()
-        .map(|(name, value)| name.len() + value.len() + 1)
-        .sum();
-    if size > BLOCK_LIMIT {
-        log::error!(
-            "pty: the environment is {size} characters, past what Windows holds: {BLOCK_LIMIT}"
-        );
-    }
-    env
-}
-
-/// Whether `name` holds a list of folders, which joins rather than replaces.
+/// Whether `name` lists folders, which join rather than replace.
 fn is_path(name: &str) -> bool {
     ["Path", "LibPath", "Os2LibPath"]
         .iter()
-        .any(|known| known.eq_ignore_ascii_case(name))
+        .any(|known| same(known, name))
 }
 
-/// The folders a path variable lists, each once: the registry's order stands, then what this process holds that the registry lacks.
-fn dedupe(value: &str, held: &HashMap<String, String>, key: &str) -> String {
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut joined = String::with_capacity(value.len());
-    let mut push = |entry: &str, joined: &mut String| {
-        if seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
-            if !joined.is_empty() {
-                joined.push(';');
-            }
-            joined.push_str(entry);
-        }
-    };
-    for entry in value.split(';').filter(|entry| !entry.is_empty()) {
-        push(entry, &mut joined);
-    }
-    if let Some(previous) = lookup(key, held) {
-        for entry in previous.split(';').filter(|entry| !entry.is_empty()) {
-            // A `%NAME%` this process was started with is stale, since the registry's expansion replaced it.
-            if entry.contains('%') {
-                continue;
-            }
-            push(entry, &mut joined);
+/// The folders a path variable lists, each once: the registry's order, then those only this process held.
+fn dedupe(value: &str, held: Option<&str>) -> String {
+    let mut seen = HashSet::new();
+    let mut joined = Vec::new();
+    // A `%NAME%` this process started with is stale: the registry's expansion stands for it.
+    let held = held.into_iter().flat_map(|held| held.split(';'));
+    for entry in value
+        .split(';')
+        .chain(held.filter(|entry| !entry.contains('%')))
+    {
+        if !entry.is_empty() && seen.insert(entry.trim_end_matches('\\').to_lowercase()) {
+            joined.push(entry);
         }
     }
-    joined
+    joined.join(";")
 }
 
-/// `value` with each `%NAME%` replaced from the registry, else from what this process holds.
-fn expand(value: &str, raw: &[(String, String)], held: &HashMap<String, String>) -> String {
-    let find = |name: &str| {
-        raw.iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, found)| found.clone())
-            .or_else(|| lookup(name, held))
-    };
-    let mut text = value.to_string();
-    for _ in 0..8 {
-        let mut changed = false;
-        let mut out = String::with_capacity(text.len());
-        let mut rest = text.as_str();
-        while let Some(open) = rest.find('%') {
-            let after = &rest[open + 1..];
-            let Some(close) = after.find('%') else { break };
-            let name = &after[..close];
-            out.push_str(&rest[..open]);
-            match find(name) {
-                Some(found) => {
-                    out.push_str(&found);
-                    changed = true;
-                }
-                // A name nothing holds stays as it is, as Windows leaves one it cannot resolve.
-                None => {
-                    out.push('%');
-                    out.push_str(name);
-                    out.push('%');
-                }
-            }
-            rest = &after[close + 1..];
-        }
-        out.push_str(rest);
-        text = out;
-        if !changed {
+/// `value` with each `%NAME%` replaced once from `env`, as `til::env::expand_environment_strings` does; a name `env` lacks stays.
+fn expand(value: &str, env: &Env) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(open) = rest.find('%') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('%') else {
+            rest = &rest[open..];
             break;
+        };
+        match env.get(&after[..close]) {
+            Some(found) => out.push_str(found),
+            None => out.push_str(&rest[open..open + close + 2]),
         }
+        rest = &after[close + 1..];
     }
-    text
+    out.push_str(rest);
+    out
 }
 
-/// What `name` holds, matched as Windows matches a variable's name.
-fn lookup(name: &str, map: &HashMap<String, String>) -> Option<String> {
-    map.get(name)
-        .or_else(|| {
-            map.iter()
-                .find(|(key, _)| key.eq_ignore_ascii_case(name))
-                .map(|(_, found)| found)
-        })
-        .cloned()
+/// Whether two names are one to Windows: ordinal, ignoring case through the system's own table.
+fn same(a: &str, b: &str) -> bool {
+    let (a, b): (Vec<u16>, Vec<u16>) = (a.encode_utf16().collect(), b.encode_utf16().collect());
+    // SAFETY: each pointer and length come from a live buffer.
+    let order =
+        unsafe { CompareStringOrdinal(a.as_ptr(), a.len() as i32, b.as_ptr(), b.len() as i32, 1) };
+    order == CSTR_EQUAL
 }
 
-/// Each string value `root\path` holds, as written, so `%NAME%` stays for `expand`.
-fn read(root: HKEY, path: &str) -> Result<Vec<(String, String)>, String> {
-    let mut key: HKEY = std::ptr::null_mut();
-    let wide = wide(path);
-    // SAFETY: `wide` outlives the call, and `key` is closed once no longer read.
-    let status = unsafe { RegOpenKeyExW(root, wide.as_ptr(), 0, KEY_READ, &mut key) };
+/// Each text value `root\key` holds, with its kind, as written.
+fn read(root: HKEY, key: &str) -> anyhow::Result<Vec<(String, u32, String)>> {
+    let mut handle: HKEY = std::ptr::null_mut();
+    let wide: Vec<u16> = key.encode_utf16().chain([0]).collect();
+    // SAFETY: `wide` outlives the call.
+    let status = unsafe { RegOpenKeyExW(root, wide.as_ptr(), 0, KEY_READ, &mut handle) };
     if status == ERROR_FILE_NOT_FOUND {
         return Ok(Vec::new());
     }
     if status != ERROR_SUCCESS {
-        return Err(format!("RegOpenKeyExW({path}) failed, {status}"));
+        bail!("pty: cannot open the registry's {key}: error {status}");
     }
+    let values = values(handle, key);
+    // SAFETY: `handle` came from RegOpenKeyExW and is closed once.
+    unsafe { RegCloseKey(handle) };
+    values
+}
+
+/// The text values of the open key `handle`, sized as the key says its largest are.
+fn values(handle: HKEY, key: &str) -> anyhow::Result<Vec<(String, u32, String)>> {
+    let (mut names, mut bytes) = (0u32, 0u32);
+    // SAFETY: the two counts are written; every other field is not asked for.
+    let status = unsafe {
+        RegQueryInfoKeyW(
+            handle,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut names,
+            &mut bytes,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        bail!("pty: cannot measure the registry's {key}: error {status}");
+    }
+    let (mut name, mut data) = (vec![0u16; names as usize + 1], vec![0u8; bytes as usize]);
     let mut found = Vec::new();
-    let mut name = vec![0u16; 1024];
-    let mut data = vec![0u8; 128 * 1024];
-    let mut index = 0u32;
-    loop {
-        // Both counts are the room each buffer offers on this pass.
-        let mut name_len = name.len() as u32;
-        let mut kind = 0u32;
-        let mut data_len = data.len() as u32;
-        // SAFETY: each buffer is as long as the length passed beside it.
+    for index in 0.. {
+        let (mut name_len, mut data_len, mut kind) = (name.len() as u32, data.len() as u32, 0);
+        // SAFETY: each buffer is as long as the count passed beside it.
         let status = unsafe {
             RegEnumValueW(
-                key,
+                handle,
                 index,
                 name.as_mut_ptr(),
                 &mut name_len,
@@ -225,39 +229,24 @@ fn read(root: HKEY, path: &str) -> Result<Vec<(String, String)>, String> {
                 &mut data_len,
             )
         };
-        if status == ERROR_NO_MORE_ITEMS || status == ERROR_FILE_NOT_FOUND {
+        if status == ERROR_NO_MORE_ITEMS {
             break;
         }
         if status != ERROR_SUCCESS {
-            // SAFETY: `key` came from RegOpenKeyExW and is closed once.
-            unsafe { RegCloseKey(key) };
-            return Err(format!("RegEnumValueW({path}, {index}) failed, {status}"));
+            bail!("pty: cannot read value {index} of the registry's {key}: error {status}");
         }
-        index += 1;
-        let name = String::from_utf16_lossy(&name[..name_len as usize]);
-        // Only the two text kinds hold a value; a number or a binary block names no variable.
-        if name.is_empty() || !matches!(kind, REG_SZ | REG_EXPAND_SZ) {
+        if name_len == 0 || !matches!(kind, REG_SZ | REG_EXPAND_SZ) {
             continue;
         }
-        let text = String::from_utf16_lossy(&utf16(&data, data_len as usize));
-        found.push((name, text));
+        let units: Vec<u16> = data[..data_len as usize]
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .take_while(|unit| *unit != 0)
+            .collect();
+        let name = String::from_utf16_lossy(&name[..name_len as usize]);
+        found.push((name, kind, String::from_utf16_lossy(&units)));
     }
-    // SAFETY: `key` came from RegOpenKeyExW and is closed once.
-    unsafe { RegCloseKey(key) };
     Ok(found)
-}
-
-/// The UTF-16 text `bytes` holds, cut at its first null.
-fn utf16(bytes: &[u8], len: usize) -> Vec<u16> {
-    bytes[..len.min(bytes.len())]
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .take_while(|unit| *unit != 0)
-        .collect()
-}
-
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 #[cfg(test)]
