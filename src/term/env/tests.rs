@@ -68,6 +68,15 @@ fn a_folder_is_listed_once_and_this_process_s_own_come_after() {
 }
 
 #[test]
+fn a_path_only_this_process_holds_stays_without_the_registry_s() {
+    let held = env(&[("PATH", "C:\\portable;C:\\%OLD%;C:\\portable")]);
+    let mut registry = env(&[("LibPath", "C:\\lib;C:\\lib")]);
+    settle(&mut registry, &held);
+    assert_eq!(registry.get("Path"), Some("C:\\portable"));
+    assert_eq!(registry.get("LIBPATH"), Some("C:\\lib"));
+}
+
+#[test]
 fn a_session_gets_the_registry_path() {
     let path = path().expect("the registry reads");
     let mut seen = HashSet::new();

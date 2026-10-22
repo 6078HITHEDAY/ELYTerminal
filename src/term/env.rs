@@ -70,12 +70,24 @@ pub fn fresh() -> anyhow::Result<Env> {
     for (root, key) in KEYS {
         apply(&mut env, &read(root, key)?);
     }
-    for (name, value) in &mut env.0 {
-        if is_path(name) {
-            *value = dedupe(value, held.get(name));
+    settle(&mut env, &held);
+    Ok(env)
+}
+
+/// Each path variable listed once, with the folders only this process held, the registry naming it or not.
+fn settle(env: &mut Env, held: &Env) {
+    let names: Vec<String> = env
+        .0
+        .iter()
+        .chain(&held.0)
+        .map(|(name, _)| name.clone())
+        .collect();
+    for name in names.iter().filter(|name| is_path(name)) {
+        let value = dedupe(env.get(name).unwrap_or_default(), held.get(name));
+        if !value.is_empty() {
+            env.set(name, value);
         }
     }
-    Ok(env)
 }
 
 /// The folders `Path` holds now.

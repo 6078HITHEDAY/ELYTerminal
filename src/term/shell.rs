@@ -168,7 +168,11 @@ fn default_shell() -> anyhow::Result<String> {
 fn first_shell(folders: &str) -> anyhow::Result<String> {
     for name in ["pwsh", "powershell", "cmd"] {
         for folder in env::split_paths(folders) {
-            match crate::settings::program_path_in(name, &folder) {
+            // One folder as a PATH of its own, so a `;` inside its name stays.
+            let Ok(one) = env::join_paths([&folder]) else {
+                continue;
+            };
+            match crate::settings::program_path_in(name, &one) {
                 // An App Execution Alias is a stub that starts only while its package is installed.
                 Ok(found) if alias(&found) => {
                     log::info!("shell integration: {found} is an alias, so passed by")
@@ -201,7 +205,7 @@ mod windows_tests {
     #[test]
     fn an_alias_hides_no_pwsh_later_on_path() {
         let root = std::env::temp_dir().join(format!("elyterminal-shells-{}", std::process::id()));
-        let folders = ["WindowsApps", "PS7", "System32"].map(|name| root.join(name));
+        let folders = ["WindowsApps", "Tools;PS7", "System32"].map(|name| root.join(name));
         for (folder, file) in folders
             .iter()
             .zip(["pwsh.exe", "pwsh.exe", "powershell.exe"])
