@@ -15,10 +15,8 @@ use crate::{
 /// One notification a session every 3 seconds at most.
 const GAP: Duration = Duration::from_secs(3);
 
-/// The least a command runs before its end posts: a command worth hearing of takes its
-/// time, while the marks a program writes of its own, as an agent's messages carry, come
-/// and go in a breath.
-const RAN_FOR: Duration = Duration::from_secs(2);
+/// The least a command runs before its end posts, as Ghostty's `notify-on-command-finish-after`.
+const RAN_FOR: Duration = Duration::from_secs(5);
 
 /// The notifications a session keeps for presses and answers; past them the oldest goes.
 const POSTED: usize = 64;
@@ -313,7 +311,7 @@ fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Whether a command that ran from `start` to `now` told of long enough.
+/// Whether a command that ran from `start` to `now` ran long enough to post its end.
 fn ran_long(start: Instant, now: Instant) -> bool {
     now.duration_since(start) >= RAN_FOR
 }

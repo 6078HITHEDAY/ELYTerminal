@@ -83,14 +83,15 @@ fn a_notification_says_its_text_as_text() {
 }
 
 #[test]
-fn a_command_ran_short_of_ran_for_posts_nothing() {
+fn a_command_posts_its_end_once_it_ran_5_seconds() {
     let start = Instant::now();
     assert!(!ran_long(start, start), "no time ran");
+    let under = start + Duration::from_secs(5) - Duration::from_nanos(1);
+    assert!(!ran_long(start, under), "just under stays quiet");
     assert!(
-        !ran_long(start, start + RAN_FOR - Duration::from_nanos(1)),
-        "just under stays quiet"
+        ran_long(start, start + Duration::from_secs(5)),
+        "the boundary tells"
     );
-    assert!(ran_long(start, start + RAN_FOR), "the boundary tells");
 }
 
 #[test]
