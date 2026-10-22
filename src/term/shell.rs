@@ -139,6 +139,11 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         }
         _ => {
             launch.reports = false;
+            // Windows has no login shell of its own, so the shell that was chosen runs as it is.
+            #[cfg(windows)]
+            {
+                launch.program = Some((path.clone(), Vec::new()));
+            }
             log::info!("shell integration: none for {path}; its folder goes unreported")
         }
     }
@@ -151,10 +156,50 @@ fn default_shell() -> anyhow::Result<String> {
     Ok(super::unix::login_shell_path()?)
 }
 
+/// `pwsh`, as Windows Terminal takes it, else the Windows PowerShell the system ships, else `cmd`.
 #[cfg(windows)]
 fn default_shell() -> anyhow::Result<String> {
-    Ok("powershell.exe".into())
+    // The registry's PATH, so a shell in a folder added since this process opened is found.
+    let folders = super::env::path().unwrap_or_default();
+    for name in ["pwsh", "powershell", "cmd"] {
+        match crate::settings::program_path_in(name, &folders) {
+            // An App Execution Alias is a stub that starts only while its package is installed.
+            Ok(found) if !alias(&found) => return Ok(found),
+            Ok(found) => log::info!("shell integration: {found} is an alias, so passed by"),
+            Err(error) => log::info!("shell integration: no {name}: {error:#}"),
+        }
+    }
+    anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
+}
+
+/// Whether `path` lies in the folder Windows puts its App Execution Aliases in.
+#[cfg(windows)]
+fn alias(path: &str) -> bool {
+    Path::new(path)
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name.eq_ignore_ascii_case("WindowsApps"))
 }
 
 #[cfg(all(test, unix))]
 mod tests;
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::alias;
+
+    #[test]
+    fn an_app_execution_alias_is_recognised_by_its_folder() {
+        assert!(alias(
+            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"
+        ));
+        assert!(alias(
+            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WINDOWSAPPS\\pwsh.exe"
+        ));
+        assert!(!alias("C:\\Program Files\\PowerShell\\7\\pwsh.exe"));
+        assert!(!alias(
+            "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        ));
+        assert!(!alias("pwsh.exe"));
+    }
+}

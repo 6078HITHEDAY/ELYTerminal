@@ -171,8 +171,12 @@ impl Settings {
 
 /// The program `shell` names, as a session starts it: a file at a full path, or the first in `PATH`'s full folders.
 pub fn program_path(shell: &str) -> anyhow::Result<String> {
-    let folders = env::var_os("PATH").unwrap_or_default();
-    find(shell, &folders, cfg!(windows))
+    program_path_in(shell, &env::var_os("PATH").unwrap_or_default())
+}
+
+/// The program `shell` names, in `folders` as `PATH` lists them.
+pub fn program_path_in(shell: &str, folders: &impl AsRef<OsStr>) -> anyhow::Result<String> {
+    find(shell, folders.as_ref(), cfg!(windows))
 }
 
 /// `shell`'s program, or the first one named so in `folders`, listed as `PATH` lists them; with `exe`, as on Windows, a name without an extension means name.exe.

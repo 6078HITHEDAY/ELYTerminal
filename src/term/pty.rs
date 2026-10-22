@@ -109,6 +109,15 @@ pub fn spawn(
     cell: (u16, u16),
     config: Config,
 ) -> anyhow::Result<(Pty, Events)> {
+    // Windows reads the registry afresh, so a folder added since this process opened still reaches a session.
+    #[cfg(windows)]
+    let mut env = {
+        let mut env = super::env::fresh();
+        env.insert("TERM".to_string(), "xterm-256color".to_string());
+        env.insert("COLORTERM".to_string(), "truecolor".to_string());
+        env
+    };
+    #[cfg(not(windows))]
     let mut env = HashMap::from([
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
@@ -172,10 +181,15 @@ fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std
 #[cfg(windows)]
 fn start(launch: &Launch, env: HashMap<String, String>, size: WindowSize) -> std::io::Result<Raw> {
     let options = tty::Options {
-        shell: launch
-            .program
-            .clone()
-            .map(|(program, args)| tty::Shell::new(program, args)),
+        shell: launch.program.clone().map(|(program, args)| {
+            // alacritty puts the program into the command line as it is, and Windows reads the first word of it, so a path with a space needs its quotes.
+            let program = if program.contains(' ') {
+                format!("\"{program}\"")
+            } else {
+                program
+            };
+            tty::Shell::new(program, args)
+        }),
         working_directory: Some(launch.cwd.clone()),
         drain_on_exit: true,
         env,
