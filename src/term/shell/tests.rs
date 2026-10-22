@@ -59,6 +59,11 @@ struct Run {
 impl Run {
     /// Starts `shell` in a fresh folder; `files` go under its HOME first.
     fn start(shell: &str, files: &[(&str, &str)]) -> Self {
+        Self::with(shell, files, Vec::new())
+    }
+
+    /// As `start`, with `env` on top.
+    fn with(shell: &str, files: &[(&str, &str)], env: Vec<(String, String)>) -> Self {
         crate::testlog::init();
         // Two tests may run one shell at once.
         static RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -82,6 +87,7 @@ impl Run {
         install(&dir).expect("scripts install");
         let mut launch = launch(shell, start.clone(), &dir).expect("a launch");
         launch.env.push(("HOME".into(), home.display().to_string()));
+        launch.env.extend(env);
         let (pty, events) = spawn(&launch, (100, 30), (8, 16), config(&Settings::default()))
             .expect("the shell starts");
         Self {
@@ -457,4 +463,31 @@ fn each_shell_reads_a_dropped_path_its_own_way() {
         let launch = launch(shell, PathBuf::from("/"), &dir).expect("a launch");
         assert_eq!(launch.quote, quote, "{name}");
     }
+}
+
+#[test]
+fn under_wsl_each_shell_reports_its_folder_as_windows_names_it() {
+    // wslpath's stand-in names a folder by the share `\\localhost\wsl`, which this host reads as `/wsl`.
+    let fake = folder("wslpath");
+    let names = r#"printf '%s%s\n' '\\localhost\wsl' "$(printf %s "$2" | tr / '\\')""#;
+    fs::write(fake.join("wslpath"), format!("#!/bin/sh\n{names}\n")).expect("wslpath");
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(fake.join("wslpath"), fs::Permissions::from_mode(0o755)).expect("a mode");
+    let path = format!("{}:{}", fake.display(), env::var("PATH").expect("PATH"));
+    for shell in ["zsh", "bash", "fish"] {
+        let wsl = vec![
+            ("ELY_WSL".into(), "1".into()),
+            ("PATH".into(), path.clone()),
+        ];
+        let mut run = Run::with(&installed(shell), &[], wsl);
+        // fish reports its own folder too, which Windows passes by as naming none of its own.
+        let start = Path::new("/wsl").join(run.start.strip_prefix("/").expect("a full path"));
+        run.until("the folder", |run| run.folders.contains(&start));
+        run.send("cd in*");
+        run.until("inner folder", |run| {
+            run.folders.contains(&start.join(INNER))
+        });
+        run.finish();
+    }
+    fs::remove_dir_all(&fake).expect("cleanup");
 }

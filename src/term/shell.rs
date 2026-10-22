@@ -10,7 +10,7 @@ use gpui::{App, Global};
 use super::{drop::Quote, pty::Launch};
 
 /// Each script, by its path under the integration folder.
-const SCRIPTS: [(&str, &str); 4] = [
+const SCRIPTS: [(&str, &str); 5] = [
     (
         "zsh/.zshenv",
         include_str!("../../assets/shell-integration/zsh/.zshenv"),
@@ -26,6 +26,10 @@ const SCRIPTS: [(&str, &str); 4] = [
     (
         "pwsh/elyterminal.ps1",
         include_str!("../../assets/shell-integration/pwsh/elyterminal.ps1"),
+    ),
+    (
+        "wsl/elyterminal.sh",
+        include_str!("../../assets/shell-integration/wsl/elyterminal.sh"),
     ),
 ];
 
@@ -137,6 +141,19 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
                 ],
             ));
         }
+        // WSL starts the distribution's login shell through the launcher, which loads its integration.
+        #[cfg(windows)]
+        "wsl" => {
+            let launcher = r#"exec /bin/sh "$ELY_WSL/wsl/elyterminal.sh""#;
+            let args = ["-e", "/bin/sh", "-c", launcher].map(String::from);
+            launch.program = Some((path.clone(), args.to_vec()));
+            let shared = super::env::fresh()?.get("WSLENV").map(str::to_string);
+            let shared = shared.map_or("ELY_WSL/p".into(), |list| format!("{list}:ELY_WSL/p"));
+            launch
+                .env
+                .push(("ELY_WSL".into(), dir.display().to_string()));
+            launch.env.push(("WSLENV".into(), shared));
+        }
         _ => {
             launch.reports = false;
             // Windows has no login shell of its own, so the shell that was chosen runs as it is.
@@ -200,7 +217,14 @@ mod tests;
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::{alias, first_shell};
+    use super::{SCRIPTS, alias, first_shell};
+
+    #[test]
+    fn the_scripts_end_lines_as_unix_shells_read_them() {
+        for (name, text) in SCRIPTS {
+            assert!(!text.contains('\r'), "{name} holds a carriage return");
+        }
+    }
 
     #[test]
     fn an_alias_hides_no_pwsh_later_on_path() {
