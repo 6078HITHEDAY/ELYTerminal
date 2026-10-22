@@ -174,4 +174,4 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 
 ## 35. Release
 
-- [ ] T72 Release v0.1.8 with T67 to T71: version 0.1.8; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese; a short thanks on issues #3, #7, #10 and PRs #5, #8, #9, #11, then each closed; issue #2 closed without a word.
+- [x] T72 Release v0.1.8 with T67 to T71: version 0.1.8; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese; a short thanks on issues #3, #7, #10 and PRs #5, #8, #9, #11, then each closed; issue #2 closed without a word.

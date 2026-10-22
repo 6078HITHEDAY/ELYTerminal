@@ -356,3 +356,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T71
 
 - Round 1, a9637ad: PASS. omp's bursts of A, B, C and D;0, which posted three ends on the parent, posted none; a 5.2-second command posted, a 2.1-second one and an end without its C did not; `ended`, the row's error mark, OSC 7501 and OSC 9 kept their paths; bash 3.2 and zsh held; check.sh passed.
+
+## T72
+
+- Round 1, 26cd2aa with v0.1.8 published on GitHub at d5f97df: FAIL, on one point: the macOS and Windows executables keep dependencies' source paths under the build hosts' home folders, panic locations rustc keeps. That criterion was the round's prompt's, not the project's; every release since v0.1.0 carries them, v0.1.7 1249 in its executable; the owner was told, a decision apart.
+- Round 2, 26cd2aa: PASS. The release is published and latest at d5f97df, which CI run 39730393420 tested; the three files match the notes' SHA-256 downloaded anonymously; the disk image stapled and notarized, the zip's executable a GUI program with its icons and no C runtime DLL, the tarball's modes and glibc 2.35; each binary holds T67 to T71's work for its platform and LF scripts; the notes match the work in English and Chinese and credit the four PR authors. Then the issues and PRs got their thanks and closed, #2 without a word.
