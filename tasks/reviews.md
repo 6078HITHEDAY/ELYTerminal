@@ -341,8 +341,14 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 112598b: FAIL. fish 4, which reads `?` as no glob, passed every drive folder by; a network share went as another host's folder; names WSL shows Windows through U+F000 escapes reached git as they were; zsh under `nounset` lost its folder outside WSL. Fixed in 84ea235: fish matches a drive by regex; every share goes with an empty host, and `tap` lost its WSL host rule; `git::wsl` maps the escapes both ways, Files' marks too; zsh reads `${ELY_WSL-}`.
 - Round 2, 84ea235: PASS. Round 1's 90-case matrix, its launcher and git harnesses, 130 escape cases and 11 parser cases held; check.sh, the Windows clippy and the Linux tests passed; the owner's PC followed `/tmp/ely t68/re:po` and read its git through `wsl.exe`.
+- Round 3, 305b650: PASS. CI then failed on Windows: the reused runner's checkout kept the PowerShell script's carriage returns from before `.gitattributes`, which PowerShell reads, so the guard reads only the scripts WSL runs; 15 guard cases and a stale-checkout replay held.
 
 ## T69
 
 - Round 1, 60ea60e: FAIL. A key's release took the natural editing path by the modifiers left at release, so Option-Left let go after Option sent kitty's Left release, and Left pressed plain lost its own once Option went down. Fixed in 4f54998: each held key remembers how its press went, bytes, a Windows record or natural editing, and its repeats and release follow it.
 - Round 2, 4f54998: PASS. The finding's three chords and its reverse held under kitty's flags 31; Windows' record rule matched the old one in 576 combinations; check.sh and the Linux and Windows lints passed.
+
+## T70
+
+- Round 1, 5560e2a: FAIL. Duplicate and Close held across shells, moves and closes under an open menu; but a drag selecting text in the rename field lifted the row too and moved the session. Fixed in a455df9: the field's wrapper keeps a left press from the row and its drag.
+- Round 2, a455df9: PASS. The gesture selected `GHIJK` with the rows in place; presses, double presses, Enter, Escape, blur, a right press in the field and the rows' own drags held; check.sh passed.
