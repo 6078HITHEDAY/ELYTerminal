@@ -196,7 +196,7 @@ fn herdr_s_agents_replace_their_own_records_alone() {
 }
 
 #[test]
-fn a_new_prompt_leaves_done_and_error() {
+fn a_new_prompt_leaves_done_and_error_unless_a_program_reports_itself() {
     let mut records = Records::default();
     for (id, state) in [
         ("a", State::Idle),
@@ -206,6 +206,24 @@ fn a_new_prompt_leaves_done_and_error() {
         ("e", State::Error),
     ] {
         records.report(id.into(), record(state, None));
+    }
+    records.prompt();
+    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["a", "b", "c", "d", "e"],
+        "a program that reports through OSC 7501 ends its records itself"
+    );
+
+    records.reset();
+    for (id, state) in [
+        ("a", State::Idle),
+        ("b", State::Working),
+        ("c", State::Done),
+        ("d", State::Blocked),
+        ("e", State::Error),
+    ] {
+        records.put(id.into(), record(state, None));
     }
     records.prompt();
     let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
