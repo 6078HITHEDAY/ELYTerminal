@@ -159,6 +159,16 @@ impl TerminalView {
             action,
             unshifted: facts.unshifted,
         };
+        #[cfg(target_os = "macos")]
+        if crate::settings::SettingsStore::get(cx).natural_text_editing
+            && let Some(bytes) = keys::natural(&key, modifiers.alt)
+        {
+            if action != Action::Release {
+                log::trace!("terminal {}: {key:?} sends {bytes:?}", self.pty.pid);
+                self.input(bytes.to_vec(), cx);
+            }
+            return Some(false);
+        }
         let mode = *self.pty.term.lock().mode();
         let kitty = Kitty {
             disambiguate: mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
