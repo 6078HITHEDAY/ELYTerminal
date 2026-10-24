@@ -394,3 +394,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T79
 
 - Round 1, cd949e5: PASS. Backspace and Left went as `7f` and `ESC [ D` under kitty's flags 1 and 3 and as win32-input-mode records, and omp 18.12.1's own parser, its N-API wrapper set aside, read 1,076 edit-key cases right; omp's fix `3bc77d6` lies after v18.12.1 and in v18.12.2, and a probe of its stdin method before and after showed a relayed DA1 reaching the prompt before and not after; the kitty flags log named eight changes, the alternate screen and RIS among them, and nothing else; check.sh and a Windows GNU clippy passed.
+
+## T80
+
+- Round 1, 7b926dc: FAIL. The decoder read each set through encoding_rs's tables, which differ from libX11's: Big5-HKSCS in 3,043 characters, 1,159 private-use ones among them, which stopped the app at its commit, U+F83E first; Big5's `☉` and `♁`, and 255 more under a Big5 locale; GB2312's `・` and `―`, read through GBK, which maps cells GB2312 leaves empty. Fixed in 715aa4e: each set reads through libX11's own table, which `tables/generate.sh` writes from libX11 1.8.12's lcUniConv, and the Linux tarball carries libX11's notice.
+- Round 2, 715aa4e: PASS. The generator rewrote all eight tables byte for byte; 1,007,622 oracle records of round 1, 4,006 mixed strings in five locales through libX11 1.8.12 and 1,116,038 records through fcitx5's own xcb-imdkit 1.0.9, every scalar from U+0020 to U+10FFFF, decoded as their encoders' own reverse conversions; a real IBus engine's `・〜−☉♁` and U+F83E reached the shell whole; 50,000 random byte strings decoded or failed without a panic; check.sh, the Linux IME tests and CI on all three systems passed.
