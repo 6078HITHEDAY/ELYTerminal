@@ -13,7 +13,7 @@ alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
 base64 = "0.22"
 dirs = "7"
-ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "9565a6c565142a04be5359eaf9ebd2e148f6f75b" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "fb22b8975c2f2b332e7ca7bddf8e80b9f021a96c" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
