@@ -15,6 +15,9 @@ fi
 _ely_ran=
 _ely_n=0
 _ely_ps0=
+# MSYS's bash, Git for Windows' too, names a folder as Windows does with pwd -W.
+_ely_msys=
+builtin pwd -W >/dev/null 2>&1 && _ely_msys=1
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404 )); then
   # PS0 runs in the shell, so its subscript can note that a command ran.
   _ely_ps0='${_ely_note[_ely_ran=1]-}\e]133;C\a'
@@ -30,6 +33,10 @@ _ely_prompt() {
     # Under WSL the folder goes as Windows names it: a drive's, or the distribution's share.
     dir=$(wslpath -w "$PWD" 2>/dev/null) || dir=
     dir=${dir//\\//}
+    case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
+  elif [ -n "$_ely_msys" ]; then
+    # Git for Windows and MSYS2 name it so too: C:/x, or //host/share.
+    dir=$(builtin pwd -W)
     case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
   fi
   for (( i = 0; i < ${#dir}; i++ )); do

@@ -88,6 +88,13 @@ pub fn launch(shell: &str, cwd: PathBuf, dir: &Path) -> anyhow::Result<Launch> {
         .file_stem()
         .map(|stem| stem.to_string_lossy().to_lowercase())
         .unwrap_or_default();
+    #[cfg(windows)]
+    let name = if name == "sh" && git_bash(Path::new(&path)) {
+        log::info!("shell integration: {path} is Git for Windows' sh, which runs its bash");
+        "bash".to_string()
+    } else {
+        name
+    };
     let mut launch = Launch {
         program: (!shell.is_empty()).then(|| (path.clone(), Vec::new())),
         cwd,
@@ -203,6 +210,18 @@ fn first_shell(folders: &str) -> anyhow::Result<String> {
     anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
 }
 
+/// Whether `sh` is Git for Windows' `bin\sh.exe`, which starts its `usr\bin\bash.exe` as bash.
+#[cfg(windows)]
+fn git_bash(sh: &Path) -> bool {
+    sh.parent()
+        .filter(|bin| {
+            bin.file_name()
+                .is_some_and(|name| name.eq_ignore_ascii_case("bin"))
+        })
+        .and_then(Path::parent)
+        .is_some_and(|root| root.join("usr").join("bin").join("bash.exe").is_file())
+}
+
 /// Whether `path` lies in the folder Windows puts its App Execution Aliases in.
 #[cfg(windows)]
 fn alias(path: &str) -> bool {
@@ -217,7 +236,16 @@ mod tests;
 
 #[cfg(all(test, windows))]
 mod windows_tests {
-    use super::{SCRIPTS, alias, first_shell};
+    use std::time::{Duration, Instant};
+
+    use alacritty_terminal::event::Event;
+    use futures::channel::mpsc::TryRecvError;
+
+    use super::{SCRIPTS, alias, first_shell, git_bash, install, launch};
+    use crate::{
+        settings::Settings,
+        term::{Events, PtyEvent, config, spawn},
+    };
 
     #[test]
     fn the_scripts_wsl_runs_end_lines_as_unix_shells_read_them() {
@@ -263,5 +291,83 @@ mod windows_tests {
             "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
         ));
         assert!(!alias("pwsh.exe"));
+    }
+
+    #[test]
+    fn git_bash_is_known_by_its_sh_in_bin_beside_usr_bin_bash() {
+        let root = std::env::temp_dir().join(format!("elyterminal-git-{}", std::process::id()));
+        let file = |path: &str| {
+            let path = root.join(path);
+            std::fs::create_dir_all(path.parent().expect("a folder")).expect("a folder");
+            std::fs::write(&path, "").expect("a program");
+            path
+        };
+        let git = file("Git\\bin\\sh.exe");
+        file("Git\\usr\\bin\\bash.exe");
+        // MSYS2's sh is bash in POSIX mode, which reads no --rcfile.
+        let msys = file("msys64\\usr\\bin\\sh.exe");
+        file("msys64\\usr\\bin\\bash.exe");
+        let alone = file("Tools\\bin\\sh.exe");
+        let found = [&git, &msys, &alone].map(|sh| git_bash(sh));
+        std::fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!(found, [true, false, false]);
+    }
+
+    /// The next folder the session reports, within 30 seconds.
+    fn next_folder(events: &mut Events) -> std::path::PathBuf {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            match events.try_recv() {
+                Ok(PtyEvent::Folder(folder)) => return folder,
+                Ok(_) => {}
+                Err(TryRecvError::Closed) => {
+                    panic!("the session ended before it reported a folder")
+                }
+                Err(TryRecvError::Empty) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(50))
+                }
+                Err(TryRecvError::Empty) => panic!("no folder within 30 seconds"),
+            }
+        }
+    }
+
+    #[test]
+    fn git_bash_s_sh_reports_its_folder_as_windows_names_it() {
+        let found = std::process::Command::new("git")
+            .arg("--exec-path")
+            .output()
+            .expect("git runs");
+        let exec = String::from_utf8(found.stdout).expect("utf-8");
+        // ROOT/mingw64/libexec/git-core, or ucrt64.
+        let git = std::path::Path::new(exec.trim())
+            .ancestors()
+            .nth(3)
+            .expect("Git's folder");
+        let root = std::env::temp_dir().join(format!("elyterminal-gitbash-{}", std::process::id()));
+        let (dir, start) = (root.join("integration"), root.join("start here"));
+        std::fs::create_dir_all(start.join("in ner")).expect("the folders");
+        install(&dir).expect("the scripts");
+        let sh = git.join("bin").join("sh.exe");
+        let launch = launch(sh.to_str().expect("text"), start.clone(), &dir).expect("a launch");
+        let args = launch.program.as_ref().map(|(_, args)| args.clone());
+        assert_eq!(args.expect("arguments")[0], "--rcfile");
+        let (pty, mut events) = spawn(&launch, (80, 24), (8, 16), config(&Settings::default()))
+            .expect("Git Bash starts");
+        let first = next_folder(&mut events);
+        pty.write(&b"cd 'in ner'\r"[..]);
+        let second = next_folder(&mut events);
+        pty.write(&b"exit\r"[..]);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !matches!(
+            events.try_recv(),
+            Ok(PtyEvent::Term(Event::Exit)) | Err(TryRecvError::Closed)
+        ) {
+            assert!(Instant::now() < deadline, "Git Bash did not exit");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let real = |path: &std::path::Path| path.canonicalize().expect("a real folder");
+        assert_eq!(real(&first), real(&start));
+        assert_eq!(real(&second), real(&start.join("in ner")));
+        std::fs::remove_dir_all(&root).expect("cleanup");
     }
 }
