@@ -305,6 +305,15 @@ impl TerminalView {
                 }
             }
         }
+        if drawn {
+            let mended = super::wide::mend(&mut self.pty.term.lock());
+            if mended > 0 {
+                log::debug!(
+                    "terminal {}: {mended} split wide characters cleared",
+                    self.pty.pid
+                );
+            }
+        }
         // ponytail: a full search per output batch while find is open; search only new lines if it lags.
         if drawn && self.finder.is_some() {
             self.search(false, cx);
