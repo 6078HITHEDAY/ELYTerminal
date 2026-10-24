@@ -365,3 +365,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T73
 
 - Round 1, 480dbf9: PASS. check.sh and the Windows clippy passed; 84 buffer and fragmentation cases, held marks and links, overflowing bodies and WouldBlock, Interrupted, EIO and EBADF after bytes kept the tap's output whole, and the parent returned nothing with bytes waiting; a simulation over piper 0.2.5's real pipe drained 2,000,000 bytes through 1,540 turns, and without the wake stopped at 66,660. Native IOCP and the reporter's own stall went unexercised.
+
+## T74
+
+- Round 1, 46047a3: FAIL. Git's `sh.exe` took the integration and reported plain folders; but `pwd -W` gives a name's controls and `"*:<>?|` back as ASCII, which Windows holds at U+F000 and up, so `bell\adir` and `re:po` named other paths, and the command substitution dropped a name's last newline, naming a sibling. Fixed in 92f6199: past the drive the script maps those characters forward again, and a mark after `pwd -W` keeps the name's own newline.
+- Round 2, 92f6199: PASS. 57 cases on bash 3.2 and 5.2, all 31 controls and the reserved characters, drive roots, UNC, MSYS's `/tmp` and `/`, DEL, a backslash, non-ASCII names, a failing `pwd -W` and `set -u`, held, and removing either fix failed them again; 114 receiving paths matched the names Windows holds; check.sh, the Linux tests and the Windows clippy passed. Real UNC shares, symlinks and junctions on Windows went unexercised.
