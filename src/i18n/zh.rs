@@ -63,6 +63,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.terminal.start_in", "起始位置"),
     ("et.start.home", "主目录"),
     ("et.start.session", "当前会话的文件夹"),
+    ("et.start.folder", "指定文件夹"),
+    ("et.terminal.start_folder", "文件夹"),
+    (
+        "et.terminal.start_folder_hint",
+        "起始位置选“指定文件夹”时，会话从这里开始",
+    ),
     ("et.terminal.scrollback", "回滚行数"),
     ("et.terminal.option_as_alt", "Option 键作为 Alt"),
     ("et.option.off", "关闭"),

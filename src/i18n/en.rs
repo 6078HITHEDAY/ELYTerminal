@@ -63,6 +63,12 @@ pub const MESSAGES: &[(&str, &str)] = &[
     ("et.terminal.start_in", "Start in"),
     ("et.start.home", "Home"),
     ("et.start.session", "Session's folder"),
+    ("et.start.folder", "Folder"),
+    ("et.terminal.start_folder", "Folder"),
+    (
+        "et.terminal.start_folder_hint",
+        "Where sessions start while Start in says Folder",
+    ),
     ("et.terminal.scrollback", "Scrollback lines"),
     ("et.terminal.option_as_alt", "Option as Alt"),
     ("et.option.off", "Off"),

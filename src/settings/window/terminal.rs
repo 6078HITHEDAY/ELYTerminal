@@ -40,20 +40,19 @@ impl SettingsWindow {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
         let word = |key: &str| text(cx, key, &[]);
-        let shell = div()
-            .w(cx.theme().prose_width())
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(PathInput::new("settings-shell", &self.shell))
-            .children((self.refused.clone()).map(|why| InlineMessage::new(Severity::Danger, why)));
+        let shell = PathInput::new("settings-shell", &self.shell);
+        let shell = path_field(shell, self.refused.clone(), cx);
+        let folder = PathInput::new("settings-start-folder", &self.folder).directories();
+        let folder = path_field(folder, self.refused_folder.clone(), cx);
         let start = match settings.start_in {
             StartIn::Home => "home",
             StartIn::Session => "session",
+            StartIn::Folder => "folder",
         };
         let start = SegmentedControl::new("settings-start-in", start)
             .segment("home", word("et.start.home"), None)
             .segment("session", word("et.start.session"), None)
+            .segment("folder", word("et.start.folder"), None)
             .size(ControlSize::Sm)
             .on_change({
                 let this = this.clone();
@@ -75,6 +74,11 @@ impl SettingsWindow {
         let mut section = SettingsSection::new(word("et.settings.terminal"))
             .row(SettingsRow::new(word("et.terminal.shell")).control(shell))
             .row(SettingsRow::new(word("et.terminal.start_in")).control(start))
+            .row(
+                SettingsRow::new(word("et.terminal.start_folder"))
+                    .description(word("et.terminal.start_folder_hint"))
+                    .control(folder),
+            )
             .row(SettingsRow::new(word("et.terminal.scrollback")).control(lines));
         // Off macOS, Alt is always Alt.
         if cfg!(target_os = "macos") {
@@ -201,11 +205,19 @@ fn updates_row(cx: &App) -> SettingsRow {
         .control(control)
 }
 
+/// A path field, and below it why what it holds is not saved.
+fn path_field(path: PathInput, refused: Option<SharedString>, cx: &App) -> Div {
+    let refused = refused.map(|why| InlineMessage::new(Severity::Danger, why));
+    let field = div().w(cx.theme().prose_width()).flex().flex_col().gap_1();
+    field.child(path).children(refused)
+}
+
 /// Where new sessions start, as the settings keep it.
 fn start_in(this: &Entity<SettingsWindow>, value: &SharedString, cx: &mut App) {
     let start = match value.as_ref() {
         "home" => StartIn::Home,
         "session" => StartIn::Session,
+        "folder" => StartIn::Folder,
         other => unreachable!("settings: no start {other}"),
     };
     set(

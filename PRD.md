@@ -120,7 +120,7 @@ Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in 
   - Padding: horizontal and vertical.
 - Terminal
   - Shell: a path; empty runs the login shell, on Windows `pwsh`, else `powershell`, else `cmd`. On Windows a session takes the registry's environment as it starts.
-  - Start in: Home, or the active session's folder.
+  - Start in: Home, which a `wsl` session takes as its distribution's own, the active session's folder, or a folder of your own.
   - Scrollback lines.
   - Option as Alt: off, left, right, both (macOS only).
   - Natural text editing: a switch, off by default (macOS only); Option and Command edit by word and line, as the shell expects.

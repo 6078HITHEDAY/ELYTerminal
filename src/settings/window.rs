@@ -88,10 +88,13 @@ pub struct SettingsWindow {
     focus: FocusHandle,
     section: SharedString,
     shell: Entity<TextInput>,
+    /// Start in's own folder, typed or browsed.
+    folder: Entity<TextInput>,
     /// The shortcut list's search.
     search: Entity<TextInput>,
-    /// Why the typed shell is not saved.
+    /// Why the typed shell, and the typed folder, are not saved.
     refused: Option<SharedString>,
+    refused_folder: Option<SharedString>,
     /// Why the last change did not save.
     failed: Option<SharedString>,
     /// Refusals so far; a field keyed by it drops its draft and shows the settings again.
@@ -103,7 +106,7 @@ pub struct SettingsWindow {
     adding: bool,
     /// Whether the cursor preview shows, as it blinks.
     lit: bool,
-    _typed: Subscription,
+    _typed: [Subscription; 2],
     _settings: Subscription,
     _updates: Subscription,
     _language: Subscription,
@@ -118,17 +121,32 @@ impl SettingsWindow {
             input.set_text(SettingsStore::get(cx).shell.clone(), cx);
             input
         });
+        let folder = cx.new(|cx| {
+            let mut input = TextInput::new(window, cx);
+            input.set_text(SettingsStore::get(cx).start_folder.clone(), cx);
+            input
+        });
         let font = cx.new(|cx| TextInput::new(window, cx));
         let search = cx.new(|cx| {
             let placeholder = text(cx, "et.settings.search_shortcuts", &[]);
             TextInput::new(window, cx).placeholder(placeholder)
         });
-        let typed = cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
-            if let InputEvent::Changed = event {
-                let shell = input.read(cx).text().to_string();
-                this.save_shell(shell, cx);
-            }
-        });
+        let typed = [
+            cx.subscribe(&shell, |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Changed = event {
+                    let shell = input.read(cx).text().to_string();
+                    let put = |settings: &mut Settings, shell| settings.shell = shell;
+                    this.refused = this.save_typed("shell", shell, put, cx);
+                }
+            }),
+            cx.subscribe(&folder, |this, input, event: &InputEvent, cx| {
+                if let InputEvent::Changed = event {
+                    let folder = input.read(cx).text().to_string();
+                    let put = |settings: &mut Settings, folder| settings.start_folder = folder;
+                    this.refused_folder = this.save_typed("start_folder", folder, put, cx);
+                }
+            }),
+        ];
         // Focus inside, so the window's keys find its context.
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -136,8 +154,10 @@ impl SettingsWindow {
             focus,
             section: SECTIONS[0].0.into(),
             shell,
+            folder,
             search,
             refused: None,
+            refused_folder: None,
             failed: None,
             drafts: 0,
             font,
@@ -182,20 +202,27 @@ impl SettingsWindow {
         })
     }
 
-    /// Saves `shell` when it names a program; else says why and keeps the saved one.
-    fn save_shell(&mut self, shell: String, cx: &mut Context<Self>) {
-        self.refused = match SettingsStore::update(cx, |settings| settings.shell = shell.clone()) {
+    /// Saves what a field holds through `put`, so a shell or folder that names none keeps the saved one; the store's reason, for the field's row.
+    fn save_typed(
+        &mut self,
+        field: &str,
+        value: String,
+        put: fn(&mut Settings, String),
+        cx: &mut Context<Self>,
+    ) -> Option<SharedString> {
+        let saved = SettingsStore::update(cx, |settings| put(settings, value.clone()));
+        cx.notify();
+        match saved {
             Ok(()) => {
-                log::info!("settings: new sessions run {shell:?}");
+                log::info!("settings: {field} is {value:?}");
                 self.failed = None;
                 None
             }
             Err(error) => {
-                log::debug!("settings: the shell stays: {error:#}");
+                log::debug!("settings: {field} stays: {error:#}");
                 Some(format!("{error:#}").into())
             }
-        };
-        cx.notify();
+        }
     }
 }
 
