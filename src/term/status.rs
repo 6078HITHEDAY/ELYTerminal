@@ -4,7 +4,7 @@ use base64::{
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
 
-use super::notify::Progress;
+use super::{marks::Mark, notify::Progress};
 
 /// What a program says it is doing, OSC 7501.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,6 +200,8 @@ pub struct Records {
     reported: bool,
     /// The state a row showed at the last note.
     shows: Option<State>,
+    /// Commands running, as OSC 133 C and D nest them.
+    commands: u32,
 }
 
 impl Records {
@@ -254,6 +256,7 @@ impl Records {
     pub fn reset(&mut self) {
         self.list.clear();
         self.reported = false;
+        self.commands = 0;
     }
 
     fn put(&mut self, id: String, record: Record) {
@@ -285,15 +288,19 @@ impl Records {
         }
     }
 
-    /// A new prompt: working, blocked and idle records go, done and error stay — unless
-    /// a program reports its own through OSC 7501, whose records it ends itself.
-    pub fn prompt(&mut self) {
-        if self.reported {
-            log::debug!("status: a prompt passes by, a program reports through OSC 7501");
-            return;
+    /// OSC 133: a shell's prompt drops working, blocked and idle records, as the spec asks; one inside a running command is its program's, as omp's are.
+    pub fn mark(&mut self, mark: &Mark) {
+        match mark {
+            Mark::Output => self.commands = self.commands.saturating_add(1),
+            Mark::Done(_) => self.commands = self.commands.saturating_sub(1),
+            Mark::Prompt(_) if self.commands > 0 => {
+                log::debug!("status: a prompt inside a running command keeps the records")
+            }
+            Mark::Prompt(_) => self
+                .list
+                .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error)),
+            Mark::Input => {}
         }
-        self.list
-            .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error));
     }
 
     /// The user typed: done and error records are seen and go, but herdr's, which herdr marks seen; true when any went.

@@ -263,6 +263,9 @@ impl TerminalView {
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
         for event in events {
+            if let PtyEvent::Mark(mark) = &event {
+                self.records.mark(mark);
+            }
             match event {
                 PtyEvent::Folder(folder) => {
                     self.reports += 1;
@@ -273,11 +276,8 @@ impl TerminalView {
                 #[cfg(windows)]
                 PtyEvent::Win32(on) => self.win32 = on,
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
-                // A new prompt ends what was working, waiting or idle; done and error
-                // stay, and a program that reports through OSC 7501 ends its own.
                 PtyEvent::Mark(Mark::Prompt(click)) => {
                     self.shell = Shell::Prompting(click);
-                    self.records.prompt();
                     self.restate(cx);
                 }
                 PtyEvent::Mark(Mark::Output) => {

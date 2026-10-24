@@ -1,5 +1,8 @@
 use super::*;
-use crate::term::notify::Progress;
+use crate::term::{
+    marks::{Click, Mark},
+    notify::Progress,
+};
 
 fn encoded(text: &[u8]) -> String {
     BASE64.encode(text)
@@ -195,8 +198,13 @@ fn herdr_s_agents_replace_their_own_records_alone() {
     );
 }
 
+/// The records' ids, oldest first.
+fn kept(records: &Records) -> Vec<&str> {
+    records.list.iter().map(|(id, ..)| id.as_str()).collect()
+}
+
 #[test]
-fn a_new_prompt_leaves_done_and_error_unless_a_program_reports_itself() {
+fn a_shell_s_prompt_leaves_done_and_error_though_programs_reported() {
     let mut records = Records::default();
     for (id, state) in [
         ("a", State::Idle),
@@ -207,27 +215,41 @@ fn a_new_prompt_leaves_done_and_error_unless_a_program_reports_itself() {
     ] {
         records.report(id.into(), record(state, None));
     }
-    records.prompt();
-    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
-    assert_eq!(
-        ids,
-        ["a", "b", "c", "d", "e"],
-        "a program that reports through OSC 7501 ends its records itself"
-    );
+    records.mark(&Mark::Prompt(Click::Arrows));
+    assert_eq!(kept(&records), ["c", "e"]);
+}
 
-    records.reset();
-    for (id, state) in [
-        ("a", State::Idle),
-        ("b", State::Working),
-        ("c", State::Done),
-        ("d", State::Blocked),
-        ("e", State::Error),
-    ] {
-        records.put(id.into(), record(state, None));
+#[test]
+fn a_running_command_s_own_prompts_drop_nothing() {
+    let mut records = Records::default();
+    // The shell starts omp, which reports its work and marks each message A, then B, C and D;0.
+    records.mark(&Mark::Output);
+    records.report(String::new(), record(State::Working, Some("omp")));
+    for _ in 0..3 {
+        for mark in [
+            Mark::Prompt(Click::Arrows),
+            Mark::Input,
+            Mark::Output,
+            Mark::Done(Some(0)),
+        ] {
+            records.mark(&mark);
+        }
     }
-    records.prompt();
-    let ids: Vec<&str> = records.list.iter().map(|(id, ..)| id.as_str()).collect();
-    assert_eq!(ids, ["c", "e"]);
+    assert_eq!(kept(&records), [""]);
+    // omp ends: the shell's D, then its prompt.
+    records.mark(&Mark::Done(Some(0)));
+    records.mark(&Mark::Prompt(Click::Arrows));
+    assert!(kept(&records).is_empty());
+}
+
+#[test]
+fn a_full_reset_closes_a_command_left_open() {
+    let mut records = Records::default();
+    records.mark(&Mark::Output);
+    records.reset();
+    records.report("a".into(), record(State::Working, None));
+    records.mark(&Mark::Prompt(Click::Arrows));
+    assert!(kept(&records).is_empty());
 }
 
 #[test]
