@@ -6,9 +6,6 @@ license = "MIT"
 description = "Compound text decoder for zed-xim's client, in place of crates.io's xim-ctext"
 publish = false
 
-[dependencies]
-encoding_rs = "0.8.35"
-
 [features]
 # zed-xim turns it on.
 std = []

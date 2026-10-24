@@ -77,6 +77,20 @@ fn other_scripts_decode_as_typed() {
     ]);
 }
 
+/// The web's tables read these otherwise; IBus and fcitx5 encode through libX11's.
+#[test]
+fn each_set_decodes_through_libx11s_own_table() {
+    assert_decodes(&[
+        (b"\x1b$(A!$", "・"),
+        (b"\x1b$(A!*", "―"),
+        (b"\x1b$(B!A", "〜"),
+        (b"\x1b$(B!]", "−"),
+        (b"\x1b%/2\x80\x89big5-0\x02\xa1\xf3", "☉"),
+        (b"\x1b%/2\x80\x89big5-0\x02\xc6\xa6", "あ"),
+        (b"\x1b%/2\x80\x8ebig5hkscs-0\x02\xc8\xf4", "\u{f83e}"),
+    ]);
+}
+
 /// ibus-x11 sends what libX11 could not convert as UTF-8 and never closes it.
 #[test]
 fn an_unclosed_utf8_segment_runs_to_the_end() {
@@ -103,6 +117,8 @@ fn what_cannot_be_read_fails_with_its_bytes() {
     };
     invalid(b"\x1b$(", b"\x1b$(");
     invalid(b"\x1b$(AVPN", b"VPN");
+    invalid(b"\x1b$(A\"!", b"\"!");
+    invalid(b"\x1b%/2\x80\x89big5-0\x02\xc8\x40", b"\xc8\x40");
     invalid(b"\x1b%G\xff\x1b%@", b"\xff");
     invalid(b"\x1b%/2\x80\x89big5-0", b"\x80\x89big5-0");
 }

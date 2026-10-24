@@ -187,7 +187,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T77 Option as Alt works under macOS input methods, from PR #18: with a Chinese input source, `⌥f` sends `ESC f`, and composition still works.
 - [x] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
 - [x] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
-- [ ] T80 Chinese input methods commit on X11 without a crash, from PR #15: the compound text decoder gpui's XIM uses reads every set libX11 writes, GB2312, Traditional Chinese's JIS X 0212 and Big5 and GBK segments among them.
+- [ ] T80 Chinese input methods commit on X11 without a crash, from PR #15: the compound text decoder gpui's XIM uses reads every set libX11 writes, through libX11's own tables, GB2312, Traditional Chinese's JIS X 0212 and Big5, Big5-HKSCS and GBK segments among them.
 - [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count.
 - [ ] T82 Ely stays with the main window on KDE Plasma's Wayland, which a user found floating over other windows, draggable while the window slept, and left behind at minimize in issue #27.
 - [ ] T83 Settings › Terminal switches for the sessions column's drag and its right press, from PR #14.

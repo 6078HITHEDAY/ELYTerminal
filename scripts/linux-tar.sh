@@ -1,5 +1,5 @@
 #!/bin/sh
-# linux-tar.sh: the release build on Debian 12's glibc 2.36, in a tarball with its desktop entry and icon.
+# linux-tar.sh: the release build on Debian 12's glibc 2.36, in a tarball with its desktop entry, its icon and the notice of libX11's tables it holds.
 set -eu
 cd "$(dirname "$0")/.."
 docker build -q -t elyterminal-release - >/dev/null <<'EOF'
@@ -23,6 +23,8 @@ trap 'rm -rf "$work"' EXIT
 mkdir "$work/$name"
 cp "$out/elyterminal" "$work/$name/"
 cp assets/icons/elyterminal.svg "$work/$name/$id.svg"
+mkdir "$work/$name/licenses"
+cp vendor/xim-ctext/tables/LICENSE "$work/$name/licenses/libX11-lcUniConv"
 cat > "$work/$name/$id.desktop" <<EOF
 [Desktop Entry]
 Type=Application

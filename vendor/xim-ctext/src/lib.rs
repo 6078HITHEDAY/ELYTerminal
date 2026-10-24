@@ -1,4 +1,4 @@
-//! Compound text from an X input method, decoded for zed-xim.
+//! Compound text from an X input method, decoded for zed-xim through libX11's own tables.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -8,7 +8,6 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::RangeInclusive;
-use encoding_rs::Encoding;
 
 /// What failed to decode, with its bytes.
 #[derive(Debug)]
@@ -17,14 +16,42 @@ pub enum DecodeError {
     UnsupportedEncoding(Vec<u8>),
 }
 
+/// The 96-sets' upper halves in `upper.bin`, 96 units each, in the order of their final bytes.
+const FINALS: &[u8] = b"ABCDFGHLMTVY_bf";
+static UPPER: &[u8] = include_bytes!("../tables/upper.bin");
+const GB2312: Table = Table(include_bytes!("../tables/gb2312.bin"), grid);
+const JISX0208: Table = Table(include_bytes!("../tables/jisx0208.bin"), grid);
+const JISX0212: Table = Table(include_bytes!("../tables/jisx0212.bin"), grid);
+const KSC5601: Table = Table(include_bytes!("../tables/ksc5601.bin"), grid);
+const BIG5: Table = Table(include_bytes!("../tables/big5.bin"), big5);
+const BIG5HKSCS: Table = Table(include_bytes!("../tables/big5hkscs.bin"), big5);
+const GBK: Table = Table(include_bytes!("../tables/gbk.bin"), gbk);
+
+/// A set of pairs: its table and where a pair sits in it.
+#[derive(Clone, Copy)]
+struct Table(&'static [u8], fn(u8, u8) -> Option<usize>);
+
+impl Table {
+    fn decode(self, bytes: &[u8], out: &mut String) -> Option<()> {
+        let pairs = bytes.chunks_exact(2);
+        if !pairs.remainder().is_empty() {
+            return None;
+        }
+        for pair in pairs {
+            out.push(lookup(self.0, (self.1)(pair[0], pair[1])?)?);
+        }
+        Some(())
+    }
+}
+
 /// A set G0 or G1 holds.
 #[derive(Clone, Copy)]
 enum Set {
     Ascii,
     Roman,
     Katakana,
-    Upper(&'static Encoding),
-    Double(&'static Encoding, &'static [u8]),
+    Upper(usize),
+    Double(Table),
 }
 
 impl Set {
@@ -56,17 +83,12 @@ impl Set {
                     }
                 }
             }
-            Set::Upper(encoding) => push(encoding, run, out).ok_or_else(invalid)?,
-            Set::Double(encoding, prefix) => {
-                let pairs = run.chunks_exact(2);
-                if !pairs.remainder().is_empty() {
-                    return Err(invalid());
+            Set::Upper(set) => {
+                for &b in run {
+                    out.push(lookup(UPPER, set * 96 + usize::from(b - 0xa0)).ok_or_else(invalid)?);
                 }
-                let euc: Vec<u8> = pairs
-                    .flat_map(|pair| prefix.iter().copied().chain(pair.iter().map(|b| b | 0x80)))
-                    .collect();
-                push(encoding, &euc, out).ok_or_else(invalid)?;
             }
+            Set::Double(table) => table.decode(run, out).ok_or_else(invalid)?,
         }
         Ok(rest)
     }
@@ -76,7 +98,8 @@ impl Set {
 pub fn compound_text_to_utf8(bytes: &[u8]) -> Result<String, DecodeError> {
     let mut out = String::with_capacity(bytes.len());
     let mut g0 = Set::Ascii;
-    let mut g1 = Set::Upper(encoding_rs::WINDOWS_1252);
+    // ISO 8859-1's, the first of FINALS.
+    let mut g1 = Set::Upper(0);
     let mut rest = bytes;
     while let [byte, tail @ ..] = rest {
         rest = match byte {
@@ -116,7 +139,14 @@ fn escape<'b>(
         b"%@" => {}
         b"%G" => return utf8(rest, out),
         b"%/2" => return segment(rest, out),
-        [b'-', last] => *g1 = Set::Upper(upper(*last).ok_or_else(unsupported)?),
+        [b'-', last] => {
+            *g1 = Set::Upper(
+                FINALS
+                    .iter()
+                    .position(|f| f == last)
+                    .ok_or_else(unsupported)?,
+            )
+        }
         [b'$', b'(', last] => *g0 = double(*last).ok_or_else(unsupported)?,
         _ => return Err(unsupported()),
     }
@@ -149,49 +179,58 @@ fn segment<'b>(bytes: &'b [u8], out: &mut String) -> Result<&'b [u8], DecodeErro
         .position(|&b| b == 0x02)
         .ok_or_else(invalid)?;
     let (name, text) = (&segment[..stx], &segment[stx + 1..]);
-    let encoding = match name {
-        b"big5-0" | b"big5hkscs-0" => encoding_rs::BIG5,
-        b"gbk-0" => encoding_rs::GBK,
+    let table = match name {
+        b"big5-0" => BIG5,
+        b"big5hkscs-0" => BIG5HKSCS,
+        b"gbk-0" => GBK,
         _ => return Err(DecodeError::UnsupportedEncoding(name.to_vec())),
     };
-    push(encoding, text, out).ok_or_else(|| DecodeError::InvalidEncoding(text.to_vec()))?;
+    table
+        .decode(text, out)
+        .ok_or_else(|| DecodeError::InvalidEncoding(text.to_vec()))?;
     Ok(rest)
 }
 
-/// A 96-set's upper half, by final byte; windows-1252, 1254 and 874 match ISO 8859 there.
-fn upper(last: u8) -> Option<&'static Encoding> {
-    Some(match last {
-        b'A' => encoding_rs::WINDOWS_1252,
-        b'B' => encoding_rs::ISO_8859_2,
-        b'C' => encoding_rs::ISO_8859_3,
-        b'D' => encoding_rs::ISO_8859_4,
-        b'F' => encoding_rs::ISO_8859_7,
-        b'G' => encoding_rs::ISO_8859_6,
-        b'H' => encoding_rs::ISO_8859_8,
-        b'L' => encoding_rs::ISO_8859_5,
-        b'M' => encoding_rs::WINDOWS_1254,
-        b'T' => encoding_rs::WINDOWS_874,
-        b'V' => encoding_rs::ISO_8859_10,
-        b'Y' => encoding_rs::ISO_8859_13,
-        b'_' => encoding_rs::ISO_8859_14,
-        b'b' => encoding_rs::ISO_8859_15,
-        b'f' => encoding_rs::ISO_8859_16,
-        _ => return None,
-    })
-}
-
-/// A 94 by 94 set, by its final byte, read as the EUC that holds it.
+/// A 94 by 94 set, by its final byte.
 fn double(last: u8) -> Option<Set> {
-    Some(match last {
-        b'A' => Set::Double(encoding_rs::GBK, &[]),
-        b'B' => Set::Double(encoding_rs::EUC_JP, &[]),
-        b'C' => Set::Double(encoding_rs::EUC_KR, &[]),
-        b'D' => Set::Double(encoding_rs::EUC_JP, &[0x8f]),
+    Some(Set::Double(match last {
+        b'A' => GB2312,
+        b'B' => JISX0208,
+        b'C' => KSC5601,
+        b'D' => JISX0212,
         _ => return None,
-    })
+    }))
 }
 
-fn push(encoding: &'static Encoding, bytes: &[u8], out: &mut String) -> Option<()> {
-    out.push_str(&encoding.decode_without_bom_handling_and_without_replacement(bytes)?);
-    Some(())
+/// A pair's place in a 94 by 94 set, rows and cells from 0x21 to 0x7E.
+fn grid(row: u8, cell: u8) -> Option<usize> {
+    let place = |b: u8| (0x21..=0x7e).contains(&b).then(|| usize::from(b - 0x21));
+    Some(place(row)? * 94 + place(cell)?)
+}
+
+/// A Big5 pair's place, leads from 0x81 as libX11's Big5-HKSCS counts them.
+fn big5(lead: u8, trail: u8) -> Option<usize> {
+    let trail = match trail {
+        0x40..=0x7e => trail - 0x40,
+        0xa1..=0xfe => trail - 0x62,
+        _ => return None,
+    };
+    Some(usize::from(lead.checked_sub(0x81)?) * 157 + usize::from(trail))
+}
+
+/// A GBK pair's place, leads from 0x81.
+fn gbk(lead: u8, trail: u8) -> Option<usize> {
+    let trail = match trail {
+        0x40..=0x7e => trail - 0x40,
+        0x80..=0xfe => trail - 0x41,
+        _ => return None,
+    };
+    Some(usize::from(lead.checked_sub(0x81)?) * 190 + usize::from(trail))
+}
+
+/// The character a table's little-endian UTF-16 unit holds, none where it holds 0.
+fn lookup(table: &[u8], index: usize) -> Option<char> {
+    let unit = table.get(2 * index..2 * index + 2)?;
+    let unit = u16::from_le_bytes([unit[0], unit[1]]);
+    char::from_u32(u32::from(unit)).filter(|_| unit != 0)
 }
