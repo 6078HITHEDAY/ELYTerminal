@@ -329,10 +329,18 @@ fn held(keystroke: &Keystroke, facts: Facts) -> Held {
 }
 
 impl EntityInputHandler for TerminalView {
-    // GPUI uses this for IME-first routing; terminal shortcuts must see raw keys first.
+    /// gpui hands printable keys to an input method first while this holds; an Option that types Alt goes to the listener.
     #[cfg(target_os = "macos")]
-    fn accepts_text_input(&self, _: &mut Window, _: &mut Context<Self>) -> bool {
-        false
+    fn accepts_text_input(&self, _: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some((left_option, right_option)) = super::mac::held_options() else {
+            return true;
+        };
+        let facts = Facts {
+            left_option,
+            right_option,
+            ..Facts::default()
+        };
+        !Self::alt_is_meta(facts, cx)
     }
 
     fn text_for_range(
