@@ -182,7 +182,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 
 - [x] T73 On Windows output reaches the screen as the program writes it, which a user found waiting for a key in issue #19 with fastfetch and llama-server: find where the bytes wait, between ConPTY, the reader thread, the tap, alacritty's event loop and the view; fix the cause; log it.
 - [x] T74 Git for Windows' bash and sh follow their folder, which a user asked for in issue #13 with `C:\Program Files\Git\bin\sh.exe`: they load ELYTerminal's integration and name the folder as Windows names it, so Files and Git follow.
-- [ ] T75 A program's OSC 7501 records outlive the prompt marks a running command prints, from PR #17, which omp needs (issue #10): only a shell's own prompt drops working, blocked and idle records, as the spec asks.
+- [ ] T75 A program's OSC 7501 records outlive the prompt marks a running command prints, from PR #17, which omp needs (issue #10): only a shell's own prompt drops working, blocked and idle records, as the spec asks. Three reviews spent, the cap: round 3's two findings were fixed in 89b4873 and checked against every probe of the three rounds, with no fourth review.
 - [ ] T76 Wide characters keep their columns, which a user found broken in issue #22 under codex on Windows: an erase that splits a wide character clears all of it, and text after one stays in its column.
 - [ ] T77 Option as Alt works under macOS input methods, from PR #18: with a Chinese input source, `⌥f` sends `ESC f`, and composition still works.
 - [ ] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
