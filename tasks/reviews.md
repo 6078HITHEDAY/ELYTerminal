@@ -386,3 +386,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T77
 
 - Round 1, 831c150: PASS. Under WeType Pinyin 28 byte checks over Off, Left, Right and Both, legacy keys and kitty's flags 1 to 31, held each side, Shift, repeats and releases; a plain `n` and `N` under report-all-keys reached the input method as the first parent sent them, where PR #18 as written sent `CSI 110;;110u`; natural text editing, Ctrl and Command kept their routes; a stale Option event at draw changes nothing on macOS; check.sh passed.
+
+## T78
+
+- Round 1, 68d9579: PASS. US-International's dead quotes match the report, and ELYTerminal and a console PowerShell drew the same six steps; the debug line sits inside the `prefer_character_input` branch alone, which still returns, and without it `input.rs` is its parent's; a probe built from `key_down`, `records` and gpui's `process_key` held over 36 press, repeat and held cases, 384 routes and 13 conversions, and failed when the level or the branch changed; check.sh passed.

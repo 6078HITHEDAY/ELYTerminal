@@ -185,7 +185,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [ ] T75 A program's OSC 7501 records outlive the prompt marks a running command prints, from PR #17, which omp needs (issue #10): only a shell's own prompt drops working, blocked and idle records, as the spec asks. Three reviews spent, the cap: round 3's two findings were fixed in 89b4873 and checked against every probe of the three rounds, with no fourth review.
 - [x] T76 Wide characters keep their columns, which a user found broken in issue #22 under codex on Windows: an erase that splits a wide character clears all of it, and text after one stays in its column.
 - [x] T77 Option as Alt works under macOS input methods, from PR #18: with a Chinese input source, `⌥f` sends `ESC f`, and composition still works.
-- [ ] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
+- [x] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
 - [ ] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
 - [ ] T80 Chinese input methods commit on X11 without a crash, from PR #15: the COMPOUND_TEXT decoder gpui's XIM uses learns GB2312.
 - [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count.
