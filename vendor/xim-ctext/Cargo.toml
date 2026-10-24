@@ -1,16 +1,14 @@
 [package]
 name = "xim-ctext"
 version = "0.3.0"
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
 license = "MIT"
-description = "Compound text decoder with upstream CJK fixes backported for zed-xim"
-repository = "https://github.com/Riey/xim-rs"
+description = "Compound text decoder for zed-xim's client, in place of crates.io's xim-ctext"
 publish = false
 
 [dependencies]
 encoding_rs = "0.8.35"
 
 [features]
-default = ["std"]
+# zed-xim turns it on.
 std = []
