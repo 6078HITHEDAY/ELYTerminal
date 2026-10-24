@@ -446,6 +446,7 @@ mod tests {
                 Some(40),
                 [Some("deploy"), None, Some("Deploying")],
             ),
+            None,
         );
         records.report(
             "eu".into(),
@@ -455,10 +456,12 @@ mod tests {
                 None,
                 [None, Some("EU West"), Some("Approve?")],
             ),
+            None,
         );
         records.report(
             "eu/db".into(),
             record(State::Done, None, None, [Some("db"), None, None]),
+            None,
         );
         let lines: Vec<String> = hover(&records, Some(2))
             .iter()
@@ -474,7 +477,11 @@ mod tests {
             ]
         );
         for at in 0..LISTED {
-            records.report(format!("r{at}"), record(State::Idle, None, None, [None; 3]));
+            records.report(
+                format!("r{at}"),
+                record(State::Idle, None, None, [None; 3]),
+                None,
+            );
         }
         let lines = hover(&records, None);
         assert_eq!(lines.len(), LISTED + 1);

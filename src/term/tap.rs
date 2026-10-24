@@ -8,11 +8,11 @@ use futures::channel::mpsc::UnboundedSender;
 use polling::{Event, PollMode, Poller};
 
 use super::{
-    marks,
+    marks::{self, Mark},
     notify::{self, Kitty},
     prompts::{self, Prompts},
     pty::PtyEvent,
-    status,
+    status::{self, Holder},
     titles::{self, Titles},
 };
 
@@ -25,6 +25,9 @@ pub(super) const TURN: usize = u16::MAX as usize;
 
 /// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
+    /// A copy of the master, which names the process group that holds the terminal as a program reports; it goes before `inner`, whose drop waits for the program to see the terminal closed.
+    #[cfg(unix)]
+    master: Option<std::fs::File>,
     pub inner: P,
     scanner: Osc,
     modes: Modes,
@@ -58,7 +61,16 @@ impl<P> Tapped<P> {
             poller: None,
             #[cfg(windows)]
             unwoken: 0,
+            #[cfg(unix)]
+            master: None,
         }
+    }
+
+    /// Names, by `master`, the process group each report comes from.
+    #[cfg(unix)]
+    pub fn holding(mut self, master: std::fs::File) -> Self {
+        self.master = Some(master);
+        self
     }
 }
 
@@ -106,8 +118,12 @@ impl<P: EventedReadWrite> Tapped<P> {
         let read = &buf[..count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         let (kitty, titles) = (&mut self.kitty, &mut self.titles);
+        #[cfg(unix)]
+        let holder = || holder(self.master.as_ref(), pid);
+        #[cfg(windows)]
+        let holder = || None;
         self.scanner.feed(read, &mut |found| {
-            report(found, events, pid, last, kitty, titles)
+            report(found, events, pid, last, kitty, titles, &holder)
         });
         #[cfg(windows)]
         let win32 = self.modes.win32;
@@ -162,7 +178,19 @@ impl<P: EventedReadWrite> Tapped<P> {
     }
 }
 
-/// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask, or a folder.
+/// The process group that holds the terminal now, by `master`.
+#[cfg(unix)]
+fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
+    match super::unix::foreground(master?) {
+        Ok(group) => group,
+        Err(error) => {
+            log::warn!("pty {pid}: no foreground group for a report: {error}");
+            None
+        }
+    }
+}
+
+/// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask with the group `holder` names, or a folder.
 fn report(
     found: Found,
     events: &UnboundedSender<PtyEvent>,
@@ -170,6 +198,7 @@ fn report(
     last: &mut Option<PathBuf>,
     kitty: &mut Kitty,
     titles: &mut Titles,
+    holder: &dyn Fn() -> Option<i32>,
 ) {
     let event = match found {
         Found::Reset => {
@@ -187,17 +216,26 @@ fn report(
         },
         Found::Osc(body, length) => {
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
-                log::debug!("pty {pid}: {mark:?}");
-                PtyEvent::Mark(mark)
+                let holder = match mark {
+                    Mark::Prompt(_) if body.strip_prefix(b"133;").is_some_and(marks::named) => {
+                        Holder::Shell
+                    }
+                    Mark::Prompt(_) => holder().map_or(Holder::Unknown, Holder::Group),
+                    _ => Holder::Unknown,
+                };
+                log::debug!("pty {pid}: {mark:?} held by {holder:?}");
+                PtyEvent::Mark(mark, holder)
             } else if let Some(status) = body
                 .strip_prefix(b"7501;")
                 .and_then(|rest| status::read(rest, length))
             {
-                log::debug!("pty {pid}: {status:?}");
-                PtyEvent::Status(status)
+                let group = holder();
+                log::debug!("pty {pid}: {status:?} from group {group:?}");
+                PtyEvent::Status(status, group)
             } else if let Some(ask) = ask(body, kitty) {
-                log::debug!("pty {pid}: {ask:?}");
-                PtyEvent::Ask(ask)
+                let group = holder();
+                log::debug!("pty {pid}: {ask:?} from group {group:?}");
+                PtyEvent::Ask(ask, group)
             } else if let Some(folder) = body.strip_prefix(b"7;").and_then(folder) {
                 if last.as_ref() == Some(&folder) {
                     log::debug!("pty {pid}: folder {} again", folder.display());

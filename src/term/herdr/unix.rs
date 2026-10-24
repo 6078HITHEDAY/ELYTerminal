@@ -21,7 +21,8 @@ const HERDR: &str = "herdr";
 
 /// The process group leading the session's foreground.
 pub(super) fn leader(pty: &Pty) -> io::Result<Pid> {
-    pty.foreground()
+    pty.foreground()?
+        .ok_or_else(|| io::Error::other("no process group holds the terminal"))
 }
 
 pub(super) fn running(group: Pid) -> io::Result<Program> {

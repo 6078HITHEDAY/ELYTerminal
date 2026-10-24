@@ -102,18 +102,18 @@ impl Notices {
 
 impl TerminalView {
     /// Keeps a program's report, drops what it clears, and answers its query.
-    pub(super) fn status(&mut self, status: Status) {
+    pub(super) fn status(&mut self, status: Status, owner: Option<i32>) {
         match status {
-            Status::Report(id, record) => self.records.report(id, record),
+            Status::Report(id, record) => self.records.report(id, record, owner),
             Status::Clear(id) => self.records.clear(id.as_deref()),
             Status::Query => self.pty.write(status::REPLY.as_bytes().to_vec()),
         }
     }
 
     /// Maps progress, answers the query and alive in order, and posts and closes notifications.
-    pub(super) fn ask(&mut self, ask: Ask, cx: &mut Context<Self>) {
+    pub(super) fn ask(&mut self, ask: Ask, owner: Option<i32>, cx: &mut Context<Self>) {
         match ask {
-            Ask::Progress(progress) => self.records.progress(progress),
+            Ask::Progress(progress) => self.records.progress(progress, owner),
             Ask::Query(id) => self.pty.write(notify::answer(&id).into_bytes()),
             Ask::Alive(id) => {
                 let alive = self.notices.alive();

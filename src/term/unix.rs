@@ -51,6 +51,15 @@ impl Pty {
     }
 }
 
+/// The process group that holds the terminal `master` leads; none once no group does, as after its program ended.
+pub(super) fn foreground(master: &File) -> io::Result<Option<i32>> {
+    match unsafe { libc::tcgetpgrp(master.as_raw_fd()) } {
+        -1 => Err(io::Error::last_os_error()),
+        0 => Ok(None),
+        group => Ok(Some(group)),
+    }
+}
+
 /// Starts `program`, or the login shell, in `cwd` on a new pty of `size`.
 pub(crate) fn spawn(
     program: Option<&(String, Vec<String>)>,

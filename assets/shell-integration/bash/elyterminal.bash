@@ -69,9 +69,9 @@ _ely_mark() {
   if [[ $PS1 != *'\e]133;A'* ]]; then
     if [ -z "$_ely_ps0" ] && builtin shopt -q promptvars; then
       # bash 3.2 has no PS0; \#, the command number, moves once a command ran.
-      PS1='\[${_ely_d[_ely_n && \# != _ely_n]-}${_ely_note[_ely_n = \#]-}\e]133;A\a\]'"$PS1"'\[\e]133;B\a\]'
+      PS1='\[${_ely_d[_ely_n && \# != _ely_n]-}${_ely_note[_ely_n = \#]-}\e]133;A;aid='"$$"'\a\]'"$PS1"'\[\e]133;B\a\]'
     else
-      PS1='\[\e]133;A\a\]'"$PS1"'\[\e]133;B\a\]'
+      PS1='\[\e]133;A;aid='"$$"'\a\]'"$PS1"'\[\e]133;B\a\]'
     fi
   fi
   if [ -n "$_ely_ps0" ] && builtin shopt -q promptvars && [[ ${PS0-} != *"$_ely_ps0"* ]]; then

@@ -263,36 +263,34 @@ impl TerminalView {
             .iter()
             .any(|event| matches!(event, PtyEvent::Term(Event::Wakeup)));
         for event in events {
-            if let PtyEvent::Mark(mark) = &event {
-                self.records.mark(mark);
+            if let PtyEvent::Mark(mark, holder) = &event {
+                self.records.mark(mark, *holder);
             }
             match event {
                 PtyEvent::Folder(folder) => {
                     self.reports += 1;
-                    self.records.folder();
-                    self.restate(cx);
                     cx.emit(TerminalEvent::Folder(folder));
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),
                 PtyEvent::Mouse(mode) => self.mouse = mode,
                 #[cfg(windows)]
                 PtyEvent::Win32(on) => self.win32 = on,
-                PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
-                PtyEvent::Mark(Mark::Prompt(click)) => {
+                PtyEvent::Mark(Mark::Done(status), _) => self.finished(status, cx),
+                PtyEvent::Mark(Mark::Prompt(click), _) => {
                     self.shell = Shell::Prompting(click);
                     self.restate(cx);
                 }
-                PtyEvent::Mark(Mark::Output) => {
+                PtyEvent::Mark(Mark::Output, _) => {
                     self.ran = Some(Instant::now());
                     self.shell = Shell::Busy;
                 }
-                PtyEvent::Mark(Mark::Input) => self.shell = self.shell.reads(),
-                PtyEvent::Status(status) => {
-                    self.status(status);
+                PtyEvent::Mark(Mark::Input, _) => self.shell = self.shell.reads(),
+                PtyEvent::Status(status, owner) => {
+                    self.status(status, owner);
                     self.restate(cx);
                 }
-                PtyEvent::Ask(ask) => {
-                    self.ask(ask, cx);
+                PtyEvent::Ask(ask, owner) => {
+                    self.ask(ask, owner, cx);
                     self.restate(cx);
                 }
                 PtyEvent::Title(title) => {
