@@ -418,3 +418,10 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T84
 
 - Round 1, d5a6ea1: PASS. The reporter's tests passed at `996bd22` and failed on the old footer, the label 42 pixels tall at 240; a harness on macOS's own text system laid out every width from 143 to 960 pixels over four branches, a 200-character one and a multibyte one among them, amend off and on, 6,544 layouts, each label on one line, and 336 commits by press and Cmd-Enter landed; the app at a 160-pixel panel committed and amended a fixture by press and by Cmd-Enter; a fresh Cargo cache fetched the pin, the lock changing only Ely's source; Ely's main held the same footer byte for byte, and `ely-git`'s 40 tests passed alone on Linux; check.sh passed.
+
+## T85
+
+- Round 1, 6c26cd5: FAIL. The 150 keys, both catalogs and every page, menu, dialog, find and the Git panel switched at once in both directions, and Ely's PathInput and FontPicker spoke the language; but a tooltip open through the switch kept the old words, since gpui keeps an open tooltip's view, Ely's own tooltips too.
+- Round 2, 525eee4: FAIL. An open tooltip withdrew; but one whose words were taken before the switch and which gpui opened after it, inside its show delay, came up in English beside Chinese, since `Tooltip` read the locale when gpui built it.
+- Round 3, 186c0bc: PASS. Both scenarios replayed natively through the real Language control withdrew, re-hover showed 新建会话 and back again New session; Ely's two tooltip tests fail on `d3adf78` and the second on `9565a6c`; six boundary probes, serial and parallel, held the count per thread and per locale change.
+
