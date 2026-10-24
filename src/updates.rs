@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Context as _;
+use ely_gpui_component::i18n::text;
 use gpui::{App, Global, SystemNotification};
 use serde::Deserialize;
 
@@ -79,7 +80,7 @@ fn finish(found: anyhow::Result<Option<(String, String)>>, auto: bool, cx: &mut 
                 cx.show_system_notification(SystemNotification {
                     tag: TAG.into(),
                     title: TITLE.into(),
-                    body: format!("ELYTerminal {version} is out. Press to open its page.").into(),
+                    body: text(cx, "et.updates.notice", &[("version", &version)]),
                     actions: Vec::new(),
                 });
             }

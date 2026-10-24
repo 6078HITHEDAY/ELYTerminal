@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use ely_gpui_component::i18n::I18n;
 use gpui::{Context, SharedString, SystemNotification};
 
 use super::{
@@ -146,7 +147,9 @@ impl TerminalView {
     /// Posts the state its row shows when it turned to waiting, done or error.
     fn tell_state(&mut self, cx: &mut Context<Self>) {
         let body = match self.records.shown() {
-            Some((id, record)) if tells(record.state) => line(&self.records, id, record),
+            Some((id, record)) if tells(record.state) => {
+                line(&self.records, id, record, cx.global::<I18n>())
+            }
             _ => return,
         };
         self.post(body, None, cx);
@@ -163,12 +166,11 @@ impl TerminalView {
         if let Some(start) = std::mem::take(&mut self.ran) {
             let now = Instant::now();
             if ran_long(start, now) {
-                self.post(finished(status), None, cx);
+                self.post(finished(status, cx.global::<I18n>()), None, cx);
             } else {
                 log::debug!(
-                    "terminal {}: a command under {RAN_FOR:?} ran, so it posts no {}",
-                    self.pty.pid,
-                    finished(status)
+                    "terminal {}: a command under {RAN_FOR:?} ran, so its end, {status:?}, posts nothing",
+                    self.pty.pid
                 );
             }
         } else {
@@ -317,11 +319,12 @@ fn ran_long(start: Instant, now: Instant) -> bool {
 }
 
 /// What a command's end says: it finished, or the status it failed with.
-fn finished(status: Option<i32>) -> String {
+fn finished(status: Option<i32>, words: &I18n) -> String {
     match status {
-        Some(code) if code != 0 => format!("Command exited with {code}"),
-        _ => "Command finished".into(),
+        Some(code) if code != 0 => words.text("et.command.exited", &[("code", &code.to_string())]),
+        _ => words.text("et.command.finished", &[]),
     }
+    .to_string()
 }
 
 /// A program's notification as posted: its title, then its body, each line shown as text.

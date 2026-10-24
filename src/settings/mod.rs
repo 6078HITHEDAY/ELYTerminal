@@ -40,6 +40,25 @@ pub enum OptionAsAlt {
     Both,
 }
 
+/// The interface's language, by the tag Ely's `I18n` names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Language {
+    #[default]
+    #[serde(rename = "en-US")]
+    English,
+    #[serde(rename = "zh-CN")]
+    SimplifiedChinese,
+}
+
+impl Language {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::English => "en-US",
+            Self::SimplifiedChinese => "zh-CN",
+        }
+    }
+}
+
 /// What the right panel shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -53,6 +72,7 @@ pub enum PanelTab {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
+    pub language: Language,
     /// A program path; empty runs the login shell.
     pub shell: String,
     pub start_in: StartIn,
@@ -100,6 +120,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: Language::English,
             shell: String::new(),
             start_in: StartIn::Home,
             theme: themes::default_id().into(),

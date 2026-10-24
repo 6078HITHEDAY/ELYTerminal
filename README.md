@@ -87,6 +87,8 @@ The settings window saves each change at once to `settings.json` in the platform
 
 A file that does not parse, or holds a value out of range, stops the start with an error naming the file and the field. The app never overwrites it.
 
+Settings › Appearance › Language shows the interface in English or 简体中文.
+
 Settings › Terminal checks for a newer release at start and once a day, or at once with Check now; a newer one shows a Download button that opens its page. The check runs `curl`, which macOS and Windows ship.
 
 ## Development

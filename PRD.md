@@ -111,6 +111,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 Cmd-, opens it; on Windows and Linux, which have no menu bar, so does a gear in the title bar. Categories on the left, rows on the right, each side scrolling on its own, Ely's components. Changes apply at once to every session and save.
 
 - Appearance
+  - Language: English or 简体中文, for every window and the menu bar, applied at once; what programs, git and the system say stays as it comes.
   - Theme: a grid of previews; on Omarchy, the Omarchy theme first.
   - Separate dark theme: a switch; when on, a second grid for dark mode.
   - Font family: a list of installed fonts. Fallbacks: installed families tried in order for a character the family lacks, each added, changed or removed in a list of pickers. Font size. Line height. Ligatures.
