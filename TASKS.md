@@ -175,3 +175,24 @@ Progress truth. Top to bottom, one at a time. A task is ticked only after its co
 ## 35. Release
 
 - [x] T72 Release v0.1.8 with T67 to T71: version 0.1.8; the macOS disk image, the Windows zip and the Linux tarball, each from its script; the notes list what changed in English and Chinese; a short thanks on issues #3, #7, #10 and PRs #5, #8, #9, #11, then each closed; issue #2 closed without a word.
+
+## 36. Issues and pull requests after 0.1.8
+
+Each task ends with a short thanks on its issue or pull request, then closes it.
+
+- [ ] T73 On Windows output reaches the screen as the program writes it, which a user found waiting for a key in issue #19 with fastfetch and llama-server: find where the bytes wait, between ConPTY, the reader thread, the tap, alacritty's event loop and the view; fix the cause; log it.
+- [ ] T74 Git for Windows' bash and sh follow their folder, which a user asked for in issue #13 with `C:\Program Files\Git\bin\sh.exe`: they load ELYTerminal's integration and name the folder as Windows names it, so Files and Git follow.
+- [ ] T75 A program's OSC 7501 records outlive the prompt marks a running command prints, from PR #17, which omp needs (issue #10): only a shell's own prompt drops working, blocked and idle records, as the spec asks.
+- [ ] T76 Wide characters keep their columns, which a user found broken in issue #22 under codex on Windows: an erase that splits a wide character clears all of it, and text after one stays in its column.
+- [ ] T77 Option as Alt works under macOS input methods, from PR #18: with a Chinese input source, `⌥f` sends `ESC f`, and composition still works.
+- [ ] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
+- [ ] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
+- [ ] T80 Chinese input methods commit on X11 without a crash, from PR #15: the COMPOUND_TEXT decoder gpui's XIM uses learns GB2312.
+- [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count.
+- [ ] T82 Ely stays with the main window on KDE Plasma's Wayland, which a user found floating over other windows, draggable while the window slept, and left behind at minimize in issue #27.
+- [ ] T83 Settings › Terminal switches for the sessions column's drag and its right press, from PR #14.
+- [ ] T84 A long branch name keeps "Amend last commit" readable, which a user found squeezed in issue #20: Ely's `CommitInput` moves its commit button below when both do not fit, from the reporter's fix; ELYTerminal pins that Ely.
+- [ ] T85 The interface in Simplified Chinese, which a user asked for in issue #26: a Language row in Settings › Appearance, English or 简体中文, through Ely's `I18n`.
+- [ ] T86 Start in knows WSL and takes a folder of your own, which a user asked for in issue #23: Home starts a `wsl` session in the distribution's home, and a third choice starts every session in a chosen folder.
+- [ ] T87 Linux DEB, RPM and AppImage packages, from PR #16.
+- [ ] T88 Issue #25's kind words thanked and closed; every issue and pull request above answered; the acceptance table checked line by line.
