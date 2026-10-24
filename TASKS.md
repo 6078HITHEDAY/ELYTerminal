@@ -186,7 +186,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T76 Wide characters keep their columns, which a user found broken in issue #22 under codex on Windows: an erase that splits a wide character clears all of it, and text after one stays in its column.
 - [x] T77 Option as Alt works under macOS input methods, from PR #18: with a Chinese input source, `⌥f` sends `ESC f`, and composition still works.
 - [x] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
-- [ ] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
+- [x] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
 - [ ] T80 Chinese input methods commit on X11 without a crash, from PR #15: the COMPOUND_TEXT decoder gpui's XIM uses learns GB2312.
 - [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count.
 - [ ] T82 Ely stays with the main window on KDE Plasma's Wayland, which a user found floating over other windows, draggable while the window slept, and left behind at minimize in issue #27.

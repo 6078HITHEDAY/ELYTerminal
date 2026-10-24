@@ -390,3 +390,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T78
 
 - Round 1, 68d9579: PASS. US-International's dead quotes match the report, and ELYTerminal and a console PowerShell drew the same six steps; the debug line sits inside the `prefer_character_input` branch alone, which still returns, and without it `input.rs` is its parent's; a probe built from `key_down`, `records` and gpui's `process_key` held over 36 press, repeat and held cases, 384 routes and 13 conversions, and failed when the level or the branch changed; check.sh passed.
+
+## T79
+
+- Round 1, cd949e5: PASS. Backspace and Left went as `7f` and `ESC [ D` under kitty's flags 1 and 3 and as win32-input-mode records, and omp 18.12.1's own parser, its N-API wrapper set aside, read 1,076 edit-key cases right; omp's fix `3bc77d6` lies after v18.12.1 and in v18.12.2, and a probe of its stdin method before and after showed a relayed DA1 reaching the prompt before and not after; the kitty flags log named eight changes, the alternate screen and RIS among them, and nothing else; check.sh and a Windows GNU clippy passed.
