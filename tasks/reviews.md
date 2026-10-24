@@ -361,3 +361,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 
 - Round 1, 26cd2aa with v0.1.8 published on GitHub at d5f97df: FAIL, on one point: the macOS and Windows executables keep dependencies' source paths under the build hosts' home folders, panic locations rustc keeps. That criterion was the round's prompt's, not the project's; every release since v0.1.0 carries them, v0.1.7 1249 in its executable; the owner was told, a decision apart.
 - Round 2, 26cd2aa: PASS. The release is published and latest at d5f97df, which CI run 39730393420 tested; the three files match the notes' SHA-256 downloaded anonymously; the disk image stapled and notarized, the zip's executable a GUI program with its icons and no C runtime DLL, the tarball's modes and glibc 2.35; each binary holds T67 to T71's work for its platform and LF scripts; the notes match the work in English and Chinese and credit the four PR authors. Then the issues and PRs got their thanks and closed, #2 without a word.
+
+## T73
+
+- Round 1, 480dbf9: PASS. check.sh and the Windows clippy passed; 84 buffer and fragmentation cases, held marks and links, overflowing bodies and WouldBlock, Interrupted, EIO and EBADF after bytes kept the tap's output whole, and the parent returned nothing with bytes waiting; a simulation over piper 0.2.5's real pipe drained 2,000,000 bytes through 1,540 turns, and without the wake stopped at 66,660. Native IOCP and the reporter's own stall went unexercised.
