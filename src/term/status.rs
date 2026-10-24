@@ -285,8 +285,13 @@ impl Records {
         }
     }
 
-    /// A new prompt: working, blocked and idle records go, done and error stay.
+    /// A new prompt: working, blocked and idle records go, done and error stay — unless
+    /// a program reports its own through OSC 7501, whose records it ends itself.
     pub fn prompt(&mut self) {
+        if self.reported {
+            log::debug!("status: a prompt passes by, a program reports through OSC 7501");
+            return;
+        }
         self.list
             .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error));
     }

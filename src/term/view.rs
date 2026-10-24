@@ -273,7 +273,8 @@ impl TerminalView {
                 #[cfg(windows)]
                 PtyEvent::Win32(on) => self.win32 = on,
                 PtyEvent::Mark(Mark::Done(status)) => self.finished(status, cx),
-                // A new prompt ends what was working, waiting or idle; done and error stay.
+                // A new prompt ends what was working, waiting or idle; done and error
+                // stay, and a program that reports through OSC 7501 ends its own.
                 PtyEvent::Mark(Mark::Prompt(click)) => {
                     self.shell = Shell::Prompting(click);
                     self.records.prompt();
