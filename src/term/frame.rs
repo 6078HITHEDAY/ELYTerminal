@@ -245,6 +245,8 @@ mod tests {
     fn an_edit_that_splits_a_wide_char_clears_it_whole_in_the_erase_ground() {
         let (frame, _) = shown("A单中BC\x1b[1;3H\x1b[2P".as_bytes());
         assert_eq!(frame.text(), "A  BC");
+        let (frame, _) = shown("A单BC\x1b[1;3H\x1b[4hX".as_bytes());
+        assert_eq!(frame.text(), "A X BC");
         let (frame, ink) = shown("A\x1b[44m单\x1b[0mBC\x1b[1;2H\x1b[42m\x1b[X".as_bytes());
         assert_eq!(frame.text(), "A  BC");
         let (bytes, ground) = frame.rows[0].runs[1];
