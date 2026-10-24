@@ -28,6 +28,10 @@ pub fn lines(
     }
     let page = rows as f32;
     *rest = (*rest + travel).clamp(-page, page);
+    // Fractions of a notch in f32 can sum a hair short of the whole line they make.
+    if (*rest - rest.round()).abs() < 1e-3 {
+        *rest = rest.round();
+    }
     let lines = rest.trunc();
     *rest -= lines;
     Some(lines as i32)
@@ -140,6 +144,25 @@ mod tests {
             "a sideways wheel alone"
         );
         assert_eq!(scroll(shifted, true, (0., 0.)), None, "no number");
+        let mut moved = 0;
+        for _ in 0..10 {
+            moved += scroll(notch(12. / 120. * 7.), false, (1., 1.)).unwrap();
+        }
+        assert_eq!(
+            moved,
+            (7. * NOTCH) as i32,
+            "ten messages of a tenth of a notch"
+        );
+        let mut moved = 0;
+        for _ in 0..10 {
+            let shifted = ScrollDelta::Lines(point(12. / 120. * 7., 0.));
+            moved += scroll(shifted, true, (3., 7.)).unwrap();
+        }
+        assert_eq!(
+            moved,
+            (3. * NOTCH) as i32,
+            "under Shift, 3 lines and 7 characters"
+        );
         assert_eq!(
             scroll(notch(one), false, (1., 1.)),
             Some(3),
