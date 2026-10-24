@@ -131,6 +131,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 |---|---|---|---|
 | Through the `git` command line | T14 | `git::tests` on temp repos | Pass |
 | Branch, staged and unstaged, commit field and Commit, recent commits | T15 | `git::panel` tests; T15 review | Pass |
+| Amend last commit reads on one line at any panel width; Commit takes a row of its own where it does not fit, a long branch cut short | T84 | Ely `996bd22`, the reporter's fix: its `git::tests::commit` sweeps 143 to 960 pixels, branches short, long and multibyte, amend off and on, and failed on the old footer, the label 42 pixels tall at 240; the same tests pass on Ely's main, `6075389`, in `ely-git`; on macOS `shot`, branch `feature/ui-amend-layout-with-a-very-long-branch-name` with a change staged: the old pin broke the label into letters at 480 pixels and two lines at 560, the new one kept it whole at 160, 240, 400, 480 and 560 with Commit below | Pass |
 | Stage and unstage; a press opens the diff in `DiffViewer` | T15 | T15 review | Pass |
 | Discard asks first | T15 | T15 review, in temp repos | Pass |
 | Outside a repository it says so; a failed command shows its error | T15 | "Not a Git repository." on a real X11 window | Pass |

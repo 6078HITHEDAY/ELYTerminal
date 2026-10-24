@@ -100,7 +100,7 @@ Ghostty is the bar for what the terminal does. ELYTerminal owns its engine on `a
 ## 9. Right panel: Git
 
 - Through the `git` command line. No libgit2.
-- Shows the branch, staged and unstaged changes, a commit message field and Commit, and recent commits.
+- Shows the branch, staged and unstaged changes, a commit message field and Commit, and recent commits. Amend last commit reads on one line at any width the panel takes; where Commit does not fit beside it, Commit takes a row of its own, a long branch cut short in it.
 - Stage and unstage a file. Press a file to see its diff in Ely's `DiffViewer`.
 - Discard, which Ely's changes list draws on every unstaged and untracked row, asks first: an edit goes back to the index, a new file is deleted.
 - Outside a repository it says so. A failed git command shows its error.
