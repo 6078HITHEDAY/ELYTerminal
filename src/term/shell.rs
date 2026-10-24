@@ -356,6 +356,13 @@ mod windows_tests {
         let first = next_folder(&mut events);
         pty.write(&b"cd 'in ner'\r"[..]);
         let second = next_folder(&mut events);
+        // MSYS keeps a name's controls and colons at U+F000 up; nl\n has a sibling nl.
+        pty.write(&b"mkdir $'bell\\adir' re:po $'nl\\n' nl && cd $'bell\\adir'\r"[..]);
+        let bell = next_folder(&mut events);
+        pty.write(&b"cd ../re:po\r"[..]);
+        let colon = next_folder(&mut events);
+        pty.write(&b"cd $'../nl\\n'\r"[..]);
+        let newline = next_folder(&mut events);
         pty.write(&b"exit\r"[..]);
         let deadline = Instant::now() + Duration::from_secs(30);
         while !matches!(
@@ -367,7 +374,11 @@ mod windows_tests {
         }
         let real = |path: &std::path::Path| path.canonicalize().expect("a real folder");
         assert_eq!(real(&first), real(&start));
-        assert_eq!(real(&second), real(&start.join("in ner")));
+        let inner = start.join("in ner");
+        assert_eq!(real(&second), real(&inner));
+        assert_eq!(real(&bell), real(&inner.join("bell\u{f007}dir")));
+        assert_eq!(real(&colon), real(&inner.join("re\u{f03a}po")));
+        assert_eq!(real(&newline), real(&inner.join("nl\u{f00a}")));
         std::fs::remove_dir_all(&root).expect("cleanup");
     }
 }

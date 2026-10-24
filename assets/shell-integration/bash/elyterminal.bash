@@ -23,7 +23,7 @@ if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404 )); then
   _ely_ps0='${_ely_note[_ely_ran=1]-}\e]133;C\a'
 fi
 _ely_prompt() {
-  builtin local ret=$? LC_ALL=C char url= i title dir="$PWD"
+  builtin local ret=$? LC_ALL=C char url= win= i title dir="$PWD"
   if [ -n "$_ely_ran" ]; then
     builtin printf '\e]133;D;%s\a' "$ret"
     _ely_ran=
@@ -35,8 +35,21 @@ _ely_prompt() {
     dir=${dir//\\//}
     case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
   elif [ -n "$_ely_msys" ]; then
-    # Git for Windows and MSYS2 name it so too: C:/x, or //host/share.
-    dir=$(builtin pwd -W)
+    # Git for Windows and MSYS2 name it so too: C:/x, or //host/share; x keeps a name's last newline.
+    dir=$(builtin pwd -W; builtin printf x)
+    dir=${dir%$'\nx'}
+    # Windows holds a name's controls and "*:<>?| at U+F000 up, as MSYS writes them.
+    win=${dir:0:2}
+    for (( i = 2; i < ${#dir}; i++ )); do
+      char=${dir:i:1}
+      if [[ $char == [$'\x01'-$'\x1f'] || '"*:<>?|' == *"$char"* ]]; then
+        builtin printf -v char '%d' "'$char"
+        builtin printf -v char '\\xef\\x%02x\\x%02x' $(( 0x80 + (char >> 6) )) $(( 0x80 + (char & 63) ))
+        builtin printf -v char '%b' "$char"
+      fi
+      win+=$char
+    done
+    dir=$win
     case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
   fi
   for (( i = 0; i < ${#dir}; i++ )); do
