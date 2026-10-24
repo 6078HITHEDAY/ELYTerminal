@@ -54,13 +54,13 @@ pub(crate) fn read(body: &[u8]) -> Option<Mark> {
     }
 }
 
-/// Whether an A or N body past `133;` names its shell, `aid=`, as ELYTerminal's integrations do.
+/// Whether an A or N body past `133;` comes from ELYTerminal's integration, `aid=elyterminal`.
 pub(crate) fn named(body: &[u8]) -> bool {
     matches!(body.first(), Some(b'A' | b'N'))
         && body
             .split(|&byte| byte == b';')
             .skip(1)
-            .any(|option| option.starts_with(b"aid="))
+            .any(|option| option == b"aid=elyterminal")
 }
 
 /// How A's options say its line takes a click; arrows without `click_events`.
@@ -105,14 +105,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_prompt_names_its_shell_by_aid() {
-        assert!(named(b"A;aid=42"));
-        assert!(named(b"A;click_events=1;aid=7"));
-        assert!(named(b"N;aid=1"));
+    fn a_prompt_names_elyterminal_s_shell_by_aid() {
+        assert!(named(b"A;aid=elyterminal"));
+        assert!(named(b"A;click_events=1;aid=elyterminal"));
+        assert!(named(b"N;aid=elyterminal"));
         assert!(!named(b"A"));
-        assert!(!named(b"A;click_events=1"));
-        assert!(!named(b"A;daid=3"));
-        assert!(!named(b"D;0;aid=3"));
+        assert!(!named(b"A;aid=42"));
+        assert!(!named(b"A;aid=elyterminals"));
+        assert!(!named(b"D;0;aid=elyterminal"));
     }
 
     #[test]

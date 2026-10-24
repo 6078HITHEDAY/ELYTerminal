@@ -261,12 +261,13 @@ fn an_unnamed_prompt_drops_what_a_group_no_longer_holding_the_terminal_reported(
 
 #[test]
 fn a_shell_without_job_control_keeps_its_program_s_work_until_it_names_itself() {
-    // PowerShell runs a program in its own group, so the program reports from the shell's.
+    // PowerShell runs a program in its own group, so the tap holds the program's prompt as no one known.
     let mut records = Records::default();
     records.mark(&Mark::Output, Holder::Unknown);
     records.report(String::new(), record(State::Working, None), Some(SHELL));
-    records.mark(&Mark::Prompt(Click::Arrows), Holder::Group(SHELL));
+    records.mark(&Mark::Prompt(Click::Arrows), Holder::Unknown);
     assert_eq!(kept(&records), [""]);
+    records.mark(&Mark::Done(Some(0)), Holder::Unknown);
     records.mark(&Mark::Prompt(Click::Arrows), Holder::Shell);
     assert!(kept(&records).is_empty());
 }

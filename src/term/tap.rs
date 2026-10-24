@@ -37,6 +37,8 @@ pub(crate) struct Tapped<P> {
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
+    /// The session's shell names its prompts, as ELYTerminal's integrations do.
+    named: bool,
     /// The poller alacritty's event loop waits on.
     #[cfg(windows)]
     poller: Option<Arc<Poller>>,
@@ -57,6 +59,7 @@ impl<P> Tapped<P> {
             events,
             pid,
             last: None,
+            named: false,
             #[cfg(windows)]
             poller: None,
             #[cfg(windows)]
@@ -117,13 +120,13 @@ impl<P: EventedReadWrite> Tapped<P> {
     fn pass(&mut self, buf: &mut [u8], count: usize) -> usize {
         let read = &buf[..count];
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
-        let (kitty, titles) = (&mut self.kitty, &mut self.titles);
+        let (kitty, titles, named) = (&mut self.kitty, &mut self.titles, &mut self.named);
         #[cfg(unix)]
         let holder = || holder(self.master.as_ref(), pid);
         #[cfg(windows)]
         let holder = || None;
         self.scanner.feed(read, &mut |found| {
-            report(found, events, pid, last, kitty, titles, &holder)
+            report(found, events, pid, last, (kitty, titles, named), &holder)
         });
         #[cfg(windows)]
         let win32 = self.modes.win32;
@@ -190,14 +193,22 @@ fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
     }
 }
 
+/// Who holds the terminal at a prompt no integration named, by the foreground `group`: the session's shell, unless it names its own prompts, so this one is a program's that runs in its group, as under PowerShell; another group; or none known.
+fn prompter(group: Option<i32>, pid: u32, named: bool) -> Holder {
+    match group {
+        Some(group) if u32::try_from(group) != Ok(pid) => Holder::Group(group),
+        Some(_) if !named => Holder::Shell,
+        _ => Holder::Unknown,
+    }
+}
+
 /// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask with the group `holder` names, or a folder.
 fn report(
     found: Found,
     events: &UnboundedSender<PtyEvent>,
     pid: u32,
     last: &mut Option<PathBuf>,
-    kitty: &mut Kitty,
-    titles: &mut Titles,
+    (kitty, titles, named): (&mut Kitty, &mut Titles, &mut bool),
     holder: &dyn Fn() -> Option<i32>,
 ) {
     let event = match found {
@@ -218,9 +229,10 @@ fn report(
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
                 let holder = match mark {
                     Mark::Prompt(_) if body.strip_prefix(b"133;").is_some_and(marks::named) => {
+                        *named = true;
                         Holder::Shell
                     }
-                    Mark::Prompt(_) => holder().map_or(Holder::Unknown, Holder::Group),
+                    Mark::Prompt(_) => prompter(holder(), pid, *named),
                     _ => Holder::Unknown,
                 };
                 log::debug!("pty {pid}: {mark:?} held by {holder:?}");
