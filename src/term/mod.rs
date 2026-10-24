@@ -39,3 +39,5 @@ pub use fonts::{ICONS, MONO, load_font};
 pub use pty::{Events, Launch, Listener, Pty, PtyEvent, config, fit, spawn};
 pub use status::{Kind, Record, Records, State};
 pub use view::{BLINK, TerminalEvent, TerminalView};
+#[cfg(windows)]
+pub use wheel::keep as keep_wheel;

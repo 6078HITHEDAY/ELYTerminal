@@ -130,6 +130,9 @@ pub fn open(launch: Launch, cx: &mut App) -> anyhow::Result<WindowHandle<Workspa
         ..Default::default()
     };
     let (pty, events) = spawn(&launch, (80, 24), (8, 16), config(SettingsStore::get(cx)))?;
+    // Windows' wheel settings, read where gpui reads its own.
+    #[cfg(windows)]
+    crate::term::keep_wheel()?;
     let window = cx.open_window(options, |window, cx| {
         window.set_app_id(APP_ID);
         window

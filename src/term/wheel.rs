@@ -22,6 +22,10 @@ pub fn lines(
         }
         ScrollDelta::Lines(delta) => delta.y * NOTCH,
     };
+    if travel.is_nan() {
+        log::error!("wheel: {:?} moves no number of lines", event.delta);
+        return None;
+    }
     let page = rows as f32;
     *rest = (*rest + travel).clamp(-page, page);
     let lines = rest.trunc();
@@ -29,24 +33,46 @@ pub fn lines(
     Some(lines as i32)
 }
 
-/// The lines Windows sets for a notch and the characters for a sideways one, which gpui gives Shift's notch in.
+/// Windows' lines a notch and characters a sideways notch, read beside gpui, which reads its own as the main window opens and never again.
 #[cfg(windows)]
-pub fn sideways() -> Option<(f32, f32)> {
+static KEPT: std::sync::OnceLock<(f32, f32)> = std::sync::OnceLock::new();
+
+/// Reads Windows' wheel settings as the main window opens.
+#[cfg(windows)]
+pub fn keep() -> anyhow::Result<()> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SPI_GETWHEELSCROLLCHARS, SPI_GETWHEELSCROLLLINES, SystemParametersInfoW,
     };
     let setting = |action, name| {
         let mut value = 0u32;
-        if unsafe { SystemParametersInfoW(action, 0, (&raw mut value).cast(), 0) } == 0 {
-            log::error!("windows: the wheel's {name} did not read");
-            return None;
-        }
-        Some(value as f32)
+        let read = unsafe { SystemParametersInfoW(action, 0, (&raw mut value).cast(), 0) } != 0;
+        anyhow::ensure!(read, "wheel: Windows' {name} do not read");
+        Ok(value as f32)
     };
-    Some((
-        setting(SPI_GETWHEELSCROLLLINES, "lines")?,
-        setting(SPI_GETWHEELSCROLLCHARS, "characters")?,
-    ))
+    let kept = (
+        setting(SPI_GETWHEELSCROLLLINES, "lines a notch")?,
+        setting(SPI_GETWHEELSCROLLCHARS, "characters a sideways notch")?,
+    );
+    anyhow::ensure!(
+        KEPT.set(kept).is_ok(),
+        "wheel: a second window keeps Windows' settings"
+    );
+    log::info!(
+        "wheel: Windows sets {} lines a notch and {} characters a sideways one",
+        kept.0,
+        kept.1
+    );
+    Ok(())
+}
+
+/// The settings `keep` read, as gpui counts Shift's notch in them.
+#[cfg(windows)]
+pub fn sideways() -> Option<(f32, f32)> {
+    let kept = KEPT.get().copied();
+    if kept.is_none() {
+        log::error!("wheel: Windows' settings were not kept as the window opened");
+    }
+    kept
 }
 
 /// Off Windows a sideways notch counts the wheel's own lines.
@@ -112,6 +138,12 @@ mod tests {
             scroll(shifted, false, (7., 3.)),
             Some(0),
             "a sideways wheel alone"
+        );
+        assert_eq!(scroll(shifted, true, (0., 0.)), None, "no number");
+        assert_eq!(
+            scroll(notch(one), false, (1., 1.)),
+            Some(3),
+            "leaves the wheel"
         );
         let part = ScrollDelta::Pixels(point(px(0.), px(10.)));
         assert_eq!(scroll(part, false, (1., 1.)), Some(0));
