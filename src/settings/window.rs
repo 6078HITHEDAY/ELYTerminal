@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, path::PathBuf};
 
 use ely_gpui_component::{
     buttons::SegmentedControl,
@@ -200,6 +200,25 @@ impl SettingsWindow {
                 }
             }
         })
+    }
+
+    /// Writes a path Browse chose into its field, which saves it as typed; one not in UTF-8, which the settings cannot hold, is refused in the field's row.
+    pub(super) fn chosen(&mut self, field: &'static str, path: PathBuf, cx: &mut Context<Self>) {
+        let (input, refused) = match field {
+            "shell" => (self.shell.clone(), &mut self.refused),
+            "start_folder" => (self.folder.clone(), &mut self.refused_folder),
+            other => unreachable!("settings: no path field {other}"),
+        };
+        let Some(text) = path.to_str() else {
+            let why = format!(
+                "{field} is {}, not in UTF-8, which the settings cannot hold",
+                path.display()
+            );
+            log::error!("settings: {why}");
+            *refused = Some(why.into());
+            return cx.notify();
+        };
+        input.update(cx, |input, cx| input.set_text(text, cx));
     }
 
     /// Saves what a field holds through `put`, so a shell or folder that names none keeps the saved one; the store's reason, for the field's row.

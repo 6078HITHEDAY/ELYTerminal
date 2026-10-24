@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ely_gpui_component::{
     buttons::{Button, SegmentedControl},
     feedback::InlineMessage,
@@ -8,7 +10,7 @@ use ely_gpui_component::{
     theme::{ActiveTheme, ControlSize},
 };
 use gpui::{
-    Action, App, Context, Div, Entity, KeyContext, ParentElement, SharedString, Styled, div,
+    Action, App, Context, Div, Entity, KeyContext, ParentElement, SharedString, Styled, Window, div,
 };
 
 use super::{OpenSettings, SettingsWindow, choice, set, switch};
@@ -40,9 +42,11 @@ impl SettingsWindow {
         let settings = SettingsStore::get(cx);
         let this = cx.entity();
         let word = |key: &str| text(cx, key, &[]);
-        let shell = PathInput::new("settings-shell", &self.shell);
+        let shell = PathInput::new("settings-shell", &self.shell).on_choose(chosen(&this, "shell"));
         let shell = path_field(shell, self.refused.clone(), cx);
-        let folder = PathInput::new("settings-start-folder", &self.folder).directories();
+        let folder = PathInput::new("settings-start-folder", &self.folder)
+            .directories()
+            .on_choose(chosen(&this, "start_folder"));
         let folder = path_field(folder, self.refused_folder.clone(), cx);
         let start = match settings.start_in {
             StartIn::Home => "home",
@@ -203,6 +207,15 @@ fn updates_row(cx: &App) -> SettingsRow {
     SettingsRow::new(text(cx, "et.updates.title", &[]))
         .description(status)
         .control(control)
+}
+
+/// Hands a path Browse chose to the window, for the field `field` names.
+fn chosen(
+    this: &Entity<SettingsWindow>,
+    field: &'static str,
+) -> impl Fn(PathBuf, &mut Window, &mut App) + 'static {
+    let this = this.clone();
+    move |path, _, cx| this.update(cx, |this, cx| this.chosen(field, path, cx))
 }
 
 /// A path field, and below it why what it holds is not saved.
