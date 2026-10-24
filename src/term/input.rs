@@ -90,6 +90,11 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         if event.prefer_character_input {
+            log::debug!(
+                "terminal {}: {:?} types through the layout, a dead key or a character its modifiers make",
+                self.pty.pid,
+                event.keystroke
+            );
             return;
         }
         let facts = self.facts(&event.keystroke);
