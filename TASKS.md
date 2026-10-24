@@ -188,7 +188,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T78 A quote types on its first press on Windows, which a user found in issue #12: find which layout or input method holds it, fix the cause, log the path a key takes.
 - [x] T79 Backspace deletes in omp on Windows, which a user found in issue #21: find what omp reads for it through ConPTY, and send what it expects.
 - [x] T80 Chinese input methods commit on X11 without a crash, from PR #15: the compound text decoder gpui's XIM uses reads every set libX11 writes, through libX11's own tables, GB2312, Traditional Chinese's JIS X 0212 and Big5, Big5-HKSCS and GBK segments among them.
-- [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count; one screen at a time scrolls a screen.
+- [ ] T81 A wheel notch on Windows scrolls the lines Windows sets, which a user found tripled in issue #24: gpui's lines there already carry the system's count, and on Linux 3; one screen at a time scrolls a screen, and Shift with the wheel scrolls the history.
 - [ ] T82 Ely stays with the main window on KDE Plasma's Wayland, which a user found floating over other windows, draggable while the window slept, and left behind at minimize in issue #27.
 - [ ] T83 Settings › Terminal switches for the sessions column's drag and its right press, from PR #14.
 - [ ] T84 A long branch name keeps "Amend last commit" readable, which a user found squeezed in issue #20: Ely's `CommitInput` moves its commit button below when both do not fit, from the reporter's fix; ELYTerminal pins that Ely.

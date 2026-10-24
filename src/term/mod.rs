@@ -29,6 +29,7 @@ mod titles;
 #[cfg(unix)]
 mod unix;
 mod view;
+mod wheel;
 #[cfg(windows)]
 mod win32;
 pub mod zoom;
