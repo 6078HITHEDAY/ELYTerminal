@@ -414,3 +414,7 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T83
 
 - Round 1, 88d1780: PASS. Under all four settings of the two switches, three rows took a right press, the menu's keys, a drag, a rename with a drag inside its field, a press and a ×: menus and moves came as the switches said, and the rest as before; two windows followed a change in Settings at once, and a restart kept it; a settings file from 0.1.8 started with both on, and an unknown field stopped the start naming the file and the field; the rows stood 51 points apart in `List` and `Reorder` alike, and sixteen rows scrolled end to end; check.sh passed.
+
+## T84
+
+- Round 1, d5a6ea1: PASS. The reporter's tests passed at `996bd22` and failed on the old footer, the label 42 pixels tall at 240; a harness on macOS's own text system laid out every width from 143 to 960 pixels over four branches, a 200-character one and a multibyte one among them, amend off and on, 6,544 layouts, each label on one line, and 336 commits by press and Cmd-Enter landed; the app at a 160-pixel panel committed and amended a fixture by press and by Cmd-Enter; a fresh Cargo cache fetched the pin, the lock changing only Ely's source; Ely's main held the same footer byte for byte, and `ely-git`'s 40 tests passed alone on Linux; check.sh passed.
