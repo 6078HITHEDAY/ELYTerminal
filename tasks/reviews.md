@@ -425,3 +425,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 - Round 2, 525eee4: FAIL. An open tooltip withdrew; but one whose words were taken before the switch and which gpui opened after it, inside its show delay, came up in English beside Chinese, since `Tooltip` read the locale when gpui built it.
 - Round 3, 186c0bc: PASS. Both scenarios replayed natively through the real Language control withdrew, re-hover showed 新建会话 and back again New session; Ely's two tooltip tests fail on `d3adf78` and the second on `9565a6c`; six boundary probes, serial and parallel, held the count per thread and per locale change.
 
+## T86
+
+- Round 1, 1277cf6: FAIL. WSL's `--cd ~` at Home alone, Folder's checks at load, save and start, the settings window and a live language switch all held, and the store probe refused relative, empty, file, missing and NUL paths; but Browse wrote its pick by Ely `PathInput`'s lossy name, so on Linux a folder named with a byte not in UTF-8 saved its sibling of the lossy name.
+- Round 2, 154e982: PASS. Ely's PathInput test fails on the old conversion and passes on `92f69a3`; an app probe pressed both fields' real Browse buttons through gpui's test dialog: a raw pick was refused in its own row and the next good pick cleared it, and picks with Chinese, spaces, `%`, quotes and a newline kept their folder and program.
+
