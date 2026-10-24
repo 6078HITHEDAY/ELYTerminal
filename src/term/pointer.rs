@@ -17,8 +17,8 @@ use super::{
 };
 use crate::settings::SettingsStore;
 
-/// Lines one wheel notch scrolls, as Ghostty's discrete wheel.
-const NOTCH: f32 = 3.;
+/// Lines a wheel line scrolls: gpui's already carry Windows' lines a notch; elsewhere a notch scrolls 3, as Ghostty's discrete wheel.
+const NOTCH: f32 = if cfg!(windows) { 1. } else { 3. };
 
 /// Where the grid sits, and what the mouse is doing to it.
 #[derive(Default)]
@@ -280,16 +280,16 @@ impl TerminalView {
             return;
         }
         cx.stop_propagation();
-        self.pointer.rest += match event.delta {
-            ScrollDelta::Pixels(delta) => delta.y,
-            ScrollDelta::Lines(delta) => height * delta.y * NOTCH,
-        };
-        let lines = (self.pointer.rest / height).trunc() as i32;
+        let rows = self.pty.term.lock().screen_lines();
+        let lines = wheel_lines(&mut self.pointer.rest, event.delta, height, rows);
         if lines == 0 {
             return;
         }
-        self.pointer.rest -= height * lines as f32;
-        log::trace!("terminal {}: wheel {lines} lines", self.pty.pid);
+        log::trace!(
+            "terminal {}: wheel {:?}, {lines} lines",
+            self.pty.pid,
+            event.delta
+        );
         let (cell, ..) = self.cell_at(event.position);
         let tracking = self.tracking(&event.modifiers);
         let mode = *self.pty.term.lock().mode();
@@ -399,6 +399,19 @@ impl TerminalView {
     }
 }
 
+/// Whole lines the wheel moved, a screen at most, as Windows' one screen at a time asks with u32::MAX lines; `rest` keeps a line's part.
+fn wheel_lines(rest: &mut Pixels, delta: ScrollDelta, height: Pixels, rows: usize) -> i32 {
+    let travel = match delta {
+        ScrollDelta::Pixels(delta) => delta.y,
+        ScrollDelta::Lines(delta) => height * delta.y * NOTCH,
+    };
+    let page = height * rows as f32;
+    *rest = (*rest + travel).clamp(-page, page);
+    let lines = (*rest / height).trunc() as i32;
+    *rest -= height * lines as f32;
+    lines
+}
+
 /// Ghostty's select all: first to last non-blank cell.
 fn everything<T>(term: &Term<T>) -> Option<Selection> {
     let grid = term.grid();
@@ -424,6 +437,7 @@ mod tests {
         term::{Config, test::TermSize},
         vte::ansi::Processor,
     };
+    use gpui::{point, px};
 
     use super::*;
 
@@ -447,5 +461,20 @@ mod tests {
         assert_eq!(last.as_deref(), Some("text \u{301}"), "a mark ends it");
         let link = all(b"\x1b]8;;http://a\x07 \x1b]8;;\x07text");
         assert_eq!(link.as_deref(), Some("text"), "a linked space is blank");
+    }
+
+    /// gpui's lines a notch: Windows' setting there, 3 by default; one elsewhere.
+    #[test]
+    fn a_notch_scrolls_as_the_system_asks_and_an_event_a_screen_at_most() {
+        let mut rest = Pixels::ZERO;
+        let mut lines = |delta| wheel_lines(&mut rest, delta, px(20.), 24);
+        let notch = |lines: f32| ScrollDelta::Lines(point(0., lines));
+        assert_eq!(lines(notch(if cfg!(windows) { 3. } else { 1. })), 3);
+        assert_eq!(lines(notch(1.)), if cfg!(windows) { 1 } else { 3 });
+        let page = notch(-(u32::MAX as f32));
+        assert_eq!(lines(page), -24, "Windows' one screen at a time");
+        let half = ScrollDelta::Pixels(point(px(0.), px(10.)));
+        assert_eq!(lines(half), 0, "nothing past the screen stays");
+        assert_eq!(lines(half), 1);
     }
 }
