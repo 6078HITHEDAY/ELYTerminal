@@ -243,6 +243,34 @@ fn a_running_command_s_own_prompts_drop_nothing() {
 }
 
 #[test]
+fn a_shell_s_folder_report_closes_commands_left_open() {
+    for order in [["D", "7", "A"], ["D", "A", "7"]] {
+        let mut records = Records::default();
+        // The shell starts omp, which reports its work and dies inside a message, after its C.
+        records.mark(&Mark::Output);
+        records.report(String::new(), record(State::Working, Some("omp")));
+        for mark in [Mark::Prompt(Click::Arrows), Mark::Input, Mark::Output] {
+            records.mark(&mark);
+        }
+        // zsh, bash and fish report the folder before their prompt's A, PowerShell after it.
+        for step in order {
+            match step {
+                "D" => records.mark(&Mark::Done(Some(130))),
+                "A" => records.mark(&Mark::Prompt(Click::Arrows)),
+                _ => records.folder(),
+            }
+        }
+        assert!(kept(&records).is_empty(), "{order:?}");
+        // The next command and prompt count from nothing.
+        records.report("a".into(), record(State::Working, None));
+        records.mark(&Mark::Output);
+        records.mark(&Mark::Done(Some(0)));
+        records.mark(&Mark::Prompt(Click::Arrows));
+        assert!(kept(&records).is_empty(), "{order:?}");
+    }
+}
+
+#[test]
 fn a_full_reset_closes_a_command_left_open() {
     let mut records = Records::default();
     records.mark(&Mark::Output);

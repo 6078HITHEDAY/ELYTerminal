@@ -269,6 +269,8 @@ impl TerminalView {
             match event {
                 PtyEvent::Folder(folder) => {
                     self.reports += 1;
+                    self.records.folder();
+                    self.restate(cx);
                     cx.emit(TerminalEvent::Folder(folder));
                 }
                 PtyEvent::Term(event) => self.term_event(event, cx),

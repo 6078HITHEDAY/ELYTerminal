@@ -288,7 +288,7 @@ impl Records {
         }
     }
 
-    /// OSC 133: a shell's prompt drops working, blocked and idle records, as the spec asks; one inside a running command is its program's, as omp's are.
+    /// OSC 133: a prompt outside every running command drops what runs, as the spec asks; one inside is its program's, as omp's are.
     pub fn mark(&mut self, mark: &Mark) {
         match mark {
             Mark::Output => self.commands = self.commands.saturating_add(1),
@@ -296,11 +296,27 @@ impl Records {
             Mark::Prompt(_) if self.commands > 0 => {
                 log::debug!("status: a prompt inside a running command keeps the records")
             }
-            Mark::Prompt(_) => self
-                .list
-                .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error)),
+            Mark::Prompt(_) => self.settle(),
             Mark::Input => {}
         }
+    }
+
+    /// OSC 7: a shell reports its folder at each of its prompts, so no command runs any more.
+    pub fn folder(&mut self) {
+        if self.commands > 0 {
+            log::debug!(
+                "status: a folder report ends {} commands left open",
+                self.commands
+            );
+        }
+        self.commands = 0;
+        self.settle();
+    }
+
+    /// Working, blocked and idle records go; done and error stay.
+    fn settle(&mut self) {
+        self.list
+            .retain(|(_, record, _)| matches!(record.state, State::Done | State::Error));
     }
 
     /// The user typed: done and error records are seen and go, but herdr's, which herdr marks seen; true when any went.
