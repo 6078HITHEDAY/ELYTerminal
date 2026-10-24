@@ -329,6 +329,12 @@ fn held(keystroke: &Keystroke, facts: Facts) -> Held {
 }
 
 impl EntityInputHandler for TerminalView {
+    // GPUI uses this for IME-first routing; terminal shortcuts must see raw keys first.
+    #[cfg(target_os = "macos")]
+    fn accepts_text_input(&self, _: &mut Window, _: &mut Context<Self>) -> bool {
+        false
+    }
+
     fn text_for_range(
         &mut self,
         _: Range<usize>,
