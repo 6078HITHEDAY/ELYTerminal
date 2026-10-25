@@ -18,22 +18,36 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
     use crate::term::{shell, unix};
     let exe = match unix::path(group) {
         Ok(exe) => exe,
+        // Another user's executable hides, its name does not.
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            match unix::name(group) {
+                Ok(name) => name,
+                Err(error) => {
+                    log::debug!("pty {pid}: group {group}'s leader has no name: {error}");
+                    return false;
+                }
+            }
+        }
         Err(error) => {
-            log::debug!("pty {pid}: group {group}'s leader, gone or another user's: {error}");
+            log::debug!("pty {pid}: group {group}'s leader is gone: {error}");
             return false;
         }
     };
+    // Through a relay, clicks are fish's or nu's line beyond.
+    if click != Click::Arrows && shell::relays(&exe) {
+        return true;
+    }
     let Some(options) = shell::options(&exe) else {
         return false;
     };
-    let interactive = match unix::launch(group) {
+    let interactive = match unix::args(group) {
         // Linux shows no arguments while an exec loads.
-        Ok((args, _)) if args.first().is_none_or(String::is_empty) => false,
+        Ok(args) if args.first().is_none_or(String::is_empty) => false,
         // An operand names a script or `-c`'s command.
-        Ok((args, _)) => options.interactive(&args[1..]),
+        Ok(args) => options.interactive(&args[1..]),
         Err(error) => {
-            log::warn!("pty {pid}: group {group}'s arguments do not read: {error}");
-            false
+            log::debug!("pty {pid}: group {group}'s arguments hide, taken as options: {error}");
+            true
         }
     };
     // fish and nu mark their own lines and fork no copy.
@@ -47,7 +61,7 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
 
 /// Whether an interactive shell, the one leaf under the session's, drew it.
 #[cfg(windows)]
-pub(super) fn nested(pid: u32) -> bool {
+pub(super) fn nested(pid: u32, click: Click) -> bool {
     use crate::term::{procs, shell};
     let processes = match procs::processes() {
         Ok(processes) => processes,
@@ -60,6 +74,9 @@ pub(super) fn nested(pid: u32) -> bool {
         return false;
     };
     let name = processes.iter().find(|(id, ..)| *id == leaf);
+    if name.is_some_and(|(_, _, name)| click != Click::Arrows && shell::relays(name.as_ref())) {
+        return true;
+    }
     let Some(options) = name.and_then(|(_, _, name)| shell::options(name.as_ref())) else {
         return false;
     };
@@ -185,7 +202,7 @@ mod tests {
                 .spawn()
                 .expect("pwsh starts");
             std::thread::sleep(std::time::Duration::from_secs(5));
-            let read = nested(outer.id());
+            let read = nested(outer.id(), Click::Arrows);
             let _ = Command::new("taskkill")
                 .args(["/T", "/F", "/PID", &outer.id().to_string()])
                 .output();
@@ -238,12 +255,32 @@ mod tests {
         assert!(!read("/bin/bash", &["--", "--rcfile"]));
         assert!(!read("/bin/zsh", &["--", "-o", "vi"]));
         assert!(read("/bin/bash", &["--"]));
+        // Each bash value is the next argument; zsh's other stops; fish's prefixes.
+        assert!(read("/bin/bash", &["-oi", "vi"]));
+        assert!(read("/bin/bash", &["-oO", "vi", "extglob"]));
+        for stop in [
+            &["+", "-o", "vi"][..],
+            &["+-", "-o", "vi"],
+            &["-lb", "-o", "vi"],
+            &["-i-", "-o", "vi"],
+        ] {
+            assert!(!read("/bin/zsh", stop), "{stop:?}");
+        }
+        assert!(read("/bin/zsh", &["-b"]));
+        assert!(!read("/opt/homebrew/bin/fish", &["-C", "x", "--comm=read"]));
+        assert!(!read("/opt/homebrew/bin/fish", &["--c=read"]));
+        assert!(read("/opt/homebrew/bin/fish", &["--init-comm", "set t 1"]));
+        assert!(!read("/opt/homebrew/bin/fish", &["--pr"]));
         assert!(read(
             "/opt/homebrew/bin/pwsh",
             &["-NoLogo", "-executionpolicy", "Bypass"]
         ));
         assert!(!read("/opt/homebrew/bin/pwsh", &["-Command", "Get-Date"]));
         assert!(options(Path::new("/bin/sleep")).is_none());
+        assert!(crate::term::shell::relays(Path::new("/usr/bin/ssh")));
+        assert!(!crate::term::shell::relays(Path::new("/bin/zsh")));
+        let own = crate::term::unix::name(std::process::id() as i32).expect("its own name");
+        assert!(own.to_string_lossy().starts_with("elyterminal"), "{own:?}");
     }
 
     #[cfg(unix)]

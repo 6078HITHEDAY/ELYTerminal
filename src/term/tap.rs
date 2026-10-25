@@ -129,7 +129,7 @@ impl<P: EventedReadWrite> Tapped<P> {
         #[cfg(windows)]
         let (holder, prompts) = (
             || None,
-            |group: Option<i32>, _| group.is_none() && nested(pid),
+            |group: Option<i32>, click| group.is_none() && nested(pid, click),
         );
         self.scanner.feed(read, &mut |found| {
             report(
