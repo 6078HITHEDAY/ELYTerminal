@@ -15,7 +15,7 @@ use crate::themes;
 
 pub use store::{SettingsStore, load, save};
 
-/// Where a new session starts: home, the shown session's folder, or `start_folder`.
+/// Where new sessions start: home, the shown folder, `start_folder`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StartIn {
@@ -82,7 +82,7 @@ pub struct Settings {
     /// A program path; empty runs the login shell.
     pub shell: String,
     pub start_in: StartIn,
-    /// The folder Start in's Folder names; empty until one is chosen.
+    /// Start in's Folder; empty until one is chosen.
     pub start_folder: String,
     pub theme: String,
     /// The theme while the system is dark; none keeps `theme`.
@@ -111,9 +111,9 @@ pub struct Settings {
     /// A check for a newer release at start and once a day.
     pub check_updates: bool,
     pub show_sessions: bool,
-    /// A drag on a session's row moves it to another place in the list.
+    /// A drag moves a session's row in the list.
     pub drag_sessions: bool,
-    /// A right press on a session's row opens a menu that duplicates or closes it.
+    /// A right press on a session's row opens its menu.
     pub session_menu: bool,
     pub show_panel: bool,
     pub panel: PanelTab,
@@ -215,7 +215,7 @@ impl Settings {
     }
 }
 
-/// The folder `folder` names for sessions to start in: a full path to one that exists.
+/// `folder` to start sessions in: a full path that exists.
 pub fn start_folder(folder: &str) -> anyhow::Result<PathBuf> {
     let path = Path::new(folder);
     anyhow::ensure!(

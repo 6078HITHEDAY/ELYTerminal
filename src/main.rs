@@ -23,7 +23,7 @@ fn application() -> gpui::Application {
 fn run(cx: &mut App) -> anyhow::Result<()> {
     app::start(cx)?;
     let settings = SettingsStore::get(cx);
-    // No session is shown yet, so Session's folder starts at home.
+    // No session shows yet, so Session's folder means home.
     let start = match settings.start_in {
         StartIn::Folder => Start::In(settings::start_folder(&settings.start_folder)?),
         StartIn::Home | StartIn::Session => Start::Home,

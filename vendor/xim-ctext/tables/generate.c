@@ -1,4 +1,4 @@
-/* generate.c: writes a decode table for each set libX11 writes in compound text, through libX11's own lcUniConv. */
+/* generate.c: each compound-text set's table, through libX11's lcUniConv. */
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -49,7 +49,7 @@ static void finish(FILE *f, const char *name) {
     if (ferror(f) || fclose(f)) { perror(name); exit(1); }
 }
 
-/* Writes the character the bytes decode to as little-endian UTF-16, 0 where the set maps none. */
+/* Writes the bytes' character as little-endian UTF-16, 0 for none. */
 static void entry(FILE *f, decode d, unsigned char b1, unsigned char b2, int n) {
     unsigned char s[2] = {b1, b2};
     ucs4_t wc = 0;
@@ -62,7 +62,7 @@ static void entry(FILE *f, decode d, unsigned char b1, unsigned char b2, int n) 
     fputc(wc >> 8, f);
 }
 
-/* Each 96-set's upper half, 0xA0 to 0xFF, in the order of their final bytes: ABCDFGHLMTVY_bf. */
+/* Each 96-set's upper half, by final byte: ABCDFGHLMTVY_bf. */
 static void upper(void) {
     decode sets[] = {iso8859_1_mbtowc, iso8859_2_mbtowc, iso8859_3_mbtowc, iso8859_4_mbtowc, iso8859_7_mbtowc,
                      iso8859_6_mbtowc, iso8859_8_mbtowc, iso8859_5_mbtowc, iso8859_9_mbtowc, iso8859_11_mbtowc,
@@ -73,7 +73,7 @@ static void upper(void) {
     finish(f, "upper.bin");
 }
 
-/* A 94 by 94 set as G0 holds it, rows and cells 0x21 to 0x7E. */
+/* A 94 by 94 set as G0 holds it. */
 static void grid(const char *name, decode d) {
     FILE *f = create(name);
     for (int b1 = 0x21; b1 <= 0x7e; b1++)
@@ -81,7 +81,7 @@ static void grid(const char *name, decode d) {
     finish(f, name);
 }
 
-/* An extended segment's pairs, leads 0x81 to 0xFE, trails from 0x40 to 0x7E, then from `high` to 0xFE. */
+/* An extended segment's pairs: leads 0x81-0xFE, trails 0x40-0x7E, `high`-0xFE. */
 static void pairs(const char *name, decode d, int high) {
     FILE *f = create(name);
     for (int b1 = 0x81; b1 <= 0xfe; b1++)

@@ -228,7 +228,7 @@ fn a_shell_s_prompt_leaves_done_and_error_though_programs_reported() {
 #[test]
 fn a_program_s_own_prompts_keep_what_it_reported_while_it_holds_the_terminal() {
     let mut records = Records::default();
-    // omp reports its work, then marks each message A, then B, C and D;0.
+    // omp reports work, then marks messages A, B, C, D;0.
     records.report(
         String::new(),
         record(State::Working, Some("omp")),
@@ -245,14 +245,14 @@ fn a_program_s_own_prompts_keep_what_it_reported_while_it_holds_the_terminal() {
         }
     }
     assert_eq!(kept(&records), [""]);
-    // omp ends, killed between its C and D or not, and the shell names itself at its prompt.
+    // omp ends, even mid-command; the shell's named prompt follows.
     records.mark(&Mark::Prompt(Click::Arrows), Holder::Shell);
     assert!(kept(&records).is_empty());
 }
 
 #[test]
 fn an_unnamed_prompt_drops_what_a_group_no_longer_holding_the_terminal_reported() {
-    // fish's own prompt after omp died, or a nested shell's after a command.
+    // fish's own prompt after omp died, or a nested shell's.
     let mut records = Records::default();
     records.report("a".into(), record(State::Working, None), Some(OMP));
     records.mark(&Mark::Prompt(Click::Arrows), Holder::Group(SHELL));
@@ -261,7 +261,7 @@ fn an_unnamed_prompt_drops_what_a_group_no_longer_holding_the_terminal_reported(
 
 #[test]
 fn a_shell_without_job_control_keeps_its_program_s_work_until_it_names_itself() {
-    // PowerShell runs a program in its own group, so the tap holds the program's prompt as no one known.
+    // PowerShell's program shares its group, so its holder is unknown.
     let mut records = Records::default();
     records.mark(&Mark::Output, Holder::Unknown);
     records.report(String::new(), record(State::Working, None), Some(SHELL));
@@ -287,7 +287,7 @@ fn a_named_prompt_closes_commands_left_open() {
 
 #[test]
 fn without_a_holder_a_prompt_inside_a_running_command_keeps_the_records() {
-    // Windows names no foreground group: C and D count the commands.
+    // Windows has no foreground group: C and D count commands.
     let mut records = Records::default();
     records.mark(&Mark::Output, Holder::Unknown);
     records.report(String::new(), record(State::Working, Some("omp")), None);

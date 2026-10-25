@@ -15,7 +15,7 @@ fi
 _ely_ran=
 _ely_n=0
 _ely_ps0=
-# MSYS's bash, Git for Windows' too, names a folder as Windows does with pwd -W.
+# MSYS's bash names a folder as Windows does: pwd -W.
 _ely_msys=
 builtin pwd -W >/dev/null 2>&1 && _ely_msys=1
 if (( BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1] >= 404 )); then
@@ -35,10 +35,10 @@ _ely_prompt() {
     dir=${dir//\\//}
     case $dir in //*) ;; ?:*) dir=/$dir ;; *) dir= ;; esac
   elif [ -n "$_ely_msys" ]; then
-    # Git for Windows and MSYS2 name it so too: C:/x, or //host/share; x keeps a name's last newline.
+    # C:/x or //host/share; x keeps a name's last newline.
     dir=$(builtin pwd -W; builtin printf x)
     dir=${dir%$'\nx'}
-    # Windows holds a name's controls and "*:<>?| at U+F000 up, as MSYS writes them.
+    # Windows holds controls and "*:<>?| at U+F000 up.
     win=${dir:0:2}
     for (( i = 2; i < ${#dir}; i++ )); do
       char=${dir:i:1}

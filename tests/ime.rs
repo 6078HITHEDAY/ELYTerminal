@@ -77,7 +77,7 @@ fn other_scripts_decode_as_typed() {
     ]);
 }
 
-/// The web's tables read these otherwise; IBus and fcitx5 encode through libX11's.
+/// The web's tables differ here; IBus and fcitx5 use libX11's.
 #[test]
 fn each_set_decodes_through_libx11s_own_table() {
     assert_decodes(&[
@@ -91,7 +91,7 @@ fn each_set_decodes_through_libx11s_own_table() {
     ]);
 }
 
-/// ibus-x11 sends what libX11 could not convert as UTF-8 and never closes it.
+/// ibus-x11 sends unconverted text as UTF-8, left open.
 #[test]
 fn an_unclosed_utf8_segment_runs_to_the_end() {
     assert_decodes(&[(b"\x1b%GTi\xe1\xba\xbfng", "Tiếng")]);

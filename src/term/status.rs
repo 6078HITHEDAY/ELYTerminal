@@ -191,7 +191,7 @@ fn text(value: &str, key: &str, encoded: usize, decoded: usize) -> Result<String
     Ok(text)
 }
 
-/// Who holds the terminal as a prompt starts: the shell that named itself, `aid`, the foreground process group, or no one known, as on Windows.
+/// A prompt's holder: the named shell, a group, or unknown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Holder {
     Shell,
@@ -199,7 +199,7 @@ pub enum Holder {
     Unknown,
 }
 
-/// The records one terminal keeps, by id, each with when it was last reported and the process group that held the terminal then.
+/// A terminal's records by id, with time and reporting group.
 #[derive(Default)]
 pub struct Records {
     list: Vec<(String, Record, u64, Option<i32>)>,
@@ -208,12 +208,12 @@ pub struct Records {
     reported: bool,
     /// The state a row showed at the last note.
     shows: Option<State>,
-    /// Commands running, as OSC 133 C and D nest them, for a prompt whose holder is unknown.
+    /// Commands open between C and D, for an unknown holder.
     commands: u32,
 }
 
 impl Records {
-    /// A program's report, made while `owner` held the terminal: replaces the record at `id` whole.
+    /// `owner`'s report replaces the record at `id` whole.
     pub fn report(&mut self, id: String, record: Record, owner: Option<i32>) {
         self.reported = true;
         self.put(id, record, owner);
@@ -296,7 +296,7 @@ impl Records {
         }
     }
 
-    /// OSC 133: a shell's prompt drops working, blocked and idle records, as the spec asks; a program's own keeps those it reported while it holds the terminal, as omp's do.
+    /// Shell prompts drop live records; program prompts keep their own.
     pub fn mark(&mut self, mark: &Mark, holder: Holder) {
         match mark {
             Mark::Output => self.commands = self.commands.saturating_add(1),

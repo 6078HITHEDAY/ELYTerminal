@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build once on Ubuntu 22.04; all Linux formats use this binary.
+# One build on Ubuntu 22.04, which every Linux format uses.
 set -eu
 cd "$(dirname "$0")/.."
 . scripts/linux-common.sh

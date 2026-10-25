@@ -334,7 +334,7 @@ fn held(keystroke: &Keystroke, facts: Facts) -> Held {
 }
 
 impl EntityInputHandler for TerminalView {
-    /// gpui hands printable keys to an input method first while this holds; an Option that types Alt goes to the listener.
+    /// False while Option as Alt claims the current key's Option.
     #[cfg(target_os = "macos")]
     fn accepts_text_input(&self, _: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some((left_option, right_option)) = super::mac::held_options() else {

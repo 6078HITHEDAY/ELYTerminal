@@ -1,4 +1,4 @@
-//! Simplified Chinese, in the words macOS and Ely's own catalog use.
+//! Simplified Chinese, in the words macOS and Ely use.
 
 pub const MESSAGES: &[(&str, &str)] = &[
     ("et.menu.settings", "设置…"),

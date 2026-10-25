@@ -1,4 +1,4 @@
-//! Ely over a Wayland window: gpui's anchored popup, which the compositor places and gpui never moves, open while the window is active.
+//! Ely's Wayland popup, open while the main window is active.
 
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use crate::{settings::SettingsStore, workspace::Workspace};
 /// How often she checks her anchor against the main window.
 const CHECK: Duration = Duration::from_millis(500);
 
-/// Opens and closes her as `main` comes and goes active, and opens her again where its size or state moves her anchor.
+/// Follows `main`'s activation, and reopens her where her anchor moves.
 pub fn follow(main: WindowHandle<Workspace>, shown: Shown, cx: &mut App) {
     let activation = {
         let shown = shown.clone();
@@ -56,7 +56,7 @@ fn edge(window: &Window) -> Edge {
     }
 }
 
-/// Opens her again once `main`'s size or state moves the anchor her popup opened at, which never moves.
+/// Reopens her once `main`'s size or state moves her anchor.
 fn reanchor(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) -> anyhow::Result<()> {
     let at = SettingsStore::get(cx).ely_left;
     let spot = main.update(cx, |_, window, _| spot(window, at))?;

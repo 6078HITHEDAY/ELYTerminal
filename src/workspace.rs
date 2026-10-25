@@ -338,7 +338,7 @@ impl Render for Workspace {
                     (pid.to_string(), row.into_any_element())
                 })
                 .collect();
-            // A drag needs Reorder; without it the rows keep List's own gap.
+            // Only a drag needs Reorder; List keeps its own gap.
             let list = if settings.drag_sessions {
                 let dragged = workspace.clone();
                 rows.into_iter()

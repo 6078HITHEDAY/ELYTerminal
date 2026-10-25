@@ -43,7 +43,7 @@ pub(super) fn show_tab(value: &SharedString, cx: &mut App) {
     }
 }
 
-/// A header button that hides or shows a column, saved; its tooltip says which, by `hide` or `show`.
+/// A header button that hides or shows a column, saved.
 pub(super) fn column_toggle(
     workspace: &Entity<Workspace>,
     (id, icon): (&'static str, IconName),

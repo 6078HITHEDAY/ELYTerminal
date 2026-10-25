@@ -150,7 +150,7 @@ dependencies = [
 [[package]]
 name = "alacritty_terminal"
 version = "0.26.0"
-source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=5e75a363a33aac5f9fdbafd0aa2a914784fb5afe#5e75a363a33aac5f9fdbafd0aa2a914784fb5afe"
+source = "git+https://github.com/ELY-Open-Source/alacritty.git?rev=4a10fb38b9497a08dbc698a787b8a0894c654f1c#4a10fb38b9497a08dbc698a787b8a0894c654f1c"
 dependencies = [
  "base64",
  "bitflags 2.13.2",
@@ -1694,7 +1694,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "ely-gpui-component"
 version = "0.1.1"
-source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=fd1c7d9b4337c645f2b274d13a6b4e6113d34a08#fd1c7d9b4337c645f2b274d13a6b4e6113d34a08"
+source = "git+https://github.com/ELY-Open-Source/Ely-GPUI-Components.git?rev=4f6e80ff7bf0283170e27414cdf125b93f5b935a#4f6e80ff7bf0283170e27414cdf125b93f5b935a"
 dependencies = [
  "alacritty_terminal",
  "anyhow",

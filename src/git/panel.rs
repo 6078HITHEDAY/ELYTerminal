@@ -27,7 +27,7 @@ enum State {
     Read(Repo, Rc<Vec<Commit>>),
 }
 
-/// An open diff: its file, the section it came from, and its lines or the key of why there are none.
+/// An open diff: file, section, lines or why none.
 struct Diff {
     change: Change,
     section: ChangeSection,
@@ -54,7 +54,7 @@ pub struct GitPanel {
     state: State,
     /// Where `state` was read: an action waits until it is `folder`.
     read: PathBuf,
-    /// The last action's failure: the key of what failed, and what git said.
+    /// The last action's failure: what failed, and git's words.
     error: Option<(&'static str, SharedString)>,
     subject: Entity<TextInput>,
     body: Entity<TextInput>,

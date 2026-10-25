@@ -447,9 +447,9 @@ fn a_turn_s_bytes_with_more_waiting_wake_the_event_loop_once() {
 
 #[test]
 fn an_unnamed_prompt_is_held_by_its_group_the_shell_or_no_one_known() {
-    // fish's own prompt, or a third party's, held by the session's shell.
+    // fish's or another unnamed prompt, held by the shell.
     assert_eq!(prompter(Some(10), 10, false), Holder::Shell);
-    // A program's under PowerShell, which names its own and runs programs in its group.
+    // A program's prompt under PowerShell, which shares its group.
     assert_eq!(prompter(Some(10), 10, true), Holder::Unknown);
     // omp's, in a group of its own.
     assert_eq!(prompter(Some(20), 10, true), Holder::Group(20));

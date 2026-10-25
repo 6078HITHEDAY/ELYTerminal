@@ -28,7 +28,7 @@ actions!(elyterminal, [OpenSettings, CloseSettings]);
 /// The key context of the settings window's content.
 const CONTEXT: &str = "Settings";
 
-/// Each category's key, the key of its name and its icon.
+/// Each category's key, its name's key and its icon.
 const SECTIONS: [(&str, &str, IconName); 2] = [
     ("appearance", "et.settings.appearance", IconName::Palette),
     ("terminal", "et.settings.terminal", IconName::Terminal),
@@ -92,7 +92,7 @@ pub struct SettingsWindow {
     folder: Entity<TextInput>,
     /// The shortcut list's search.
     search: Entity<TextInput>,
-    /// Why the typed shell, and the typed folder, are not saved.
+    /// Why the typed shell and folder are not saved.
     refused: Option<SharedString>,
     refused_folder: Option<SharedString>,
     /// Why the last change did not save.
@@ -172,7 +172,7 @@ impl SettingsWindow {
         }
     }
 
-    /// Words its title and fields again in the language just chosen.
+    /// Rewords its title and fields in the chosen language.
     fn speak(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.set_window_title(&text(cx, "et.settings.title", &[]));
         let (shell, search) = (self.shell.clone(), self.search.clone());
@@ -202,7 +202,7 @@ impl SettingsWindow {
         })
     }
 
-    /// Writes a path Browse chose into its field, which saves it as typed; one not in UTF-8, which the settings cannot hold, is refused in the field's row.
+    /// Saves Browse's pick as typed; refuses one not in UTF-8.
     pub(super) fn chosen(&mut self, field: &'static str, path: PathBuf, cx: &mut Context<Self>) {
         let (input, refused) = match field {
             "shell" => (self.shell.clone(), &mut self.refused),
@@ -221,7 +221,7 @@ impl SettingsWindow {
         input.update(cx, |input, cx| input.set_text(text, cx));
     }
 
-    /// Saves what a field holds through `put`, so a shell or folder that names none keeps the saved one; the store's reason, for the field's row.
+    /// Saves a field through `put`, or returns the store's reason.
     fn save_typed(
         &mut self,
         field: &str,
@@ -291,7 +291,7 @@ fn switch(
     })
 }
 
-/// Segments for `choices`, each a value, its key and its name's key, that save the chosen value through `put`.
+/// Segments for `choices` that save the chosen value through `put`.
 fn choice<T: Copy + PartialEq + Debug + 'static>(
     this: &Entity<SettingsWindow>,
     field: &'static str,

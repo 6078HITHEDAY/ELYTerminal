@@ -1,4 +1,4 @@
-//! The interface's words in English and Simplified Chinese, through Ely's `I18n`.
+//! The interface's words, English and Simplified Chinese, via `I18n`.
 
 use ely_gpui_component::i18n::I18n;
 use gpui::App;
@@ -18,7 +18,7 @@ pub fn catalogs(language: Language) -> I18n {
         .catalog(Language::SimplifiedChinese.tag(), zh::MESSAGES)
 }
 
-/// Speaks the settings' language, and the next one they choose, in every window and the menu bar.
+/// Speaks the settings' language everywhere, and follows its changes.
 pub fn init(cx: &mut App) {
     let mut spoken = SettingsStore::get(cx).language;
     log::info!("i18n: the interface speaks {}", spoken.tag());

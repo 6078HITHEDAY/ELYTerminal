@@ -1,5 +1,5 @@
 #!/bin/sh
-# generate.sh: writes the tables beside it from the lcUniConv of libX11 1.8.12, which Debian 13 ships.
+# generate.sh: writes the tables from libX11 1.8.12's lcUniConv.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)

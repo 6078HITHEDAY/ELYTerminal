@@ -27,11 +27,11 @@ pub enum PtyEvent {
     Term(Event),
     Folder(PathBuf),
     Mouse(MouseMode),
-    /// An OSC 133 mark, with who held the terminal as a prompt started.
+    /// An OSC 133 mark, and who held the terminal then.
     Mark(Mark, Holder),
-    /// A program's status, OSC 7501, with the process group that held the terminal then.
+    /// OSC 7501 status, with the group holding the terminal then.
     Status(Status, Option<i32>),
-    /// A notification or progress, OSC 9, 777 or 99, with the process group that held the terminal then.
+    /// OSC 9, 777 or 99, with the terminal's group then.
     Ask(Ask, Option<i32>),
     /// A title a program set, in the output's order: OSC 0 or 2, or the title stack's pop.
     Title(String),
@@ -232,7 +232,7 @@ impl Pty {
 
 #[cfg(unix)]
 impl Pty {
-    /// The process group the program runs in the foreground; none once no group holds the terminal.
+    /// The foreground process group; none once none holds the terminal.
     pub fn foreground(&self) -> std::io::Result<Option<i32>> {
         super::unix::foreground(&self.master)
     }

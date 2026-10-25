@@ -1,11 +1,11 @@
-//! The lines a wheel event scrolls, from the units gpui gives on each system.
+//! Lines a wheel event scrolls, from gpui's units per system.
 
 use gpui::{Pixels, ScrollDelta, ScrollWheelEvent};
 
-/// Lines a wheel line scrolls: gpui gives a notch as the lines Windows sets and as 3 on Linux; macOS gives one, which scrolls 3, as Ghostty's discrete wheel.
+/// Lines per gpui line: macOS's notch scrolls 3, as Ghostty's.
 const NOTCH: f32 = if cfg!(target_os = "macos") { 3. } else { 1. };
 
-/// Whole lines `event` moves, a screen of `rows` at most, as Windows' one screen at a time asks with u32::MAX lines; `rest` keeps a line's part.
+/// Whole lines `event` moves, `rows` at most; `rest` keeps parts.
 pub fn lines(
     rest: &mut f32,
     event: &ScrollWheelEvent,
@@ -28,7 +28,7 @@ pub fn lines(
     }
     let page = rows as f32;
     *rest = (*rest + travel).clamp(-page, page);
-    // Fractions of a notch in f32 can sum a hair short of the whole line they make.
+    // A notch's f32 parts can sum short of the line.
     if (*rest - rest.round()).abs() < 1e-3 {
         *rest = rest.round();
     }
@@ -37,7 +37,7 @@ pub fn lines(
     Some(lines as i32)
 }
 
-/// Windows' lines a notch and characters a sideways notch, read beside gpui, which reads its own as the main window opens and never again.
+/// Windows' wheel lines and characters, read when gpui reads them.
 #[cfg(windows)]
 static KEPT: std::sync::OnceLock<(f32, f32)> = std::sync::OnceLock::new();
 
@@ -69,7 +69,7 @@ pub fn keep() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The settings `keep` read, as gpui counts Shift's notch in them.
+/// The settings `keep` read, Shift's notch counted in them.
 #[cfg(windows)]
 pub fn sideways() -> Option<(f32, f32)> {
     let kept = KEPT.get().copied();
@@ -103,7 +103,7 @@ mod tests {
         }
     }
 
-    /// gpui's lines a notch: Windows' setting there, 3 by default, 3 on Linux, one on macOS.
+    /// gpui's lines a notch: Windows' setting, Linux's 3, macOS's one.
     #[test]
     fn a_notch_scrolls_as_the_system_asks_and_an_event_a_screen_at_most() {
         let mut rest = 0.;

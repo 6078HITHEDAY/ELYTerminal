@@ -11,7 +11,7 @@ use crate::{
 };
 
 impl Workspace {
-    /// A session of the shell the settings name, where Start in says.
+    /// A session of the set shell, where Start in says.
     pub(super) fn new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let settings = SettingsStore::get(cx);
         let start = match settings.start_in {
@@ -45,7 +45,7 @@ impl Workspace {
         self.open(&shell, Start::In(folder), Some(index + 1), window, cx);
     }
 
-    /// A session of `shell` at `start`, at `at` or the list's end, and shown.
+    /// Shows a `shell` session from `start`, at `at` or last.
     fn open(
         &mut self,
         shell: &str,

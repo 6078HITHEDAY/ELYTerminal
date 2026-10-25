@@ -38,7 +38,7 @@ unsafe extern "C" {
 const KEY_DOWN: u64 = 10;
 const KEY_UP: u64 = 11;
 
-/// The Shift, Option and Command keys' bits in an event's modifier flags.
+/// Shift, Option and Command bits in an event's modifier flags.
 const SHIFT: u64 = 1 << 17;
 const OPTION: u64 = 1 << 19;
 const COMMAND: u64 = 1 << 20;
@@ -96,7 +96,7 @@ pub fn key_facts(name: &str, shift: bool) -> anyhow::Result<KeyFacts> {
     })
 }
 
-/// The left and right Option keys the key AppKit is handling holds; none without Option or a key, as while gpui draws.
+/// The Option keys AppKit's current key holds; none between keys.
 pub fn held_options() -> Option<(bool, bool)> {
     let flags: u64 = unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];

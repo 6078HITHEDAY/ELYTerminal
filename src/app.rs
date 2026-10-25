@@ -23,7 +23,7 @@ const SETTLE: Duration = Duration::from_millis(500);
 /// The id the macOS bundle and Linux desktop entry share.
 pub const APP_ID: &str = "com.zacharyzhang.elyterminal";
 
-/// Fonts, settings, the interface's language, integration scripts and the chosen font, each checked before a window opens.
+/// Fonts, settings, language and scripts, checked before any window.
 pub fn start(cx: &mut App) -> anyhow::Result<()> {
     cx.text_system()
         .add_fonts(vec![

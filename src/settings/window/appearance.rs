@@ -32,7 +32,7 @@ const CURSORS: [(CursorStyle, &str, &str); 4] = [
     (CursorStyle::Hollow, "hollow", "et.cursor.hollow"),
 ];
 
-/// Each language, its key and its name's key, the name its own language gives it.
+/// Each language, its key, and its own name's key.
 const LANGUAGES: [(Language, &str, &str); 2] = [
     (Language::English, "en-US", "et.language.english"),
     (Language::SimplifiedChinese, "zh-CN", "et.language.chinese"),

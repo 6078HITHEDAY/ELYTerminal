@@ -76,7 +76,7 @@ pub fn install(dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Where a session starts: home, which a `wsl` session takes as its distribution's own, or a folder.
+/// Home, which `wsl` takes as its distribution's, or a folder.
 pub enum Start {
     Home,
     In(PathBuf),
@@ -88,7 +88,7 @@ impl From<PathBuf> for Start {
     }
 }
 
-/// How to start `shell`, or the login shell when empty, at `start` so it reports its folder.
+/// How to start `shell`, or the login shell, at `start`.
 pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Result<Launch> {
     let start = start.into();
     let cwd = match &start {
@@ -232,7 +232,7 @@ fn first_shell(folders: &str) -> anyhow::Result<String> {
     anyhow::bail!("shell integration: neither pwsh, powershell nor cmd lies on PATH")
 }
 
-/// Whether `sh` is Git for Windows' `bin\sh.exe`, which starts its `usr\bin\bash.exe` as bash.
+/// Whether `sh` is Git for Windows' `bin\sh.exe`, a bash launcher.
 #[cfg(windows)]
 fn git_bash(sh: &Path) -> bool {
     sh.parent()
@@ -338,7 +338,7 @@ mod windows_tests {
         };
         let git = file("Git\\bin\\sh.exe");
         file("Git\\usr\\bin\\bash.exe");
-        // MSYS2's sh is bash in POSIX mode, which reads no --rcfile.
+        // MSYS2's sh, bash in POSIX mode, reads no --rcfile.
         let msys = file("msys64\\usr\\bin\\sh.exe");
         file("msys64\\usr\\bin\\bash.exe");
         let alone = file("Tools\\bin\\sh.exe");
@@ -390,7 +390,7 @@ mod windows_tests {
         let first = next_folder(&mut events);
         pty.write(&b"cd 'in ner'\r"[..]);
         let second = next_folder(&mut events);
-        // MSYS keeps a name's controls and colons at U+F000 up; nl\n has a sibling nl.
+        // Controls and colons sit at U+F000 up; nl\n beside nl.
         pty.write(&b"mkdir $'bell\\adir' re:po $'nl\\n' nl && cd $'bell\\adir'\r"[..]);
         let bell = next_folder(&mut events);
         pty.write(&b"cd ../re:po\r"[..]);

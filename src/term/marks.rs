@@ -54,7 +54,7 @@ pub(crate) fn read(body: &[u8]) -> Option<Mark> {
     }
 }
 
-/// Whether an A or N body past `133;` comes from ELYTerminal's integration, `aid=elyterminal`.
+/// Whether an A or N body names our integration, `aid=elyterminal`.
 pub(crate) fn named(body: &[u8]) -> bool {
     matches!(body.first(), Some(b'A' | b'N'))
         && body

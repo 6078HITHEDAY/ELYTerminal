@@ -20,8 +20,8 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | One binary crate `elyterminal`, edition 2024, Rust 1.95 | T01 | `Cargo.toml` | Pass |
-| Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01, T84, T85, T86, T88 | `Cargo.toml`: Ely `fd1c7d9` on Ely's `elyterminal-0.1.1` branch, `gpui-pre` `=0.3.8` | Pass |
-| `alacritty_terminal` 0.26 | T04, T76 | `=0.26.0`, taken from the org's fork, `elyterminal-0.26.0` at `5e75a36`, through `[patch.crates-io]` | Pass |
+| Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01, T84, T85, T86, T88, T91 | `Cargo.toml`: Ely `4f6e80f` on Ely's `elyterminal-0.1.1` branch, `gpui-pre` `=0.3.8` | Pass |
+| `alacritty_terminal` 0.26 | T04, T76, T91 | `=0.26.0`, taken from the org's fork, `elyterminal-0.26.0` at `4a10fb3`, through `[patch.crates-io]` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
 | CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 926 on `65bb4d3`, see the CI notes; on GitHub, run 40149384983 on `f233243` | Pass |
 | The repo, private until v0.1.1 and public since; no credential in any file or commit | T01, T26 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits; before the owner made it public, a scan of all 91 commits' contents and messages found no token, SSH password, gateway, port, SSH user or private key; a scan of the 61 commits from `0c9418d` to `7a9ad8e`, their messages, the tree at `7a9ad8e`, and the Ely and alacritty commits made beside them found no password, token, private key or SSH host | Pass |

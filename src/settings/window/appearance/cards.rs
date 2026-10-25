@@ -1,4 +1,4 @@
-//! The theme cards: a grid of every theme, each over a small window in its colors.
+//! Theme cards, each a small window in its theme's colors.
 
 use ely_gpui_component::{
     forms::RadioCard,

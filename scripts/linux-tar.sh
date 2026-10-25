@@ -1,5 +1,5 @@
 #!/bin/sh
-# Keep the original tarball's flat binary, desktop entry and icon layout.
+# A flat tarball: binary, entry, icon, man page, licenses.
 set -eu
 cd "$(dirname "$0")/.."
 . scripts/linux-common.sh

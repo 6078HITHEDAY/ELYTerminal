@@ -25,7 +25,7 @@ pub(super) const TURN: usize = u16::MAX as usize;
 
 /// A pty whose reader shows each byte to its scanners before the parser.
 pub(crate) struct Tapped<P> {
-    /// A copy of the master, which names the process group that holds the terminal as a program reports; it goes before `inner`, whose drop waits for the program to see the terminal closed.
+    /// The master's copy, naming the foreground group; drops before `inner`.
     #[cfg(unix)]
     master: Option<std::fs::File>,
     pub inner: P,
@@ -42,7 +42,7 @@ pub(crate) struct Tapped<P> {
     /// The poller alacritty's event loop waits on.
     #[cfg(windows)]
     poller: Option<Arc<Poller>>,
-    /// Bytes passed since the pty ran dry or the loop woke.
+    /// Bytes since the pty ran dry or the loop woke.
     #[cfg(windows)]
     unwoken: usize,
 }
@@ -101,7 +101,7 @@ impl<P: EventedReadWrite> io::Read for Tapped<P> {
 }
 
 impl<P: EventedReadWrite> Tapped<P> {
-    /// Fills `buf` until the pty runs dry; true if it did.
+    /// Fills `buf`; true once the pty ran dry.
     fn fill(&mut self, buf: &mut [u8]) -> io::Result<(usize, bool)> {
         let mut count = 0;
         while count < buf.len() {
@@ -151,7 +151,7 @@ impl<P: EventedReadWrite> Tapped<P> {
         out.len()
     }
 
-    /// Wakes alacritty's loop when a turn may end with bytes unread (alacritty#8147).
+    /// Wakes alacritty's loop when bytes wait unread (alacritty#8147).
     #[cfg(windows)]
     fn keep_waking(&mut self, passed: usize, dry: bool) {
         use polling::os::iocp::{CompletionPacket, PollerIocpExt};
@@ -193,7 +193,7 @@ fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
     }
 }
 
-/// Who holds the terminal at a prompt no integration named, by the foreground `group`: the session's shell, unless it names its own prompts, so this one is a program's that runs in its group, as under PowerShell; another group; or none known.
+/// The holder of a prompt no integration named, by `group`.
 fn prompter(group: Option<i32>, pid: u32, named: bool) -> Holder {
     match group {
         Some(group) if u32::try_from(group) != Ok(pid) => Holder::Group(group),
@@ -202,7 +202,7 @@ fn prompter(group: Option<i32>, pid: u32, named: bool) -> Holder {
     }
 }
 
-/// Sends the session what the scanner found: a full reset, a title, a mark, a program's status or ask with the group `holder` names, or a folder.
+/// Sends the session what the scanner found, with `holder`'s group.
 fn report(
     found: Found,
     events: &UnboundedSender<PtyEvent>,

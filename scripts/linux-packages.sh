@@ -1,5 +1,5 @@
 #!/bin/sh
-# One build, four packages; packaging tools stay in the build container.
+# One build, four packages; tools stay in the container.
 set -eu
 cd "$(dirname "$0")/.."
 . scripts/linux-common.sh

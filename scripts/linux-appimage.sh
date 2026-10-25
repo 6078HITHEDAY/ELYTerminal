@@ -58,7 +58,7 @@ do
     patchelf --set-rpath "\$ORIGIN" "$appdir/usr/lib/$soname"
 done
 
-# Refuse an unreviewed dependency if a bundled library changes its ABI closure.
+# Refuse a bundled library whose NEEDED list was not reviewed.
 for library in "$appdir"/usr/lib/*.so.*; do
     readelf -d "$library" > "$work/dynamic"
     sed -n 's/.*(NEEDED).*\[\(.*\)\].*/\1/p' "$work/dynamic" > "$work/needed"

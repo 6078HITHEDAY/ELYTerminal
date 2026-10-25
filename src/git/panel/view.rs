@@ -71,7 +71,7 @@ fn rows(changes: &[Change]) -> Vec<Changed> {
     changes.iter().take(LISTED).map(row).collect()
 }
 
-/// How many changes the list holds and how many there are, if it leaves some out.
+/// Listed and total changes, when the list leaves some out.
 fn cut(repo: &Repo) -> Option<(usize, usize)> {
     let sections = [
         &repo.conflicted,
@@ -110,7 +110,7 @@ fn head(repo: &Repo) -> (IconName, String) {
     }
 }
 
-/// The key of what a diff from `section` shows: Ely's, as the changes list names it.
+/// Ely's key for what a diff from `section` shows.
 fn compared(section: ChangeSection) -> &'static str {
     match section {
         ChangeSection::Conflicted => "git.changes.conflicted",

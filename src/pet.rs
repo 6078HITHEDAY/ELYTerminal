@@ -88,7 +88,7 @@ pub fn follow(main: WindowHandle<Workspace>, cx: &mut App) {
     }
 }
 
-/// Opens or closes her as the settings want her, and on Wayland, whose compositor may lay her popup over other windows, as `main` is active.
+/// Opens or closes her per settings; on Wayland, per activation.
 fn present(main: WindowHandle<Workspace>, shown: &Shown, cx: &mut App) {
     let state = main.update(cx, |_, window, _| {
         (wayland(window), window.is_window_active())

@@ -25,7 +25,7 @@ use crate::{
     },
 };
 
-/// Each way Option types Alt, its key and its name's key.
+/// Each way Option types Alt, its key and name's key.
 const OPTIONS: [(OptionAsAlt, &str, &str); 4] = [
     (OptionAsAlt::Off, "off", "et.option.off"),
     (OptionAsAlt::Left, "left", "et.option.left"),
@@ -209,7 +209,7 @@ fn updates_row(cx: &App) -> SettingsRow {
         .control(control)
 }
 
-/// Hands a path Browse chose to the window, for the field `field` names.
+/// Hands Browse's pick for `field` to the window.
 fn chosen(
     this: &Entity<SettingsWindow>,
     field: &'static str,
@@ -218,7 +218,7 @@ fn chosen(
     move |path, _, cx| this.update(cx, |this, cx| this.chosen(field, path, cx))
 }
 
-/// A path field, and below it why what it holds is not saved.
+/// A path field, with why its text is not saved.
 fn path_field(path: PathInput, refused: Option<SharedString>, cx: &App) -> Div {
     let refused = refused.map(|why| InlineMessage::new(Severity::Danger, why));
     let field = div().w(cx.theme().prose_width()).flex().flex_col().gap_1();

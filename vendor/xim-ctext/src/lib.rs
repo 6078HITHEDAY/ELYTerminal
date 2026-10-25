@@ -1,4 +1,4 @@
-//! Compound text from an X input method, decoded for zed-xim through libX11's own tables.
+//! X input method compound text, decoded through libX11's own tables.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -16,7 +16,7 @@ pub enum DecodeError {
     UnsupportedEncoding(Vec<u8>),
 }
 
-/// The 96-sets' upper halves in `upper.bin`, 96 units each, in the order of their final bytes.
+/// The 96-sets' upper halves in `upper.bin`, by final byte.
 const FINALS: &[u8] = b"ABCDFGHLMTVY_bf";
 static UPPER: &[u8] = include_bytes!("../tables/upper.bin");
 const GB2312: Table = Table(include_bytes!("../tables/gb2312.bin"), grid);
@@ -27,7 +27,7 @@ const BIG5: Table = Table(include_bytes!("../tables/big5.bin"), big5);
 const BIG5HKSCS: Table = Table(include_bytes!("../tables/big5hkscs.bin"), big5);
 const GBK: Table = Table(include_bytes!("../tables/gbk.bin"), gbk);
 
-/// A set of pairs: its table and where a pair sits in it.
+/// A two-byte set: its table and each pair's place.
 #[derive(Clone, Copy)]
 struct Table(&'static [u8], fn(u8, u8) -> Option<usize>);
 
@@ -55,7 +55,7 @@ enum Set {
 }
 
 impl Set {
-    /// Decodes the leading run of `range` bytes and returns the rest.
+    /// Decodes the leading `range` bytes and returns the rest.
     fn decode<'b>(
         self,
         bytes: &'b [u8],
@@ -94,7 +94,7 @@ impl Set {
     }
 }
 
-/// G0 and G1 hold across escapes and segments, as libX11 writes them.
+/// G0 and G1 hold across escapes and segments, like libX11.
 pub fn compound_text_to_utf8(bytes: &[u8]) -> Result<String, DecodeError> {
     let mut out = String::with_capacity(bytes.len());
     let mut g0 = Set::Ascii;
@@ -115,7 +115,7 @@ pub fn compound_text_to_utf8(bytes: &[u8]) -> Result<String, DecodeError> {
     Ok(out)
 }
 
-/// Reads the sequence after an ESC, and returns what follows it.
+/// Reads the sequence after an ESC; returns what follows.
 fn escape<'b>(
     bytes: &'b [u8],
     g0: &mut Set,
@@ -153,7 +153,7 @@ fn escape<'b>(
     Ok(rest)
 }
 
-/// Reads UTF-8 up to `ESC % @`, or to the end, where ibus-x11's fallback leaves it open.
+/// Reads UTF-8 to `ESC % @`, or to the end.
 fn utf8<'b>(bytes: &'b [u8], out: &mut String) -> Result<&'b [u8], DecodeError> {
     let end = bytes
         .windows(3)
@@ -166,7 +166,7 @@ fn utf8<'b>(bytes: &'b [u8], out: &mut String) -> Result<&'b [u8], DecodeError> 
     Ok(bytes.get(end + 3..).unwrap_or_default())
 }
 
-/// Reads an extended segment: its length, its encoding's name, STX, then its text.
+/// Reads an extended segment: length, encoding name, STX, text.
 fn segment<'b>(bytes: &'b [u8], out: &mut String) -> Result<&'b [u8], DecodeError> {
     let invalid = || DecodeError::InvalidEncoding(bytes.to_vec());
     let [m @ 0x80..=0xff, l @ 0x80..=0xff, rest @ ..] = bytes else {
@@ -202,13 +202,13 @@ fn double(last: u8) -> Option<Set> {
     }))
 }
 
-/// A pair's place in a 94 by 94 set, rows and cells from 0x21 to 0x7E.
+/// A pair's place in a 94 by 94 set.
 fn grid(row: u8, cell: u8) -> Option<usize> {
     let place = |b: u8| (0x21..=0x7e).contains(&b).then(|| usize::from(b - 0x21));
     Some(place(row)? * 94 + place(cell)?)
 }
 
-/// A Big5 pair's place, leads from 0x81 as libX11's Big5-HKSCS counts them.
+/// A Big5 pair's place, leads from 0x81, as libX11 counts.
 fn big5(lead: u8, trail: u8) -> Option<usize> {
     let trail = match trail {
         0x40..=0x7e => trail - 0x40,
@@ -228,7 +228,7 @@ fn gbk(lead: u8, trail: u8) -> Option<usize> {
     Some(usize::from(lead.checked_sub(0x81)?) * 190 + usize::from(trail))
 }
 
-/// The character a table's little-endian UTF-16 unit holds, none where it holds 0.
+/// A table unit's character, none for 0.
 fn lookup(table: &[u8], index: usize) -> Option<char> {
     let unit = table.get(2 * index..2 * index + 2)?;
     let unit = u16::from_le_bytes([unit[0], unit[1]]);

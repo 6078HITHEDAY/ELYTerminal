@@ -13,7 +13,7 @@ alacritty_terminal = { version = "=0.26.0", default-features = false }
 anyhow = "1"
 base64 = "0.22"
 dirs = "7"
-ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "fd1c7d9b4337c645f2b274d13a6b4e6113d34a08" }
+ely-gpui-component = { git = "https://github.com/ELY-Open-Source/Ely-GPUI-Components.git", rev = "4f6e80ff7bf0283170e27414cdf125b93f5b935a" }
 env_logger = "0.11"
 futures = "0.3"
 gethostname = "1.1.0"
@@ -68,7 +68,7 @@ windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win3
 windows-sys = { version = "0.61", features = ["Win32_Security", "Win32_System_IO"] }
 
 [patch.crates-io]
-alacritty_terminal = { git = "https://github.com/ELY-Open-Source/alacritty.git", rev = "5e75a363a33aac5f9fdbafd0aa2a914784fb5afe" }
+alacritty_terminal = { git = "https://github.com/ELY-Open-Source/alacritty.git", rev = "4a10fb38b9497a08dbc698a787b8a0894c654f1c" }
 xim-ctext = { path = "vendor/xim-ctext" }
 
 [lints.rust]

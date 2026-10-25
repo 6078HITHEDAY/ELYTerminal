@@ -51,7 +51,7 @@ impl Pty {
     }
 }
 
-/// The process group that holds the terminal `master` leads; none once no group does, as after its program ended.
+/// `master`'s foreground group; none once none holds the terminal.
 pub(super) fn foreground(master: &File) -> io::Result<Option<i32>> {
     match unsafe { libc::tcgetpgrp(master.as_raw_fd()) } {
         -1 => Err(io::Error::last_os_error()),
