@@ -33,6 +33,11 @@ pub enum Updates {
 
 impl Global for Updates {}
 
+/// The page of the last newer release a check found.
+struct Found(String);
+
+impl Global for Found {}
+
 /// The fields of a release the check reads.
 #[derive(Debug, Deserialize)]
 struct Release {
@@ -76,6 +81,7 @@ fn finish(found: anyhow::Result<Option<(String, String)>>, auto: bool, cx: &mut 
     let found = match found {
         Ok(Some((version, page))) => {
             log::info!("updates: {version} is out, newer than {VERSION}, at {page}");
+            cx.set_global(Found(page.clone()));
             if auto {
                 cx.show_system_notification(SystemNotification {
                     tag: TAG.into(),
@@ -98,19 +104,19 @@ fn finish(found: anyhow::Result<Option<(String, String)>>, auto: bool, cx: &mut 
     cx.set_global(found);
 }
 
-/// Opens the newer release's page when its notification is pressed; tells whether `tag` was that notification's.
+/// Opens the found page for an update's `tag`; else false.
 pub fn pressed(tag: &str, cx: &mut App) -> bool {
     if tag != TAG {
         return false;
     }
-    match cx.global::<Updates>().clone() {
-        Updates::Newer { page, .. } => {
+    match cx.try_global::<Found>().map(|found| found.0.clone()) {
+        Some(page) => {
             log::info!("updates: the notification opens {page}");
             cx.open_url(&page);
         }
-        found => {
-            log::info!("updates: the notification was pressed, the last check finding {found:?}")
-        }
+        None => log::info!(
+            "updates: the notification was pressed; no check this run found a newer release"
+        ),
     }
     true
 }
