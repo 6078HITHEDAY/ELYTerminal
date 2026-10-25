@@ -207,3 +207,11 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T94 Release v0.1.9 with T73 to T93: version 0.1.9; the macOS disk image, the Windows zip, and the Linux tarball, DEB, RPM and AppImage, each from its script; the notes list what changed in English and Chinese and credit the pull requests' authors.
 - [x] T95 The 0.1.9 update film: about 30 seconds in the 0.1.7 film's style, Ely presenting what 0.1.9 does in a real recording, captions in English and Chinese; its files stay in the untracked `videos/`. Rendered at 1080p30, 30 s, 23 MB, from the real take; the owner ticked it without a review.
 - [x] T96 A failed settings save names the step the system refused, create, write or rename, after CI's first Windows attempt on 8c76ba3 failed `overlapping_saves_leave_one_whole_file`: `Access is denied` on two of the four writers' first saves, under one message for all four steps. The owner's PC did not repeat it in 300 runs of the test, 60 of the suite and 20 at sixteen writers, so its cause stays unknown and no fix is guessed.
+
+## 38. Nested shells and the Windows save race
+
+- [ ] T97 A nested shell started with an option's argument, `fish -C CMD`, `bash --rcfile FILE`, `zsh -o OPT`, reads as interactive: each shell's options that take an argument are known.
+- [ ] T98 A nested nushell and a nested PowerShell drop their own live records at their prompts, as zsh, bash and fish do.
+- [ ] T99 On Windows, which has no process groups, a nested shell's prompt is known from the process tree under the session's shell.
+- [ ] T100 A shell over ssh, under sudo or in a container drops its live records at its prompts: find what the terminal can know of it, and do it, or record why not.
+- [ ] T101 The Windows save race: run CI's Windows job until `overlapping_saves_leave_one_whole_file` fails again with the named step, then fix its cause.
