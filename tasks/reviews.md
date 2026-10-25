@@ -430,3 +430,8 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 - Round 1, 1277cf6: FAIL. WSL's `--cd ~` at Home alone, Folder's checks at load, save and start, the settings window and a live language switch all held, and the store probe refused relative, empty, file, missing and NUL paths; but Browse wrote its pick by Ely `PathInput`'s lossy name, so on Linux a folder named with a byte not in UTF-8 saved its sibling of the lossy name.
 - Round 2, 154e982: PASS. Ely's PathInput test fails on the old conversion and passes on `92f69a3`; an app probe pressed both fields' real Browse buttons through gpui's test dialog: a raw pick was refused in its own row and the next good pick cleared it, and picks with Chinese, spaces, `%`, quotes and a newline kept their folder and program.
 
+
+## T87
+
+- Round 1, 19035b6: FAIL. The merge kept main's decoder, its tests, CI and Release; the four x86_64 formats from hosted run 40143259149 carried the binary, desktop entry, icon and seven licenses, `libX11-lcUniConv` among them, held glibc 2.35 and refused a binary asking 2.36, and the workflow held a read-only token, no secrets and pinned actions; but the tarball lacked the man page the other three carry, which `linux-tar.sh` left in its stage.
+- Round 2, 99e8020: PASS. The x86_64 tarball from hosted run 40145343964 and the ARM64 one carry `elyterminal.1.gz`, byte for byte the source's; the README's four install lines, run as a user on Ubuntu 22.04, let man-db find and render it, and its uninstall removed all four; every other file of the four formats stayed as it was.
