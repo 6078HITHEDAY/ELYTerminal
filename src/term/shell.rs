@@ -95,10 +95,14 @@ fn name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Whether `path` runs zsh, bash or fish: job-control shells.
+/// Characters that start zsh's, bash's or fish's options; none elsewhere.
 #[cfg(unix)]
-pub(super) fn job_control(path: &Path) -> bool {
-    matches!(name(path).as_str(), "zsh" | "bash" | "fish")
+pub(super) fn option_marks(path: &Path) -> Option<&'static [char]> {
+    match name(path).as_str() {
+        "zsh" | "bash" => Some(&['-', '+']),
+        "fish" => Some(&['-']),
+        _ => None,
+    }
 }
 
 /// How to start `shell`, or the login shell, at `start`.

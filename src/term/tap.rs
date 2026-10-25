@@ -122,12 +122,12 @@ impl<P: EventedReadWrite> Tapped<P> {
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         let (kitty, titles, named) = (&mut self.kitty, &mut self.titles, &mut self.named);
         #[cfg(unix)]
-        let (holder, interactive) = (
+        let (holder, alone) = (
             || holder(self.master.as_ref(), pid),
-            |group| interactive(group, pid),
+            |group| alone(group, pid),
         );
         #[cfg(windows)]
-        let (holder, interactive) = (|| None, |_| false);
+        let (holder, alone) = (|| None, |_| false);
         self.scanner.feed(read, &mut |found| {
             report(
                 found,
@@ -135,7 +135,7 @@ impl<P: EventedReadWrite> Tapped<P> {
                 pid,
                 last,
                 (kitty, titles, named),
-                (&holder, &interactive),
+                (&holder, &alone),
             )
         });
         #[cfg(windows)]
@@ -198,7 +198,7 @@ fn report(
     pid: u32,
     last: &mut Option<PathBuf>,
     (kitty, titles, named): (&mut Kitty, &mut Titles, &mut bool),
-    (holder, interactive): (&dyn Fn() -> Option<i32>, &dyn Fn(i32) -> bool),
+    (holder, alone): (&dyn Fn() -> Option<i32>, &dyn Fn(i32) -> bool),
 ) {
     let event = match found {
         Found::Reset => {
@@ -222,7 +222,7 @@ fn report(
                         *named |= holder().is_some_and(|group| u32::try_from(group) == Ok(pid));
                         Holder::Shell
                     }
-                    Mark::Prompt(_) => prompter(holder(), pid, *named, interactive),
+                    Mark::Prompt(click) => prompter(click, holder(), pid, *named, alone),
                     _ => Holder::Unknown,
                 };
                 log::debug!("pty {pid}: {mark:?} held by {holder:?}");
@@ -483,5 +483,5 @@ mod tests;
 use folder::folder;
 use holder::prompter;
 #[cfg(unix)]
-use holder::{holder, interactive};
+use holder::{alone, holder};
 pub(crate) use modes::Modes;

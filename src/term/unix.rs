@@ -95,6 +95,64 @@ pub(super) fn path(pid: i32) -> io::Result<PathBuf> {
     Ok(PathBuf::from(OsString::from_vec(buffer)))
 }
 
+/// Whether process group `group` holds its leader alone.
+#[cfg(target_os = "macos")]
+pub(super) fn lone(group: i32) -> io::Result<bool> {
+    let mut pids = [0 as libc::c_int; 2];
+    let room = std::mem::size_of_val(&pids) as libc::c_int;
+    // SAFETY: `pids` holds `room` bytes; libproc counts pids, not bytes.
+    let count = unsafe { libc::proc_listpgrppids(group, pids.as_mut_ptr().cast(), room) };
+    if count < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(count == 1 && pids[0] == group)
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn lone(group: i32) -> io::Result<bool> {
+    let mut members = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let name = entry?.file_name();
+        let Some(pid) = name.to_str().and_then(|name| name.parse().ok()) else {
+            continue;
+        };
+        if pgrp(pid)? == Some(group) {
+            members.push(pid);
+            if members.len() > 1 {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(members == [group])
+}
+
+/// Process `pid`'s group from its `stat`; none once it ended.
+#[cfg(target_os = "linux")]
+fn pgrp(pid: i32) -> io::Result<Option<i32>> {
+    let stat = match std::fs::read(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error)
+            if error.kind() == ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    let invalid = || io::Error::new(ErrorKind::InvalidData, format!("/proc/{pid}/stat"));
+    // The fields after the name: state, parent, group.
+    let end = stat
+        .iter()
+        .rposition(|&byte| byte == b')')
+        .ok_or_else(invalid)?;
+    let group = stat[end + 1..]
+        .split(|&byte| byte == b' ')
+        .filter(|field| !field.is_empty())
+        .nth(2)
+        .and_then(|field| std::str::from_utf8(field).ok()?.parse().ok())
+        .ok_or_else(invalid)?;
+    Ok(Some(group))
+}
+
 /// Process `pid`'s arguments and variables.
 #[cfg(target_os = "linux")]
 pub(super) fn launch(pid: i32) -> io::Result<Invocation> {
