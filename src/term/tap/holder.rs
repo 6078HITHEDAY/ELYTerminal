@@ -12,9 +12,9 @@ pub(super) fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
     }
 }
 
-/// Whether zsh, bash or fish, started interactive, holds `group` alone.
+/// Whether interactive zsh, bash or fish leading `group` drew it.
 #[cfg(unix)]
-pub(super) fn alone(group: i32, pid: u32) -> bool {
+pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
     use crate::term::{shell, unix};
     let exe = match unix::path(group) {
         Ok(exe) => exe,
@@ -36,11 +36,13 @@ pub(super) fn alone(group: i32, pid: u32) -> bool {
             false
         }
     };
+    // Clicks mark fish's own line; fish forks no copy.
     interactive
-        && unix::lone(group).unwrap_or_else(|error| {
-            log::warn!("pty {pid}: group {group}'s processes do not read: {error}");
-            false
-        })
+        && ((click != Click::Arrows && shell::fish(&exe))
+            || unix::lone(group).unwrap_or_else(|error| {
+                log::warn!("pty {pid}: group {group}'s processes do not read: {error}");
+                false
+            }))
 }
 
 /// An unnamed prompt's holder, by its click and `group`.
@@ -49,13 +51,11 @@ pub(super) fn prompter(
     group: Option<i32>,
     pid: u32,
     named: bool,
-    alone: &dyn Fn(i32) -> bool,
+    prompts: &dyn Fn(i32, Click) -> bool,
 ) -> Holder {
     let ours = |group: i32| u32::try_from(group) == Ok(pid);
     match group {
-        // A line that takes clicks is a shell's own.
-        _ if click != Click::Arrows => Holder::Shell,
-        Some(group) if !ours(group) && alone(group) => Holder::Shell,
+        Some(group) if !ours(group) && prompts(group, click) => Holder::Shell,
         Some(group) if !ours(group) => Holder::Group(group),
         Some(_) if !named => Holder::Shell,
         _ => Holder::Unknown,
@@ -67,8 +67,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unnamed_prompt_is_held_by_its_click_or_its_group() {
-        let (shell, program, plain) = (|_: i32| true, |_: i32| false, Click::Arrows);
+    fn an_unnamed_prompt_is_held_by_its_group_as_its_leader_reads() {
+        let (shell, program) = (|_: i32, _: Click| true, |_: i32, _: Click| false);
+        let (fish, plain) = (|_: i32, click: Click| click != Click::Arrows, Click::Arrows);
         // fish's or another unnamed prompt, held by the shell.
         assert_eq!(
             prompter(plain, Some(10), 10, false, &program),
@@ -84,27 +85,32 @@ mod tests {
         // A nested interactive shell's, alone in its own group.
         assert_eq!(prompter(plain, Some(20), 10, true, &shell), Holder::Shell);
         assert_eq!(prompter(plain, None, 10, false, &shell), Holder::Unknown);
-        // A line that takes clicks, as fish's, from any group.
+        // The leader's reading hears the click, as fish's does.
         assert_eq!(
-            prompter(Click::Absolute, Some(20), 10, true, &program),
+            prompter(Click::Absolute, Some(20), 10, true, &fish),
             Holder::Shell
         );
         assert_eq!(
-            prompter(Click::Relative, None, 10, true, &program),
-            Holder::Shell
+            prompter(plain, Some(20), 10, true, &fish),
+            Holder::Group(20)
+        );
+        // Without a group, a click tells nothing.
+        assert_eq!(
+            prompter(Click::Relative, None, 10, true, &shell),
+            Holder::Unknown
         );
     }
 
     #[cfg(unix)]
     #[test]
-    fn only_zsh_bash_or_fish_started_interactive_reads_alone_in_its_group() {
+    fn only_an_interactive_shell_leading_its_group_draws_its_prompt() {
         use std::{
             io::{BufRead, BufReader, Write},
             os::unix::process::CommandExt,
             process::{Command, Stdio},
         };
         // Each says `ready` once it runs, past Linux's exec.
-        let read = |program: &str, args: &[&str], line: &[u8]| {
+        let read = |program: &str, args: &[&str], line: &[u8], click: Click| {
             let mut child = Command::new(program)
                 .args(args)
                 .process_group(0)
@@ -124,21 +130,40 @@ mod tests {
                 .read_line(&mut ready)
                 .expect("it says");
             assert_eq!(ready, "ready\n", "{program} {args:?}");
-            let read = alone(child.id() as i32, 0);
+            let read = prompts(child.id() as i32, click, 0);
             // SAFETY: a signal to the test's own group.
             unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
             child.wait().expect("it ends");
             read
         };
-        assert!(read("bash", &["-s"], b"echo ready\n"));
-        assert!(read("bash", &["+H", "-s"], b"echo ready\n"));
-        assert!(read("zsh", &["-f", "-s"], b"echo ready\n"));
+        let (plain, click) = (Click::Arrows, Click::Absolute);
+        assert!(read("bash", &["-s"], b"echo ready\n", plain));
+        assert!(read("bash", &["+H", "-s"], b"echo ready\n", plain));
+        assert!(read("zsh", &["-f", "-s"], b"echo ready\n", plain));
         // A command's or a script's operand.
-        assert!(!read("bash", &["-c", "echo ready; read -r line"], b""));
-        assert!(!read("bash", &["-s", "operand"], b"echo ready\n"));
+        assert!(!read(
+            "bash",
+            &["-c", "echo ready; read -r line"],
+            b"",
+            plain
+        ));
+        assert!(!read("bash", &["-s", "operand"], b"echo ready\n", plain));
         // A job beside the shell, as a subshell runs one.
-        assert!(!read("bash", &["-s"], b"sleep 30 & echo ready\n"));
+        assert!(!read("bash", &["-s"], b"sleep 30 & echo ready\n", plain));
+        assert!(!read("bash", &["-s"], b"sleep 30 & echo ready\n", click));
         // A program alone in its group.
-        assert!(!read("sh", &["-c", "echo ready; exec sleep 30"], b""));
+        assert!(!read(
+            "sh",
+            &["-c", "echo ready; exec sleep 30"],
+            b"",
+            plain
+        ));
+        // fish's clicks are its own line's, beside a job too.
+        let job = ["--no-config", "--init-command=sleep 30 & echo ready"];
+        assert!(read("fish", &job, b"", click));
+        assert!(!read("fish", &job, b"", plain));
+        // A fish command's `read`, as a script's, is the program's.
+        let asks = ["--no-config", "-c", "echo ready; read line"];
+        assert!(!read("fish", &asks, b"", click));
     }
 }

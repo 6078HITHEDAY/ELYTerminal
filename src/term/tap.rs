@@ -122,12 +122,12 @@ impl<P: EventedReadWrite> Tapped<P> {
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         let (kitty, titles, named) = (&mut self.kitty, &mut self.titles, &mut self.named);
         #[cfg(unix)]
-        let (holder, alone) = (
+        let (holder, prompts) = (
             || holder(self.master.as_ref(), pid),
-            |group| alone(group, pid),
+            |group, click| prompts(group, click, pid),
         );
         #[cfg(windows)]
-        let (holder, alone) = (|| None, |_| false);
+        let (holder, prompts) = (|| None, |_, _| false);
         self.scanner.feed(read, &mut |found| {
             report(
                 found,
@@ -135,7 +135,8 @@ impl<P: EventedReadWrite> Tapped<P> {
                 pid,
                 last,
                 (kitty, titles, named),
-                (&holder, &alone),
+                &holder,
+                &prompts,
             )
         });
         #[cfg(windows)]
@@ -198,7 +199,8 @@ fn report(
     pid: u32,
     last: &mut Option<PathBuf>,
     (kitty, titles, named): (&mut Kitty, &mut Titles, &mut bool),
-    (holder, alone): (&dyn Fn() -> Option<i32>, &dyn Fn(i32) -> bool),
+    holder: &dyn Fn() -> Option<i32>,
+    prompts: &dyn Fn(i32, marks::Click) -> bool,
 ) {
     let event = match found {
         Found::Reset => {
@@ -222,7 +224,7 @@ fn report(
                         *named |= holder().is_some_and(|group| u32::try_from(group) == Ok(pid));
                         Holder::Shell
                     }
-                    Mark::Prompt(click) => prompter(click, holder(), pid, *named, alone),
+                    Mark::Prompt(click) => prompter(click, holder(), pid, *named, prompts),
                     _ => Holder::Unknown,
                 };
                 log::debug!("pty {pid}: {mark:?} held by {holder:?}");
@@ -483,5 +485,5 @@ mod tests;
 use folder::folder;
 use holder::prompter;
 #[cfg(unix)]
-use holder::{alone, holder};
+use holder::{holder, prompts};
 pub(crate) use modes::Modes;

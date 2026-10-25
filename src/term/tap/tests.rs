@@ -458,7 +458,8 @@ fn only_the_session_s_own_named_prompt_names_its_shell() {
             10,
             &mut last,
             (&mut kitty, &mut titles, named),
-            (&|| Some(group), &|_| false),
+            &|| Some(group),
+            &|_, _| false,
         );
         match heard.try_recv() {
             Ok(PtyEvent::Mark(_, holder)) => holder,

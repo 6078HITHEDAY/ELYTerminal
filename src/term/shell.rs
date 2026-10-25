@@ -105,6 +105,12 @@ pub(super) fn option_marks(path: &Path) -> Option<&'static [char]> {
     }
 }
 
+/// Whether `path` runs fish, whose own line marks clicks.
+#[cfg(unix)]
+pub(super) fn fish(path: &Path) -> bool {
+    name(path) == "fish"
+}
+
 /// How to start `shell`, or the login shell, at `start`.
 pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Result<Launch> {
     let start = start.into();
