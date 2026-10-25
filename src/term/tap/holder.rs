@@ -112,7 +112,7 @@ pub(super) fn leaves(
         for (child, _, name) in processes.iter().filter(|(_, of, _)| *of == pid) {
             let after = born
                 .zip(started(*child))
-                .is_some_and(|(parent, child)| child >= parent);
+                .is_none_or(|(parent, child)| child >= parent);
             if after && !console(name) && !under.contains(child) {
                 under.push(*child);
             }
@@ -205,6 +205,9 @@ mod tests {
         let mut reused = busy.clone();
         reused.push(process(5, 30, "nu.exe"));
         assert_eq!(leaves(&reused, 10, &order), [30]);
+        // An unreadable start keeps its child, so the program stays the leaf.
+        let hidden = |pid: u32| (pid != 30).then_some(u64::from(pid));
+        assert_eq!(leaves(&busy, 10, &hidden), [30]);
         assert_eq!(leaves(&[process(10, 1, "pwsh.exe")], 10, &order), [10]);
     }
 
@@ -304,6 +307,13 @@ mod tests {
             &["-n", "--log-include", "a", "b"]
         ));
         assert!(!read("/opt/homebrew/bin/nu", &["-nc", "ls"]));
+        assert!(read("/opt/homebrew/bin/pwsh", &["-NoLogo", "-NoPro"]));
+        assert!(read("/opt/homebrew/bin/pwsh", &["-NoProfile", "-in"]));
+        assert!(read("/opt/homebrew/bin/pwsh", &["--NoLogo", "/NoProfile"]));
+        assert!(!read(
+            "/opt/homebrew/bin/nu",
+            &["-n", "--log-include=nu_cli", "a.nu"]
+        ));
         assert!(read(
             "/opt/homebrew/bin/pwsh",
             &["-NoLogo", "-executionpolicy", "Bypass"]

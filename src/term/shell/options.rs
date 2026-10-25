@@ -39,6 +39,12 @@ impl Options {
     pub(crate) fn interactive(&self, args: &[String]) -> bool {
         let mut args = args.iter();
         while let Some(arg) = args.next() {
+            // PowerShell takes `--name` and `/name` as `-name`.
+            let switch = match arg.strip_prefix("--").or_else(|| arg.strip_prefix('/')) {
+                Some(rest) if self.fold => format!("-{rest}"),
+                _ => arg.clone(),
+            };
+            let arg = &switch;
             if self.stops.contains(&arg.as_str()) {
                 return args.next().is_none();
             }
@@ -52,7 +58,7 @@ impl Options {
                 if self.command.iter().any(|command| self.same(command, name)) {
                     return false;
                 }
-                if self.many.contains(&name) {
+                if self.many.contains(&name) && !arg.contains('=') {
                     let mut rest = args.clone();
                     while rest
                         .next()
@@ -106,6 +112,14 @@ impl Options {
 
     /// The long option `name` names, whole or by a unique prefix.
     fn resolve<'a>(&self, name: &'a str) -> Option<&'a str> {
+        if self.fold {
+            let lower = name.to_ascii_lowercase();
+            // The first switch it starts, as PowerShell matches, wins.
+            return PWSH
+                .iter()
+                .find(|(full, least)| lower.len() >= least.len() && full.starts_with(&lower))
+                .map(|(full, _)| *full);
+        }
         let known = |list: &[&str]| list.iter().any(|known| self.same(known, name));
         if !self.prefixes || known(self.long) || known(self.valued) || known(self.command) {
             return Some(name);
@@ -124,6 +138,52 @@ impl Options {
         }
     }
 }
+
+/// PowerShell's switches in its parser's order, each with its least prefix.
+const PWSH: &[(&str, &str)] = &[
+    ("-version", "-v"),
+    ("-help", "-h"),
+    ("-?", "-?"),
+    ("-login", "-l"),
+    ("-noexit", "-noe"),
+    ("-noprofile", "-nop"),
+    ("-nologo", "-nol"),
+    ("-noninteractive", "-noni"),
+    ("-socketservermode", "-so"),
+    ("-servermode", "-s"),
+    ("-namedpipeservermode", "-nam"),
+    ("-sshservermode", "-sshs"),
+    ("-noprofileloadtime", "-noprofileloadtime"),
+    ("-interactive", "-i"),
+    ("-configurationfile", "-configurationfile"),
+    ("-configurationname", "-config"),
+    ("-custompipename", "-cus"),
+    ("-commandwithargs", "-commandwithargs"),
+    ("-cwa", "-cwa"),
+    ("-command", "-c"),
+    ("-windowstyle", "-w"),
+    ("-file", "-f"),
+    ("-isswait", "-isswait"),
+    ("-outputformat", "-o"),
+    ("-of", "-o"),
+    ("-inputformat", "-inp"),
+    ("-if", "-if"),
+    ("-executionpolicy", "-ex"),
+    ("-ep", "-ep"),
+    ("-encodedcommand", "-e"),
+    ("-ec", "-e"),
+    ("-encodedarguments", "-encodeda"),
+    ("-ea", "-ea"),
+    ("-settingsfile", "-settings"),
+    ("-sta", "-sta"),
+    ("-mta", "-mta"),
+    ("-workingdirectory", "-wo"),
+    ("-wd", "-wd"),
+    (
+        "-removeworkingdirectorytrailingcharacter",
+        "-removeworkingdirectorytrailingcharacter",
+    ),
+];
 
 /// A shell's options where it leads its prompt; none elsewhere.
 pub(crate) fn options(path: &Path) -> Option<Options> {
@@ -299,6 +359,8 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
                 "-NonInteractive",
                 "-NoProfile",
                 "-NoProfileLoadTime",
+                "-EncodedArguments",
+                "-ea",
                 "-OutputFormat",
                 "-SettingsFile",
                 "-SSHServerMode",

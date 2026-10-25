@@ -230,34 +230,36 @@ pub(crate) fn inner(leader: i32) -> io::Result<Option<i32>> {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn inner(leader: i32) -> io::Result<Option<i32>> {
-    let info = |pid: i32| -> io::Result<libc::proc_bsdinfo> {
-        // SAFETY: plain C data, valid zeroed.
-        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
-        // SAFETY: `info` holds the size given.
-        let read = unsafe {
-            libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size)
-        };
-        if read != size {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(info)
-    };
-    let tty = info(leader)?.e_tdev;
+    // ps reads another user's process; proc_pidinfo does not.
+    let out = std::process::Command::new("/bin/ps")
+        .args(["-A", "-o", "pid=,ppid=,tpgid=,tt="])
+        .output()?;
+    if !out.status.success() {
+        return Err(io::Error::other(format!("ps failed: {}", out.status)));
+    }
+    let rows: Vec<(i32, i32, i32, String)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let mut number = || fields.next()?.parse().ok();
+            let (pid, ppid, tpgid) = (number()?, number()?, number()?);
+            Some((pid, ppid, tpgid, fields.next()?.to_string()))
+        })
+        .collect();
+    let tty = rows
+        .iter()
+        .find(|row| row.0 == leader)
+        .map(|row| row.3.clone())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "the relay is gone"))?;
     let (mut under, mut at) = (vec![leader], 0);
     while let Some(&pid) = under.get(at) {
         at += 1;
-        let mut children = [0 as libc::c_int; 64];
-        let room = std::mem::size_of_val(&children) as libc::c_int;
-        // SAFETY: `children` holds `room` bytes; libproc counts pids.
-        let count = unsafe { libc::proc_listchildpids(pid, children.as_mut_ptr().cast(), room) };
-        for &child in &children[..usize::try_from(count).unwrap_or(0).min(children.len())] {
-            let Ok(child_info) = info(child) else {
-                continue;
-            };
-            under.push(child);
-            if child_info.e_tdev != tty && child_info.e_tpgid > 0 {
-                return Ok(i32::try_from(child_info.e_tpgid).ok());
+        for (child, _, tpgid, tt) in rows.iter().filter(|row| row.1 == pid) {
+            if !under.contains(child) {
+                under.push(*child);
+                if *tt != tty && *tt != "??" && *tpgid > 0 {
+                    return Ok(Some(*tpgid));
+                }
             }
         }
     }
