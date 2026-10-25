@@ -178,7 +178,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 
 | PRD line | Evidence | Status |
 |---|---|---|
-| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records, but for these: T42, T43, T55, T56, T57 and T58, ticked without one at the owner's word, and T61, which the owner closed unreproduced; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests; T75, T81 and T89 reached it too, and are ticked on T92's passing review of their last fixes, T89's made in T90 | Partial |
+| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records, but for these: T42, T43, T55, T56, T57 and T58, ticked without one at the owner's word, and T61, which the owner closed unreproduced; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests; T75, T81 and T89 reached it too and stay unticked, though T92's own review passed their last fixes, T89's made in T90: whether that accepts them is the owner's call | Partial |
 | `scripts/check.sh` passes | macOS at `0d4f9bb`, T88's code: fmt, clippy, 287 tests, the fonts check and the 500-line rule; CI's macOS job runs it at each push, last in run 40149384983 on `f233243` | Pass |
 | CI green on macOS, Ubuntu and Windows | run 40149384983 on `f233243`, T88's pass: macOS ran `scripts/check.sh` and the build, Ubuntu and Windows the tests and the build; run 955 on `43ea5b1`, v0.1.1's commit, on Gitea; see the CI notes below | Pass |
 
