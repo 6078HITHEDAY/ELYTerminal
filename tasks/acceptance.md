@@ -9,8 +9,8 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | One window: sessions left, terminal middle, Git or Files right | T11 | T11 review; a real X11 window shows the terminal and the right column | Pass |
-| Every setting has a control in the settings window | T16–T18, T30, T33 | 17 of the 24 fields have a row; `show_sessions`, `show_panel` and `panel` are the main window's toggles and switch, `sessions_width` and `panel_width` its columns' borders, and `window_width` and `window_height` its size, which §6 keeps in the file | Pass |
-| Silent: no sound, bell, notification but a session's, update check, telemetry, tip or onboarding | T10, T12, T40 | a bell is logged and marks a hidden row; the code holds no network call, and its one notification is a session's, through gpui's, which sets no sound on macOS and a silent toast on Windows; on Linux the notification daemon decides | Pass |
+| Every setting has a control in the settings window | T16–T18, T30, T33, T46, T55, T56, T60, T69, T83, T85, T86 | 25 of the 33 fields have a row, `option_as_alt` and `natural_text_editing` on macOS alone, where they act; `show_sessions`, `show_panel` and `panel` are the main window's toggles and switch, `sessions_width` and `panel_width` its columns' borders, `window_width` and `window_height` its size, which §6 keeps in the file, and `ely_left` where a drag leaves Ely | Pass |
+| Silent: no sound, bell, notification but a session's or a newer release's, telemetry, tip or onboarding | T10, T12, T40, T56 | a bell is logged and marks a hidden row; the one network call is the update check the owner asked for in T56, `curl` to GitHub's `releases/latest` at start and once a day while Check for updates is on, and at Check now; the notifications are a session's and, once a day at most, an automatic check's newer release, through gpui's, which sets no sound on macOS and a silent toast on Windows; on Linux the notification daemon decides | Pass |
 | Clean: no subtitle, tagline, logging option, status bar or badge without state | T11–T18 | reviews of the layout and settings tasks | Pass |
 | Built-in themes, each with a preview, Catppuccin among them; a theme colors terminal and chrome | T03, T17 | `themes::tests`; T17 review | Pass |
 | The background blurs on macOS, Windows, Wayland and X11 | T19–T21 | see §11 | Partial |
@@ -20,11 +20,11 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
 | One binary crate `elyterminal`, edition 2024, Rust 1.95 | T01 | `Cargo.toml` | Pass |
-| Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01 | `Cargo.toml`: Ely `a2cb531`, `gpui-pre` `=0.3.8` | Pass |
-| `alacritty_terminal` 0.26 | T04 | `=0.26.0` | Pass |
+| Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01, T84, T85, T86, T88 | `Cargo.toml`: Ely `fd1c7d9` on Ely's `elyterminal-0.1.1` branch, `gpui-pre` `=0.3.8` | Pass |
+| `alacritty_terminal` 0.26 | T04, T76 | `=0.26.0`, taken from the org's fork, `elyterminal-0.26.0` at `5e75a36`, through `[patch.crates-io]` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
 | CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 926 on `65bb4d3`, see the CI notes; on GitHub, run 40149384983 on `f233243` | Pass |
-| The repo, private until v0.1.1 and public since; no credential in any file or commit | T01, T26 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits; before the owner made it public, a scan of all 91 commits' contents and messages found no token, SSH password, gateway, port, SSH user or private key | Pass |
+| The repo, private until v0.1.1 and public since; no credential in any file or commit | T01, T26 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits; before the owner made it public, a scan of all 91 commits' contents and messages found no token, SSH password, gateway, port, SSH user or private key; a scan of the 61 commits from `0c9418d` to `7a9ad8e`, their messages, the tree at `7a9ad8e`, and the Ely and alacritty commits made beside them found no password, token, private key or SSH host | Pass |
 
 ## 3. Settings model and storage
 
@@ -178,7 +178,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 
 | PRD line | Evidence | Status |
 |---|---|---|
-| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests; T75 and T81 reached it too and stay unticked, their last fixes checked against every probe of their three rounds | Partial |
+| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records, but for these: T42, T43, T55, T56, T57 and T58, ticked without one at the owner's word, and T61, which the owner closed unreproduced; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests; T75 and T81 reached it too and stay unticked, their last fixes checked against every probe of their three rounds | Partial |
 | `scripts/check.sh` passes | macOS at `0d4f9bb`, T88's code: fmt, clippy, 287 tests, the fonts check and the 500-line rule; CI's macOS job runs it at each push, last in run 40149384983 on `f233243` | Pass |
 | CI green on macOS, Ubuntu and Windows | run 40149384983 on `f233243`, T88's pass: macOS ran `scripts/check.sh` and the build, Ubuntu and Windows the tests and the build; run 955 on `43ea5b1`, v0.1.1's commit, on Gitea; see the CI notes below | Pass |
 

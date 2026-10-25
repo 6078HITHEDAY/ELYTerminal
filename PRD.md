@@ -8,7 +8,7 @@ Chapters run in build order. `TASKS.md` follows them line by line.
 
 - One window. Sessions on the left, the terminal in the middle, Git or Files on the right.
 - Every setting has a control in the settings window. No setting lives only in a file.
-- Silent: no sound, no bell, no notifications but a session's, below, no update checks, no telemetry, no tips, no onboarding.
+- Silent: no sound, no bell, no notifications but a session's and a newer release's, below, no telemetry, no tips, no onboarding. The one call out is the update check the owner asked for, a switch in Settings › Terminal.
 - Clean: no subtitle, no tagline, no logging options, no status bar, no badges that do not carry state.
 - Built-in themes, each shown as a small preview, Catppuccin among them. A theme colors the terminal and the chrome.
 - The window background blurs on macOS, Windows, Wayland and X11.
