@@ -446,17 +446,6 @@ fn a_turn_s_bytes_with_more_waiting_wake_the_event_loop_once() {
 }
 
 #[test]
-fn an_unnamed_prompt_is_held_by_its_group_the_shell_or_no_one_known() {
-    // fish's or another unnamed prompt, held by the shell.
-    assert_eq!(prompter(Some(10), 10, false), Holder::Shell);
-    // A program's prompt under PowerShell, which shares its group.
-    assert_eq!(prompter(Some(10), 10, true), Holder::Unknown);
-    // omp's, in a group of its own.
-    assert_eq!(prompter(Some(20), 10, true), Holder::Group(20));
-    assert_eq!(prompter(None, 10, false), Holder::Unknown);
-}
-
-#[test]
 fn only_the_session_s_own_named_prompt_names_its_shell() {
     let (events, mut heard) = futures::channel::mpsc::unbounded();
     let (mut kitty, mut titles, mut named, mut last) =
@@ -469,7 +458,7 @@ fn only_the_session_s_own_named_prompt_names_its_shell() {
             10,
             &mut last,
             (&mut kitty, &mut titles, named),
-            &|| Some(group),
+            (&|| Some(group), &|_| false),
         );
         match heard.try_recv() {
             Ok(PtyEvent::Mark(_, holder)) => holder,

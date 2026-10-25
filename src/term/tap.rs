@@ -122,11 +122,21 @@ impl<P: EventedReadWrite> Tapped<P> {
         let (events, pid, last) = (&self.events, self.pid, &mut self.last);
         let (kitty, titles, named) = (&mut self.kitty, &mut self.titles, &mut self.named);
         #[cfg(unix)]
-        let holder = || holder(self.master.as_ref(), pid);
+        let (holder, interactive) = (
+            || holder(self.master.as_ref(), pid),
+            |group| interactive(group, pid),
+        );
         #[cfg(windows)]
-        let holder = || None;
+        let (holder, interactive) = (|| None, |_| false);
         self.scanner.feed(read, &mut |found| {
-            report(found, events, pid, last, (kitty, titles, named), &holder)
+            report(
+                found,
+                events,
+                pid,
+                last,
+                (kitty, titles, named),
+                (&holder, &interactive),
+            )
         });
         #[cfg(windows)]
         let win32 = self.modes.win32;
@@ -181,27 +191,6 @@ impl<P: EventedReadWrite> Tapped<P> {
     }
 }
 
-/// The process group that holds the terminal now, by `master`.
-#[cfg(unix)]
-fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
-    match super::unix::foreground(master?) {
-        Ok(group) => group,
-        Err(error) => {
-            log::warn!("pty {pid}: no foreground group for a report: {error}");
-            None
-        }
-    }
-}
-
-/// The holder of a prompt no integration named, by `group`.
-fn prompter(group: Option<i32>, pid: u32, named: bool) -> Holder {
-    match group {
-        Some(group) if u32::try_from(group) != Ok(pid) => Holder::Group(group),
-        Some(_) if !named => Holder::Shell,
-        _ => Holder::Unknown,
-    }
-}
-
 /// Sends the session what the scanner found, with `holder`'s group.
 fn report(
     found: Found,
@@ -209,7 +198,7 @@ fn report(
     pid: u32,
     last: &mut Option<PathBuf>,
     (kitty, titles, named): (&mut Kitty, &mut Titles, &mut bool),
-    holder: &dyn Fn() -> Option<i32>,
+    (holder, interactive): (&dyn Fn() -> Option<i32>, &dyn Fn(i32) -> bool),
 ) {
     let event = match found {
         Found::Reset => {
@@ -233,7 +222,7 @@ fn report(
                         *named |= holder().is_some_and(|group| u32::try_from(group) == Ok(pid));
                         Holder::Shell
                     }
-                    Mark::Prompt(_) => prompter(holder(), pid, *named),
+                    Mark::Prompt(_) => prompter(holder(), pid, *named, interactive),
                     _ => Holder::Unknown,
                 };
                 log::debug!("pty {pid}: {mark:?} held by {holder:?}");
@@ -486,9 +475,13 @@ impl Osc {
 const PARAMS: usize = 32;
 
 mod folder;
+mod holder;
 mod modes;
 #[cfg(test)]
 mod tests;
 
 use folder::folder;
+use holder::prompter;
+#[cfg(unix)]
+use holder::{holder, interactive};
 pub(crate) use modes::Modes;

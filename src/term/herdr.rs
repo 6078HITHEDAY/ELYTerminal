@@ -34,6 +34,7 @@ const WAIT: Duration = Duration::from_secs(1);
 const SNAPSHOT: &[u8] = b"{\"id\":\"elyterminal\",\"method\":\"session.snapshot\",\"params\":{}}\n";
 
 /// A program's arguments, and its variables as the system holds them.
+#[cfg(windows)]
 type Invocation = (Vec<String>, HashMap<String, OsString>);
 
 /// Follows the pane herdr's server has focused while herdr's client runs in the session.

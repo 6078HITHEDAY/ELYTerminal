@@ -88,6 +88,19 @@ impl From<PathBuf> for Start {
     }
 }
 
+/// A program's name, as the integration knows shells.
+fn name(path: &Path) -> String {
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
+/// Whether `path` runs zsh, bash or fish: job-control shells.
+#[cfg(unix)]
+pub(super) fn job_control(path: &Path) -> bool {
+    matches!(name(path).as_str(), "zsh" | "bash" | "fish")
+}
+
 /// How to start `shell`, or the login shell, at `start`.
 pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Result<Launch> {
     let start = start.into();
@@ -101,10 +114,7 @@ pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Resul
         // The settings checked this path; the session runs no other.
         crate::settings::program_path(shell).context("shell integration")?
     };
-    let name = Path::new(&path)
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let name = name(Path::new(&path));
     #[cfg(windows)]
     let name = if name == "sh" && git_bash(Path::new(&path)) {
         log::info!("shell integration: {path} is Git for Windows' sh, which runs its bash");
