@@ -455,3 +455,39 @@ fn an_unnamed_prompt_is_held_by_its_group_the_shell_or_no_one_known() {
     assert_eq!(prompter(Some(20), 10, true), Holder::Group(20));
     assert_eq!(prompter(None, 10, false), Holder::Unknown);
 }
+
+#[test]
+fn only_the_session_s_own_named_prompt_names_its_shell() {
+    let (events, mut heard) = futures::channel::mpsc::unbounded();
+    let (mut kitty, mut titles, mut named, mut last) =
+        (Kitty::default(), Titles::default(), false, None);
+    let mut prompt = |body: &[u8], group: i32, named: &mut bool| {
+        let found = Found::Osc(body, body.len());
+        report(
+            found,
+            &events,
+            10,
+            &mut last,
+            (&mut kitty, &mut titles, named),
+            &|| Some(group),
+        );
+        match heard.try_recv() {
+            Ok(PtyEvent::Mark(_, holder)) => holder,
+            other => panic!("no mark: {other:?}"),
+        }
+    };
+    // A nested zsh names its prompts in its own group.
+    assert_eq!(
+        prompt(b"133;A;aid=elyterminal", 20, &mut named),
+        Holder::Shell
+    );
+    assert!(!named);
+    // Back in fish, its unnamed prompt is the shell's.
+    assert_eq!(prompt(b"133;A", 10, &mut named), Holder::Shell);
+    assert_eq!(
+        prompt(b"133;A;aid=elyterminal", 10, &mut named),
+        Holder::Shell
+    );
+    assert!(named);
+    assert_eq!(prompt(b"133;A", 10, &mut named), Holder::Unknown);
+}

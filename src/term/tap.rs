@@ -37,7 +37,7 @@ pub(crate) struct Tapped<P> {
     events: UnboundedSender<PtyEvent>,
     pid: u32,
     last: Option<PathBuf>,
-    /// The session's shell names its prompts, as ELYTerminal's integrations do.
+    /// The session's own shell names its prompts.
     named: bool,
     /// The poller alacritty's event loop waits on.
     #[cfg(windows)]
@@ -229,7 +229,8 @@ fn report(
             if let Some(mark) = body.strip_prefix(b"133;").and_then(marks::read) {
                 let holder = match mark {
                     Mark::Prompt(_) if body.strip_prefix(b"133;").is_some_and(marks::named) => {
-                        *named = true;
+                        // A nested shell's name stays its own.
+                        *named |= holder().is_some_and(|group| u32::try_from(group) == Ok(pid));
                         Holder::Shell
                     }
                     Mark::Prompt(_) => prompter(holder(), pid, *named),

@@ -280,7 +280,7 @@ impl TerminalView {
         cx.stop_propagation();
         let rows = self.pty.term.lock().screen_lines();
         let rest = &mut self.pointer.rest;
-        let Some(lines) = wheel::lines(rest, event, height, rows, wheel::sideways) else {
+        let Some(lines) = wheel::lines(rest, event, height, rows, wheel::settings) else {
             return;
         };
         if lines == 0 {
