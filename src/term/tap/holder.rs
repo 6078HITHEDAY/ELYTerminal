@@ -129,6 +129,20 @@ mod tests {
             &["--config", "c.nu", "-e", "ls"]
         ));
         assert!(!read("/opt/homebrew/bin/nu", &["a.nu"]));
+        // Bundles, bash's optional values, command mode, the end of options.
+        assert!(read("/bin/zsh", &["-lo", "vi"]));
+        assert!(read("/bin/zsh", &["--emulate", "zsh"]));
+        assert!(read("/bin/bash", &["-iO", "extglob"]));
+        assert!(read("/bin/bash", &["+o"]));
+        assert!(read("/opt/homebrew/bin/fish", &["-NC", "set t 1"]));
+        assert!(!read(
+            "/opt/homebrew/bin/fish",
+            &["-C", "x", "--command=read"]
+        ));
+        assert!(!read("/opt/homebrew/bin/fish", &["-c'read'"]));
+        assert!(!read("/bin/bash", &["--", "--rcfile"]));
+        assert!(!read("/bin/zsh", &["--", "-o", "vi"]));
+        assert!(read("/bin/bash", &["--"]));
         assert!(read(
             "/opt/homebrew/bin/pwsh",
             &["-NoLogo", "-executionpolicy", "Bypass"]
