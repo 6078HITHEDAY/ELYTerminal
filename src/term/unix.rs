@@ -116,41 +116,25 @@ pub(super) fn lone(group: i32) -> io::Result<bool> {
         let Some(pid) = name.to_str().and_then(|name| name.parse().ok()) else {
             continue;
         };
-        if pgrp(pid)? == Some(group) {
-            members.push(pid);
-            if members.len() > 1 {
-                return Ok(false);
+        // SAFETY: getpgid reads a group; hidepid guards only /proc.
+        match unsafe { libc::getpgid(pid) } {
+            -1 => {
+                let error = io::Error::last_os_error();
+                // It ended while the list was read.
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    return Err(error);
+                }
             }
+            found if found == group => {
+                members.push(pid);
+                if members.len() > 1 {
+                    return Ok(false);
+                }
+            }
+            _ => {}
         }
     }
     Ok(members == [group])
-}
-
-/// Process `pid`'s group from its `stat`; none once it ended.
-#[cfg(target_os = "linux")]
-fn pgrp(pid: i32) -> io::Result<Option<i32>> {
-    let stat = match std::fs::read(format!("/proc/{pid}/stat")) {
-        Ok(stat) => stat,
-        Err(error)
-            if error.kind() == ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH) =>
-        {
-            return Ok(None);
-        }
-        Err(error) => return Err(error),
-    };
-    let invalid = || io::Error::new(ErrorKind::InvalidData, format!("/proc/{pid}/stat"));
-    // The fields after the name: state, parent, group.
-    let end = stat
-        .iter()
-        .rposition(|&byte| byte == b')')
-        .ok_or_else(invalid)?;
-    let group = stat[end + 1..]
-        .split(|&byte| byte == b' ')
-        .filter(|field| !field.is_empty())
-        .nth(2)
-        .and_then(|field| std::str::from_utf8(field).ok()?.parse().ok())
-        .ok_or_else(invalid)?;
-    Ok(Some(group))
 }
 
 /// Process `pid`'s arguments and variables.
