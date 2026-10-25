@@ -58,11 +58,12 @@ cd ELYTerminal-VERSION-linux-x86_64
 install -Dm755 elyterminal -t ~/.local/bin
 install -Dm644 com.zacharyzhang.elyterminal.desktop -t ~/.local/share/applications
 install -Dm644 com.zacharyzhang.elyterminal.svg -t ~/.local/share/icons/hicolor/scalable/apps
+install -Dm644 elyterminal.1.gz -t ~/.local/share/man/man1
 ```
 
 The desktop entry runs `elyterminal`, so `~/.local/bin` must be on `PATH`.
 Repeat these commands with a newer tarball to update. To uninstall, remove
-the three installed files; settings stay in the config folder.
+the four installed files; settings stay in the config folder.
 
 ## Build and run
 
