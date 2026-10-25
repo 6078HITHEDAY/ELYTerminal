@@ -439,3 +439,9 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T88
 
 - Round 1, 0d4f9bb: PASS. On Ubuntu 26.04.1's GNOME 50.1 under Wayland, 0.1.8 maximized from 800 by 560 sent a Right resize and a pointer leave for each tab press, and no release reached it; true full screen let the releases through. The fix took every tab press normal, maximized and full screen on GNOME 50.1 and 48.7 under Wayland and on GNOME 48.7 under X11, where `_GTK_EDGE_CONSTRAINTS` marked the tiled edges; all four margins and corners still grew a floating window, a left-tiled window's free edge grew it, and restore worked. An oracle over all 16 tiling masks, 1,936 cases a branch, failed both branches with the right edge's guard removed; Ely main's whole gate passed at `c360498`; the default filter names Ely's lines with `RUST_LOG` unset.
+
+## T89
+
+- Round 1, 7a9ad8e: FAIL. #25 and #28 were thanked and closed, every issue and pull request §36 names was answered and closed or merged, and every PRD bullet mapped to a row; but row 13 certified "no update checks" against T56's check, which `PRD.md` line 11 still forbade, row 181 left out the seven tasks ticked without a review, and rows 12 and 23 held old inventories. Fixed in 78ebefc.
+- Round 2, 78ebefc: FAIL. The first round's findings held fixed, and a scan of this goal's 61 commits and the Ely and alacritty commits beside them found no credential; but row 13's new evidence promised the update notification "once a day at most", which nothing across runs keeps, as AGENTS.md's T56 decision said too. Fixed in ff3ae30.
+- Round 3, ff3ae30: FAIL. The second round's finding held fixed; but row 156 certified that the update notification opens its page, while `updates::pressed` read the page from the last check's state, which a Check now running or failed offline replaces, so the press opened nothing. T56 asked that the press open that page, so T90 fixes the cause in the code. The cap: no fourth round.

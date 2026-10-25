@@ -196,4 +196,6 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T86 Start in knows WSL and takes a folder of your own, which a user asked for in issue #23: Home starts a `wsl` session in the distribution's home, and a third choice starts every session in a chosen folder.
 - [x] T87 Linux DEB, RPM and AppImage packages, from PR #16.
 - [x] T88 The right column's Git tab takes a press while the window is maximized or full screen on GNOME's Wayland, which a user found dead in issue #28: reproduce it under GNOME, find the cause, fix it or log what the next report needs.
-- [ ] T89 Issue #25's kind words thanked and closed; every issue and pull request above answered; the acceptance table checked line by line.
+- [ ] T89 Issue #25's kind words thanked and closed; every issue and pull request above answered; the acceptance table checked line by line. Three reviews spent, the cap: round 3 found row 156 certifying an update notification's press that a Check now, running or failed, loses; T90 fixes that in the code.
+- [ ] T90 The update notification's press opens the page it named, as T56 asked, whatever a check since has found or is doing, which T89's third review found lost to a Check now running or failed.
+- [ ] T91 Every comment written since 0.1.8, in ELYTerminal and in its Ely and alacritty commits, fits one line of ten words, as the owner's rules ask; the reviews checked lines, not words.
