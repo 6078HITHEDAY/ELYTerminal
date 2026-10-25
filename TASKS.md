@@ -195,5 +195,5 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T85 The interface in Simplified Chinese, which a user asked for in issue #26: a Language row in Settings › Appearance, English or 简体中文, through Ely's `I18n`.
 - [x] T86 Start in knows WSL and takes a folder of your own, which a user asked for in issue #23: Home starts a `wsl` session in the distribution's home, and a third choice starts every session in a chosen folder.
 - [x] T87 Linux DEB, RPM and AppImage packages, from PR #16.
-- [ ] T88 The right column's Git tab takes a press while the window is maximized or full screen on GNOME's Wayland, which a user found dead in issue #28: reproduce it under GNOME, find the cause, fix it or log what the next report needs.
+- [x] T88 The right column's Git tab takes a press while the window is maximized or full screen on GNOME's Wayland, which a user found dead in issue #28: reproduce it under GNOME, find the cause, fix it or log what the next report needs.
 - [ ] T89 Issue #25's kind words thanked and closed; every issue and pull request above answered; the acceptance table checked line by line.
