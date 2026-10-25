@@ -131,7 +131,7 @@ pub fn save(path: &Path, settings: &Settings) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Creates `temp`, which must not exist, and writes `text` to the disk.
+/// Creates new `temp` and writes `text` to the disk.
 fn write_new(temp: &Path, text: &str) -> anyhow::Result<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
