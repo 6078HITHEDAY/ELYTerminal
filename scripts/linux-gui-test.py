@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check an actual X11 window and PTY without touching the user's settings."""
+"""Checks an X11 window and PTY, leaving user settings alone."""
 
 import json
 import os
