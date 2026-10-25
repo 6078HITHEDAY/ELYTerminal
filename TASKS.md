@@ -210,7 +210,7 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 
 ## 38. Nested shells and the Windows save race
 
-- [ ] T97 A nested shell started with an option's argument, `fish -C CMD`, `bash --rcfile FILE`, `zsh -o OPT`, reads as interactive: each shell's options that take an argument are known. Three reviews spent, the cap: round 3's finding, bash's single-dash `-rcfile` and `-init-file`, was fixed in 1d1956a with no fourth review; unticked for the owner.
+- [x] T97 A nested shell started with an option's argument, `fish -C CMD`, `bash --rcfile FILE`, `zsh -o OPT`, reads as interactive: each shell's options that take an argument are known. Three reviews spent, the cap: round 3's finding, bash's single-dash `-rcfile` and `-init-file`, was fixed in 1d1956a with no fourth review; the owner accepted it at the cap on 2026-10-25.
 - [ ] T98 A nested nushell and a nested PowerShell drop their own live records at their prompts, as zsh, bash and fish do.
 - [ ] T99 On Windows, which has no process groups, a nested shell's prompt is known from the process tree under the session's shell.
 - [ ] T100 A shell over ssh, under sudo or in a container drops its live records at its prompts: find what the terminal can know of it, and do it, or record why not. Done: a root shell under sudo, su or doas, on the pty itself by its name or on their own pty through that pty's foreground group; a shell over ssh, mosh or in a container sends what omp sends through the same local process, clicks too, a limit only an integration on the far side could lift.
