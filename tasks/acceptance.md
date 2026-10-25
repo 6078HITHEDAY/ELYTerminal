@@ -1,6 +1,6 @@
 # Acceptance
 
-`PRD.md` line by line, as of T23. Status: **Pass** when a test, a run or a review shows it; **Partial** when part of it was shown; **Open** when nothing has shown it yet. Reviews are in `tasks/reviews.md`; tests are named by module (`cargo test -- MODULE`).
+`PRD.md` line by line. Status: **Pass** when a test, a run or a review shows it; **Partial** when part of it was shown; **Open** when nothing has shown it yet. Reviews are in `tasks/reviews.md`; tests are named by module (`cargo test -- MODULE`).
 
 What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyprland, on the owner's Omarchy, has drawn it. On 2026-10-15 macOS gave `shot` the window's ground alone, for old and new builds alike, while the terminal it ran under lacked Screen Recording (`CGPreflightScreenCaptureAccess` false); that day's macOS checks read the app's log.
 
@@ -23,7 +23,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 | Ely by pinned rev; gpui and gpui_platform from `gpui-pre` at Ely's version | T01 | `Cargo.toml`: Ely `a2cb531`, `gpui-pre` `=0.3.8` | Pass |
 | `alacritty_terminal` 0.26 | T04 | `=0.26.0` | Pass |
 | Logs through `log` to stderr, `RUST_LOG` sets the level, no log setting | T01 | `src/main.rs`; no such field in `Settings` | Pass |
-| CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 926 on `65bb4d3`, see the CI notes | Pass |
+| CI on GitHub Actions: macOS builds, tests and lints; Ubuntu and Windows build and test | T01, T23 | `.github/workflows/ci.yml`; run 926 on `65bb4d3`, see the CI notes; on GitHub, run 40149384983 on `f233243` | Pass |
 | The repo, private until v0.1.1 and public since; no credential in any file or commit | T01, T26 | T22's review scanned the tree and its 398 reachable objects: 0 hits; T23's scans for the Gitea token and the runners' SSH details: 0 hits; before the owner made it public, a scan of all 91 commits' contents and messages found no token, SSH password, gateway, port, SSH user or private key | Pass |
 
 ## 3. Settings model and storage
@@ -178,9 +178,9 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 
 | PRD line | Evidence | Status |
 |---|---|---|
-| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests | Partial |
-| `scripts/check.sh` passes | macOS: 135 tests, clippy, fmt, 500 lines; Linux through `scripts/linux.sh`: 138 tests, clippy, on aarch64 in Colima and on x86_64 in WSL's Docker | Pass |
-| CI green on macOS, Ubuntu and Windows | run 955 on `43ea5b1`, v0.1.1's commit: all three jobs pass; see the CI notes below | Pass |
+| Each task ticked with a passing review | each task is ticked only after its review, as `tasks/reviews.md` records; T04 and T10 reached the three-round cap without a passing round, their last fixes standing on red-green tests; T75 and T81 reached it too and stay unticked, their last fixes checked against every probe of their three rounds | Partial |
+| `scripts/check.sh` passes | macOS at `0d4f9bb`, T88's code: fmt, clippy, 287 tests, the fonts check and the 500-line rule; CI's macOS job runs it at each push, last in run 40149384983 on `f233243` | Pass |
+| CI green on macOS, Ubuntu and Windows | run 40149384983 on `f233243`, T88's pass: macOS ran `scripts/check.sh` and the build, Ubuntu and Windows the tests and the build; run 955 on `43ea5b1`, v0.1.1's commit, on Gitea; see the CI notes below | Pass |
 
 ## 14. Icon and the macOS app
 
