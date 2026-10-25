@@ -1,6 +1,7 @@
 //! Checks for a newer release through curl and GitHub's API: at start and once a day while the settings ask, and whenever Settings asks at once.
 
 use std::{
+    collections::HashMap,
     process::{Command, Stdio},
     time::Duration,
 };
@@ -16,8 +17,8 @@ use crate::{settings::SettingsStore, workspace::TITLE};
 const LATEST: &str = "https://api.github.com/repos/ELY-Open-Source/ELYTerminal/releases/latest";
 /// How long an automatic check waits for the next.
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
-/// The tag a newer release's notification carries.
-const TAG: &str = "elyterminal-update";
+/// A newer release's notification tag, before its version.
+const TAG: &str = "elyterminal-update-";
 /// The running version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -33,10 +34,11 @@ pub enum Updates {
 
 impl Global for Updates {}
 
-/// The page of the last newer release a check found.
-struct Found(String);
+/// Each newer release's page, by its notification's tag.
+#[derive(Default)]
+struct Pages(HashMap<String, String>);
 
-impl Global for Found {}
+impl Global for Pages {}
 
 /// The fields of a release the check reads.
 #[derive(Debug, Deserialize)]
@@ -81,10 +83,13 @@ fn finish(found: anyhow::Result<Option<(String, String)>>, auto: bool, cx: &mut 
     let found = match found {
         Ok(Some((version, page))) => {
             log::info!("updates: {version} is out, newer than {VERSION}, at {page}");
-            cx.set_global(Found(page.clone()));
+            let tag = format!("{TAG}{version}");
+            cx.default_global::<Pages>()
+                .0
+                .insert(tag.clone(), page.clone());
             if auto {
                 cx.show_system_notification(SystemNotification {
-                    tag: TAG.into(),
+                    tag: tag.into(),
                     title: TITLE.into(),
                     body: text(cx, "et.updates.notice", &[("version", &version)]),
                     actions: Vec::new(),
@@ -104,18 +109,21 @@ fn finish(found: anyhow::Result<Option<(String, String)>>, auto: bool, cx: &mut 
     cx.set_global(found);
 }
 
-/// Opens the found page for an update's `tag`; else false.
+/// Opens the page an update `tag` names; else false.
 pub fn pressed(tag: &str, cx: &mut App) -> bool {
-    if tag != TAG {
+    let Some(version) = tag.strip_prefix(TAG) else {
         return false;
-    }
-    match cx.try_global::<Found>().map(|found| found.0.clone()) {
+    };
+    match cx
+        .try_global::<Pages>()
+        .and_then(|pages| pages.0.get(tag).cloned())
+    {
         Some(page) => {
-            log::info!("updates: the notification opens {page}");
+            log::info!("updates: {version}'s notification opens {page}");
             cx.open_url(&page);
         }
         None => log::info!(
-            "updates: the notification was pressed; no check this run found a newer release"
+            "updates: {version}'s notification is an earlier run's; no check of this run found {version}"
         ),
     }
     true
