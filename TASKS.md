@@ -204,5 +204,5 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 
 ## 37. Release
 
-- [ ] T94 Release v0.1.9 with T73 to T93: version 0.1.9; the macOS disk image, the Windows zip, and the Linux tarball, DEB, RPM and AppImage, each from its script; the notes list what changed in English and Chinese and credit the pull requests' authors.
+- [x] T94 Release v0.1.9 with T73 to T93: version 0.1.9; the macOS disk image, the Windows zip, and the Linux tarball, DEB, RPM and AppImage, each from its script; the notes list what changed in English and Chinese and credit the pull requests' authors.
 - [ ] T95 The 0.1.9 update film: about 30 seconds in the 0.1.7 film's style, Ely presenting what 0.1.9 does in a real recording, captions in English and Chinese; its files stay in the untracked `videos/`.
