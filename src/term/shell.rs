@@ -257,10 +257,10 @@ fn alias(path: &str) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case("WindowsApps"))
 }
 
-#[cfg(unix)]
 mod options;
 #[cfg(unix)]
-pub(super) use options::{clicks, options};
+pub(super) use options::clicks;
+pub(super) use options::options;
 
 #[cfg(all(test, unix))]
 mod tests;

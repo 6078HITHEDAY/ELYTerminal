@@ -124,10 +124,13 @@ impl<P: EventedReadWrite> Tapped<P> {
         #[cfg(unix)]
         let (holder, prompts) = (
             || holder(self.master.as_ref(), pid),
-            |group, click| prompts(group, click, pid),
+            |group: Option<i32>, click| group.is_some_and(|group| prompts(group, click, pid)),
         );
         #[cfg(windows)]
-        let (holder, prompts) = (|| None, |_, _| false);
+        let (holder, prompts) = (
+            || None,
+            |group: Option<i32>, _| group.is_none() && nested(pid),
+        );
         self.scanner.feed(read, &mut |found| {
             report(
                 found,
@@ -200,7 +203,7 @@ fn report(
     last: &mut Option<PathBuf>,
     (kitty, titles, named): (&mut Kitty, &mut Titles, &mut bool),
     holder: &dyn Fn() -> Option<i32>,
-    prompts: &dyn Fn(i32, marks::Click) -> bool,
+    prompts: &dyn Fn(Option<i32>, marks::Click) -> bool,
 ) {
     let event = match found {
         Found::Reset => {
@@ -483,6 +486,8 @@ mod modes;
 mod tests;
 
 use folder::folder;
+#[cfg(windows)]
+use holder::nested;
 use holder::prompter;
 #[cfg(unix)]
 use holder::{holder, prompts};

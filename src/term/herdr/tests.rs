@@ -324,7 +324,7 @@ fn a_server_or_a_command_beside_herdr_s_client_is_passed_by() {
 #[cfg(windows)]
 #[test]
 fn a_windows_process_reads_with_its_name_arguments_and_variables() {
-    use super::windows::{launch, processes};
+    use crate::term::procs::{launch, processes};
     let pid = std::process::id();
     let exe = std::env::current_exe().expect("this test's path");
     let name = exe.file_name().expect("this test's name");

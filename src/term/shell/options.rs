@@ -143,7 +143,7 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
             command: &["-c", "--commands"],
             fold: false,
         },
-        "pwsh" => Options {
+        "pwsh" | "powershell" => Options {
             marks: &['-'],
             bundles: false,
             short: "",
@@ -189,6 +189,7 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
 }
 
 /// Whether `path` runs fish or nu, whose own lines mark clicks.
+#[cfg(unix)]
 pub(crate) fn clicks(path: &Path) -> bool {
     matches!(name(path).as_str(), "fish" | "nu")
 }
