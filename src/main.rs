@@ -35,8 +35,10 @@ fn run(cx: &mut App) -> anyhow::Result<()> {
 }
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("elyterminal=info"))
-        .init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("elyterminal=info,ely_gpui_component=info"),
+    )
+    .init();
     application().with_assets(Assets).run(|cx: &mut App| {
         ely_gpui_component::init(cx).expect("Ely failed to start");
         if let Err(error) = run(cx) {

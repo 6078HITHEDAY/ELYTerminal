@@ -82,7 +82,7 @@ sudo apt-get install pkg-config libwayland-dev libxkbcommon-dev libxkbcommon-x11
   libxcb1-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev
 ```
 
-The app writes its log to stderr. `RUST_LOG=elyterminal=debug` writes more; `trace` logs each paint. A Windows release build opens no console: `elyterminal.exe 2> log.txt` keeps its log.
+The app writes its log to stderr, its own info lines and Ely's. `RUST_LOG=elyterminal=debug,ely_gpui_component=info` writes more; `trace` logs each paint. A Windows release build opens no console: `elyterminal.exe 2> log.txt` keeps its log.
 
 ## What it does
 

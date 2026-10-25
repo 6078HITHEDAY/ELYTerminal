@@ -120,7 +120,7 @@ What no check reached: no real KWin drew the blur; of Wayland desktops, only Hyp
 
 | PRD line | Task | Evidence | Status |
 |---|---|---|---|
-| A switch at the top, centered below the title bar: Git, Files | T13, T26 | T13 review; a capture on X11 shows it centered below the title bar, the right toggle and Ely's window buttons in the bar above | Pass |
+| A switch at the top, centered below the title bar: Git, Files | T13, T26, T88 | T13 review; a capture on X11 shows it centered below the title bar, the right toggle and Ely's window buttons in the bar above; Ely `fd1c7d9`: `a_tiled_edge_grabs_nothing`; under headless GNOME 48.7 and 50.1's Wayland, a window kept at 800 by 560 on a 1200 by 900 screen: 0.1.8's switch took no press maximized, each logged as `window: resize from Right`, and this build's took Git and Files normal, maximized and full screen, while a drag on the normal window's right margin still widened it and the restore button still restored it | Pass |
 | The session's folder as a tree, folders first, Git colors | T13 | `files::tests` | Pass |
 | Double press opens a folder, or a file in the default app | T13 | T13 review, with a logging `open` stub | Pass |
 | Reloads on a new folder and at each prompt | T13 | log: "the tree shows", per folder reported | Pass |
