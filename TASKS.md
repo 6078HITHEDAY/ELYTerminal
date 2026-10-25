@@ -201,3 +201,8 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [x] T91 Every comment written since 0.1.8, in ELYTerminal and in its Ely and alacritty commits, fits one line of ten words, as the owner's rules ask; the reviews checked lines, not words.
 - [x] T92 The last fixes of T75, T81 and T89, which spent their three reviews, pass a review of their own: every probe of their rounds runs on HEAD, and their rows and decisions hold.
 - [x] T93 A shell nested in a session drops its own live records at its prompts, which T92's review found kept: a fish started inside zsh, its own marks unnamed, kept what its builtins reported. An unnamed prompt from another group is a shell's when that group's leader runs zsh, bash or fish started with options alone and the group holds it alone, or the leader is fish and its line takes clicks; a wrapper's script or `-c`, a subshell, a shell with job control off and a fish script's `read` still keep the program's records. Three reviews spent, the cap: round 3's finding, a fish script's `read`, whose line takes clicks as fish's own prompt does, read as a shell's prompt, was fixed in 6dc0409 and checked against every probe of the three rounds, 58 in all, with no fourth review. The owner accepted it at the cap on 2026-10-24.
+
+## 37. Release
+
+- [ ] T94 Release v0.1.9 with T73 to T93: version 0.1.9; the macOS disk image, the Windows zip, and the Linux tarball, DEB, RPM and AppImage, each from its script; the notes list what changed in English and Chinese and credit the pull requests' authors.
+- [ ] T95 The 0.1.9 update film: about 30 seconds in the 0.1.7 film's style, Ely presenting what 0.1.9 does in a real recording, captions in English and Chinese; its files stay in the untracked `videos/`.
