@@ -482,3 +482,21 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 - Round 2, d5bfb84: FAIL. bash takes each bundled `o`/`O` value from the next argument; zsh also stops at `+`, `+-`, `-b` and a trailing `-`; fish names a long option by a unique prefix. Fixed in ba2a36b.
 - Round 3, ba2a36b: FAIL. bash's single-dash long options, `-rcfile FILE` and `-init-file FILE`, read as a bundle. Fixed in 1d1956a; the cap allows no fourth review.
 - On 2026-10-25 the owner accepted T97 at the cap; it is ticked.
+
+## T98
+
+- Round 1, 8a2e7a9: FAIL. pwsh abbreviations; nu bundles and list options. Fixed in 1d1956a.
+- Round 2, 1d1956a: FAIL. PowerShell's own switch order and least prefixes, `--` and `/`; nu's `=` lists. Fixed in c36f986.
+- Round 3, c36f986: FAIL. `-EncodedArguments`' value; Unicode dashes and blanks. Fixed in the next commit; the cap allows no fourth review.
+
+## T99
+
+- Round 1, 8994388: FAIL. A reused parent id hung an orphan under a program. Fixed in 1d1956a.
+- Round 2, 1d1956a: FAIL. An unreadable start dropped a program from the tree. Fixed in c36f986.
+- Round 3, c36f986: FAIL. An unreadable start kept a reused-id edge. Fixed in the next commit: any unknown start leaves the holder unknown; the cap allows no fourth review.
+
+## T100
+
+- Round 1, ba2a36b: FAIL. A click through a relay read as a shell's; sudo's own pty foreground was readable. Fixed in 1d1956a.
+- Round 2, 1d1956a: FAIL. macOS `proc_pidinfo` refused a root relay. Fixed in c36f986 through `ps`.
+- Round 3, c36f986: PASS.

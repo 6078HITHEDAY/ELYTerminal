@@ -110,9 +110,11 @@ pub(super) fn leaves(
         // A dead parent's id passes on; a child starts after its parent.
         let born = started(pid);
         for (child, _, name) in processes.iter().filter(|(_, of, _)| *of == pid) {
-            let after = born
-                .zip(started(*child))
-                .is_none_or(|(parent, child)| child >= parent);
+            let Some((parent, start)) = born.zip(started(*child)) else {
+                // An unknown start leaves the tree unknown.
+                return Vec::new();
+            };
+            let after = start >= parent;
             if after && !console(name) && !under.contains(child) {
                 under.push(*child);
             }
@@ -205,9 +207,9 @@ mod tests {
         let mut reused = busy.clone();
         reused.push(process(5, 30, "nu.exe"));
         assert_eq!(leaves(&reused, 10, &order), [30]);
-        // An unreadable start keeps its child, so the program stays the leaf.
+        // An unreadable start tells nothing, so no shell.
         let hidden = |pid: u32| (pid != 30).then_some(u64::from(pid));
-        assert_eq!(leaves(&busy, 10, &hidden), [30]);
+        assert!(leaves(&busy, 10, &hidden).is_empty());
         assert_eq!(leaves(&[process(10, 1, "pwsh.exe")], 10, &order), [10]);
     }
 
@@ -310,6 +312,11 @@ mod tests {
         assert!(read("/opt/homebrew/bin/pwsh", &["-NoLogo", "-NoPro"]));
         assert!(read("/opt/homebrew/bin/pwsh", &["-NoProfile", "-in"]));
         assert!(read("/opt/homebrew/bin/pwsh", &["--NoLogo", "/NoProfile"]));
+        assert!(read(
+            "/opt/homebrew/bin/pwsh",
+            &["\u{2013}NoLogo", " -NoProfile "]
+        ));
+        assert!(read("/opt/homebrew/bin/pwsh", &["-ea", "x", "-NoExit"]));
         assert!(!read(
             "/opt/homebrew/bin/nu",
             &["-n", "--log-include=nu_cli", "a.nu"]

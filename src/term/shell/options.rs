@@ -40,9 +40,15 @@ impl Options {
         let mut args = args.iter();
         while let Some(arg) = args.next() {
             // PowerShell takes `--name` and `/name` as `-name`.
-            let switch = match arg.strip_prefix("--").or_else(|| arg.strip_prefix('/')) {
-                Some(rest) if self.fold => format!("-{rest}"),
-                _ => arg.clone(),
+            let switch = if self.fold {
+                // PowerShell trims blanks and reads Unicode dashes as `-`.
+                let trimmed = arg.trim();
+                let rest = trimmed.strip_prefix("--").or_else(|| {
+                    trimmed.strip_prefix(['/', '-', '\u{2013}', '\u{2014}', '\u{2015}'])
+                });
+                rest.map_or_else(|| trimmed.to_string(), |rest| format!("-{rest}"))
+            } else {
+                arg.clone()
             };
             let arg = &switch;
             if self.stops.contains(&arg.as_str()) {
@@ -309,6 +315,8 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
         },
         "pwsh" | "powershell" => Options {
             valued: &[
+                "-EncodedArguments",
+                "-ea",
                 "-ExecutionPolicy",
                 "-ex",
                 "-ep",
@@ -359,8 +367,6 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
                 "-NonInteractive",
                 "-NoProfile",
                 "-NoProfileLoadTime",
-                "-EncodedArguments",
-                "-ea",
                 "-OutputFormat",
                 "-SettingsFile",
                 "-SSHServerMode",
