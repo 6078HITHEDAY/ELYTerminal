@@ -199,3 +199,4 @@ Each task ends with a short thanks on its issue or pull request, then closes it.
 - [ ] T89 Issue #25's kind words thanked and closed; every issue and pull request above answered; the acceptance table checked line by line. Three reviews spent, the cap: round 3 found row 156 certifying an update notification's press that a Check now, running or failed, loses; T90 fixes that in the code.
 - [x] T90 The update notification's press opens the page it named, as T56 asked, whatever a check since has found or is doing, which T89's third review found lost to a Check now running or failed.
 - [x] T91 Every comment written since 0.1.8, in ELYTerminal and in its Ely and alacritty commits, fits one line of ten words, as the owner's rules ask; the reviews checked lines, not words.
+- [ ] T92 The last fixes of T75, T81 and T89, which spent their three reviews, pass a review of their own: every probe of their rounds runs on HEAD, and their rows and decisions hold.
