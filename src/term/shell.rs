@@ -95,68 +95,6 @@ fn name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// How zsh, bash or fish read their options.
-#[cfg(unix)]
-pub(super) struct Options {
-    /// Characters that start an option.
-    marks: &'static [char],
-    /// Options whose value is the next argument.
-    valued: &'static [&'static str],
-}
-
-#[cfg(unix)]
-impl Options {
-    /// Whether `args`, past the program's name, hold options alone.
-    pub(super) fn interactive(&self, args: &[String]) -> bool {
-        let mut args = args.iter();
-        while let Some(arg) = args.next() {
-            if !arg.starts_with(self.marks) {
-                return false;
-            }
-            if self.valued.contains(&arg.as_str()) && args.next().is_none() {
-                return false;
-            }
-        }
-        true
-    }
-}
-
-/// zsh's, bash's or fish's options; none for another program.
-#[cfg(unix)]
-pub(super) fn options(path: &Path) -> Option<Options> {
-    let (marks, valued): (&'static [char], &'static [&'static str]) = match name(path).as_str() {
-        "zsh" => (&['-', '+'], &["-o", "+o"]),
-        "bash" => (
-            &['-', '+'],
-            &["-o", "+o", "-O", "+O", "--rcfile", "--init-file"],
-        ),
-        "fish" => (
-            &['-'],
-            &[
-                "-C",
-                "--init-command",
-                "-d",
-                "--debug",
-                "-o",
-                "--debug-output",
-                "-p",
-                "--profile",
-                "--profile-startup",
-                "-f",
-                "--features",
-            ],
-        ),
-        _ => return None,
-    };
-    Some(Options { marks, valued })
-}
-
-/// Whether `path` runs fish, whose own line marks clicks.
-#[cfg(unix)]
-pub(super) fn fish(path: &Path) -> bool {
-    name(path) == "fish"
-}
-
 /// How to start `shell`, or the login shell, at `start`.
 pub fn launch(shell: &str, start: impl Into<Start>, dir: &Path) -> anyhow::Result<Launch> {
     let start = start.into();
@@ -318,6 +256,11 @@ fn alias(path: &str) -> bool {
         .and_then(Path::file_name)
         .is_some_and(|name| name.eq_ignore_ascii_case("WindowsApps"))
 }
+
+#[cfg(unix)]
+mod options;
+#[cfg(unix)]
+pub(super) use options::{clicks, options};
 
 #[cfg(all(test, unix))]
 mod tests;

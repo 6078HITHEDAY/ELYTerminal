@@ -12,7 +12,7 @@ pub(super) fn holder(master: Option<&std::fs::File>, pid: u32) -> Option<i32> {
     }
 }
 
-/// Whether interactive zsh, bash or fish leading `group` drew it.
+/// Whether an interactive shell leading `group` drew it.
 #[cfg(unix)]
 pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
     use crate::term::{shell, unix};
@@ -36,9 +36,9 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
             false
         }
     };
-    // Clicks mark fish's own line; fish forks no copy.
+    // fish and nu mark their own lines and fork no copy.
     interactive
-        && ((click != Click::Arrows && shell::fish(&exe))
+        && ((click != Click::Arrows && shell::clicks(&exe))
             || unix::lone(group).unwrap_or_else(|error| {
                 log::warn!("pty {pid}: group {group}'s processes do not read: {error}");
                 false
@@ -124,6 +124,16 @@ mod tests {
         ));
         assert!(!read("/bin/bash", &["-c", "true"]));
         assert!(!read("/bin/bash", &["--rcfile"]));
+        assert!(read(
+            "/opt/homebrew/bin/nu",
+            &["--config", "c.nu", "-e", "ls"]
+        ));
+        assert!(!read("/opt/homebrew/bin/nu", &["a.nu"]));
+        assert!(read(
+            "/opt/homebrew/bin/pwsh",
+            &["-NoLogo", "-executionpolicy", "Bypass"]
+        ));
+        assert!(!read("/opt/homebrew/bin/pwsh", &["-Command", "Get-Date"]));
         assert!(options(Path::new("/bin/sleep")).is_none());
     }
 
