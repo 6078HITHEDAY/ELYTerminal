@@ -260,7 +260,9 @@ fn alias(path: &str) -> bool {
 mod options;
 #[cfg(unix)]
 pub(super) use options::clicks;
-pub(super) use options::{options, relays};
+pub(super) use options::options;
+#[cfg(unix)]
+pub(super) use options::relays;
 
 #[cfg(all(test, unix))]
 mod tests;

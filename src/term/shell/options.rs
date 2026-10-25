@@ -20,8 +20,12 @@ pub(crate) struct Options {
     stop_short: &'static str,
     /// Arguments after which a script follows.
     stops: &'static [&'static str],
-    /// Every long option, where a unique prefix names one.
+    /// Every long option, by name or by a unique prefix.
     long: &'static [&'static str],
+    /// A unique prefix names a long option.
+    prefixes: bool,
+    /// Options taking every following argument that is no option.
+    many: &'static [&'static str],
     /// Options taking the next argument, unless `=` holds one.
     valued: &'static [&'static str],
     /// Options that run a command or a file.
@@ -41,12 +45,22 @@ impl Options {
             let Some(rest) = arg.strip_prefix(self.marks) else {
                 return false;
             };
-            if !self.bundles || arg.starts_with("--") {
+            if !self.bundles || arg.starts_with("--") || self.long.contains(&arg.as_str()) {
                 let Some(name) = self.resolve(arg.split('=').next().unwrap_or(arg)) else {
                     return false;
                 };
                 if self.command.iter().any(|command| self.same(command, name)) {
                     return false;
+                }
+                if self.many.contains(&name) {
+                    let mut rest = args.clone();
+                    while rest
+                        .next()
+                        .is_some_and(|value| !value.starts_with(self.marks))
+                    {
+                        args.next();
+                    }
+                    continue;
                 }
                 let valued = self.valued.iter().any(|valued| self.same(valued, name));
                 if valued && !arg.contains('=') && args.next().is_none() {
@@ -92,10 +106,18 @@ impl Options {
 
     /// The long option `name` names, whole or by a unique prefix.
     fn resolve<'a>(&self, name: &'a str) -> Option<&'a str> {
-        if self.long.is_empty() || self.long.contains(&name) {
+        let known = |list: &[&str]| list.iter().any(|known| self.same(known, name));
+        if !self.prefixes || known(self.long) || known(self.valued) || known(self.command) {
             return Some(name);
         }
-        let mut matches = self.long.iter().filter(|long| long.starts_with(name));
+        let lower = name.to_ascii_lowercase();
+        let mut matches = self.long.iter().filter(|long| {
+            if self.fold {
+                long.to_ascii_lowercase().starts_with(&lower)
+            } else {
+                long.starts_with(name)
+            }
+        });
         match (matches.next(), matches.next()) {
             (Some(long), None) => Some(long),
             _ => None,
@@ -115,6 +137,8 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
         stop_short: "",
         stops: &["--", "-"],
         long: &[],
+        prefixes: false,
+        many: &[],
         valued: &[],
         command: &[],
         fold: false,
@@ -137,7 +161,21 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
             optional: "oO",
             consume: true,
             command_short: "c",
-            valued: &["--rcfile", "--init-file"],
+            long: &[
+                "-rcfile",
+                "-init-file",
+                "-login",
+                "-noprofile",
+                "-norc",
+                "-posix",
+                "-verbose",
+                "-noediting",
+                "-restricted",
+                "-debugger",
+                "-protected",
+                "-wordexp",
+            ],
+            valued: &["--rcfile", "--init-file", "-rcfile", "-init-file"],
             ..plain
         },
         "fish" => Options {
@@ -165,6 +203,7 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
                 "--help",
                 "--version",
             ],
+            prefixes: true,
             valued: &[
                 "--init-command",
                 "--debug",
@@ -178,6 +217,10 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
             ..plain
         },
         "nu" => Options {
+            bundles: true,
+            short: "emI",
+            command_short: "c",
+            many: &["--log-include", "--log-exclude", "--experimental-options"],
             valued: &[
                 "-e",
                 "--execute",
@@ -237,6 +280,44 @@ pub(crate) fn options(path: &Path) -> Option<Options> {
                 "-CommandWithArgs",
                 "-cwa",
             ],
+            long: &[
+                "-Command",
+                "-CommandWithArgs",
+                "-ConfigurationName",
+                "-ConfigurationFile",
+                "-CustomPipeName",
+                "-EncodedCommand",
+                "-ExecutionPolicy",
+                "-File",
+                "-Help",
+                "-InputFormat",
+                "-Interactive",
+                "-Login",
+                "-MTA",
+                "-NoExit",
+                "-NoLogo",
+                "-NonInteractive",
+                "-NoProfile",
+                "-NoProfileLoadTime",
+                "-OutputFormat",
+                "-SettingsFile",
+                "-SSHServerMode",
+                "-STA",
+                "-Version",
+                "-WindowStyle",
+                "-WorkingDirectory",
+                "-nol",
+                "-nop",
+                "-noni",
+                "-noe",
+                "-h",
+                "-?",
+                "-l",
+                "-v",
+                "-sta",
+                "-mta",
+            ],
+            prefixes: true,
             fold: true,
             ..plain
         },
@@ -252,6 +333,7 @@ pub(crate) fn clicks(path: &Path) -> bool {
 }
 
 /// Whether `path` relays another host's, user's or container's terminal.
+#[cfg(unix)]
 pub(crate) fn relays(path: &Path) -> bool {
     matches!(
         name(path).as_str(),

@@ -94,3 +94,24 @@ fn variable(pair: &OsStr) -> Option<(String, OsString)> {
         OsString::from_wide(&pair[at + 1..]),
     ))
 }
+
+/// When process `pid` started, in 100 ns ticks; none if hidden.
+pub(crate) fn started(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: a plain call; a handle it gives is owned below.
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    // SAFETY: the handle is new and ours.
+    let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+    // SAFETY: plain C data, valid zeroed.
+    let mut times: [windows_sys::Win32::Foundation::FILETIME; 4] = unsafe { std::mem::zeroed() };
+    let [created, exited, kernel, user] = &mut times;
+    // SAFETY: each pointer is to a FILETIME of ours.
+    let read = unsafe { GetProcessTimes(handle.as_raw_handle(), created, exited, kernel, user) };
+    (read != 0)
+        .then(|| u64::from(times[0].dwHighDateTime) << 32 | u64::from(times[0].dwLowDateTime))
+}

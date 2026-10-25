@@ -33,9 +33,16 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
             return false;
         }
     };
-    // Through a relay, clicks are fish's or nu's line beyond.
-    if click != Click::Arrows && shell::relays(&exe) {
-        return true;
+    // A relay's own pty shows its foreground, sudo's among them.
+    if shell::relays(&exe) {
+        return match unix::inner(group) {
+            Ok(Some(inner)) if inner != group => prompts(inner, click, pid),
+            Ok(_) => false,
+            Err(error) => {
+                log::debug!("pty {pid}: relay {group}'s pty does not read: {error}");
+                false
+            }
+        };
     }
     let Some(options) = shell::options(&exe) else {
         return false;
@@ -61,7 +68,7 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
 
 /// Whether an interactive shell, the one leaf under the session's, drew it.
 #[cfg(windows)]
-pub(super) fn nested(pid: u32, click: Click) -> bool {
+pub(super) fn nested(pid: u32) -> bool {
     use crate::term::{procs, shell};
     let processes = match procs::processes() {
         Ok(processes) => processes,
@@ -70,13 +77,10 @@ pub(super) fn nested(pid: u32, click: Click) -> bool {
             return false;
         }
     };
-    let [leaf] = leaves(&processes, pid)[..] else {
+    let [leaf] = leaves(&processes, pid, &procs::started)[..] else {
         return false;
     };
     let name = processes.iter().find(|(id, ..)| *id == leaf);
-    if name.is_some_and(|(_, _, name)| click != Click::Arrows && shell::relays(name.as_ref())) {
-        return true;
-    }
     let Some(options) = name.and_then(|(_, _, name)| shell::options(name.as_ref())) else {
         return false;
     };
@@ -92,15 +96,24 @@ pub(super) fn nested(pid: u32, click: Click) -> bool {
 
 /// The processes under `root` that start none, consoles aside.
 #[cfg(any(windows, test))]
-pub(super) fn leaves(processes: &[(u32, u32, String)], root: u32) -> Vec<u32> {
+pub(super) fn leaves(
+    processes: &[(u32, u32, String)],
+    root: u32,
+    started: &dyn Fn(u32) -> Option<u64>,
+) -> Vec<u32> {
     let console = |name: &str| {
         name.eq_ignore_ascii_case("conhost.exe") || name.eq_ignore_ascii_case("OpenConsole.exe")
     };
     let (mut under, mut at) = (vec![root], 0);
     while let Some(&pid) = under.get(at) {
         at += 1;
+        // A dead parent's id passes on; a child starts after its parent.
+        let born = started(pid);
         for (child, _, name) in processes.iter().filter(|(_, of, _)| *of == pid) {
-            if !console(name) && !under.contains(child) {
+            let after = born
+                .zip(started(*child))
+                .is_some_and(|(parent, child)| child >= parent);
+            if after && !console(name) && !under.contains(child) {
                 under.push(*child);
             }
         }
@@ -183,11 +196,16 @@ mod tests {
             process(11, 10, "conhost.exe"),
             process(20, 10, "nu.exe"),
         ];
-        assert_eq!(leaves(&idle, 10), [20]);
+        let order = |pid: u32| Some(u64::from(pid));
+        assert_eq!(leaves(&idle, 10, &order), [20]);
         let mut busy = idle.clone();
         busy.push(process(30, 20, "omp.exe"));
-        assert_eq!(leaves(&busy, 10), [30]);
-        assert_eq!(leaves(&[process(10, 1, "pwsh.exe")], 10), [10]);
+        assert_eq!(leaves(&busy, 10, &order), [30]);
+        // An orphan whose parent's id passed on hangs under no one.
+        let mut reused = busy.clone();
+        reused.push(process(5, 30, "nu.exe"));
+        assert_eq!(leaves(&reused, 10, &order), [30]);
+        assert_eq!(leaves(&[process(10, 1, "pwsh.exe")], 10, &order), [10]);
     }
 
     #[cfg(windows)]
@@ -202,7 +220,7 @@ mod tests {
                 .spawn()
                 .expect("pwsh starts");
             std::thread::sleep(std::time::Duration::from_secs(5));
-            let read = nested(outer.id(), Click::Arrows);
+            let read = nested(outer.id());
             let _ = Command::new("taskkill")
                 .args(["/T", "/F", "/PID", &outer.id().to_string()])
                 .output();
@@ -271,6 +289,21 @@ mod tests {
         assert!(!read("/opt/homebrew/bin/fish", &["--c=read"]));
         assert!(read("/opt/homebrew/bin/fish", &["--init-comm", "set t 1"]));
         assert!(!read("/opt/homebrew/bin/fish", &["--pr"]));
+        // bash's single dash names; pwsh's prefixes; nu's bundles and lists.
+        assert!(read("/bin/bash", &["-rcfile", "rc", "-norc"]));
+        assert!(read("/bin/bash", &["-init-file", "rc"]));
+        assert!(read(
+            "/opt/homebrew/bin/pwsh",
+            &["-nop", "-wo", "/tmp", "-outp", "Text"]
+        ));
+        assert!(!read("/opt/homebrew/bin/pwsh", &["-Comm", "Get-Date"]));
+        assert!(read("/opt/homebrew/bin/nu", &["-ne", "print 1"]));
+        assert!(read("/opt/homebrew/bin/nu", &["-nI", "/tmp"]));
+        assert!(read(
+            "/opt/homebrew/bin/nu",
+            &["-n", "--log-include", "a", "b"]
+        ));
+        assert!(!read("/opt/homebrew/bin/nu", &["-nc", "ls"]));
         assert!(read(
             "/opt/homebrew/bin/pwsh",
             &["-NoLogo", "-executionpolicy", "Bypass"]

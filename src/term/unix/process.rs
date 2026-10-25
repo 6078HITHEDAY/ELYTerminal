@@ -192,3 +192,74 @@ pub(crate) fn name(pid: i32) -> io::Result<PathBuf> {
     buffer.truncate(length as usize);
     Ok(PathBuf::from(OsString::from_vec(buffer)))
 }
+
+/// The foreground group of a pty under `leader`, another than its own.
+#[cfg(target_os = "linux")]
+pub(crate) fn inner(leader: i32) -> io::Result<Option<i32>> {
+    // Fields after the name: state, parent, group, session, tty, foreground.
+    let stat = |pid: i32| -> io::Result<Vec<i64>> {
+        let stat = std::fs::read(format!("/proc/{pid}/stat"))?;
+        let end = stat.iter().rposition(|&byte| byte == b')').unwrap_or(0);
+        Ok(String::from_utf8_lossy(&stat[end + 1..])
+            .split_whitespace()
+            .skip(1)
+            .take(5)
+            .filter_map(|field| field.parse().ok())
+            .collect())
+    };
+    let tty = stat(leader)?.get(3).copied();
+    let mut under = vec![leader];
+    let mut at = 0;
+    let all: Vec<(i32, Vec<i64>)> = std::fs::read_dir("/proc")?
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .filter_map(|pid: i32| Some((pid, stat(pid).ok()?)))
+        .collect();
+    while let Some(&pid) = under.get(at) {
+        at += 1;
+        for (child, fields) in &all {
+            if fields.first() == Some(&i64::from(pid)) && !under.contains(child) {
+                under.push(*child);
+                if fields.get(3).copied() != tty && fields.get(4).is_some_and(|&group| group > 0) {
+                    return Ok(fields.get(4).and_then(|&group| i32::try_from(group).ok()));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn inner(leader: i32) -> io::Result<Option<i32>> {
+    let info = |pid: i32| -> io::Result<libc::proc_bsdinfo> {
+        // SAFETY: plain C data, valid zeroed.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        // SAFETY: `info` holds the size given.
+        let read = unsafe {
+            libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size)
+        };
+        if read != size {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(info)
+    };
+    let tty = info(leader)?.e_tdev;
+    let (mut under, mut at) = (vec![leader], 0);
+    while let Some(&pid) = under.get(at) {
+        at += 1;
+        let mut children = [0 as libc::c_int; 64];
+        let room = std::mem::size_of_val(&children) as libc::c_int;
+        // SAFETY: `children` holds `room` bytes; libproc counts pids.
+        let count = unsafe { libc::proc_listchildpids(pid, children.as_mut_ptr().cast(), room) };
+        for &child in &children[..usize::try_from(count).unwrap_or(0).min(children.len())] {
+            let Ok(child_info) = info(child) else {
+                continue;
+            };
+            under.push(child);
+            if child_info.e_tdev != tty && child_info.e_tpgid > 0 {
+                return Ok(i32::try_from(child_info.e_tpgid).ok());
+            }
+        }
+    }
+    Ok(None)
+}
