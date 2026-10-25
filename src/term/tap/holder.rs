@@ -23,14 +23,14 @@ pub(super) fn prompts(group: i32, click: Click, pid: u32) -> bool {
             return false;
         }
     };
-    let Some(marks) = shell::option_marks(&exe) else {
+    let Some(options) = shell::options(&exe) else {
         return false;
     };
     let interactive = match unix::launch(group) {
         // Linux shows no arguments while an exec loads.
         Ok((args, _)) if args.first().is_none_or(String::is_empty) => false,
         // An operand names a script or `-c`'s command.
-        Ok((args, _)) => args[1..].iter().all(|arg| arg.starts_with(marks)),
+        Ok((args, _)) => options.interactive(&args[1..]),
         Err(error) => {
             log::warn!("pty {pid}: group {group}'s arguments do not read: {error}");
             false
@@ -99,6 +99,32 @@ mod tests {
             prompter(Click::Relative, None, 10, true, &shell),
             Holder::Unknown
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_option_s_value_is_no_operand() {
+        use crate::term::shell::options;
+        use std::path::Path;
+        let read = |shell: &str, args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            options(Path::new(shell))
+                .expect("a shell")
+                .interactive(&args)
+        };
+        assert!(read(
+            "/bin/bash",
+            &["--rcfile", "/etc/ely", "-O", "extglob"]
+        ));
+        assert!(read("/usr/bin/zsh", &["-o", "vi"]));
+        assert!(read("/opt/homebrew/bin/fish", &["-C", "set t 1"]));
+        assert!(!read(
+            "/opt/homebrew/bin/fish",
+            &["-C", "set t 1", "a.fish"]
+        ));
+        assert!(!read("/bin/bash", &["-c", "true"]));
+        assert!(!read("/bin/bash", &["--rcfile"]));
+        assert!(options(Path::new("/bin/sleep")).is_none());
     }
 
     #[cfg(unix)]
