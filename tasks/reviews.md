@@ -475,3 +475,10 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 ## T96
 
 - Round 1, 3d09fbd: PASS. Create, write or sync, and rename each name their step and files, the system's error kept beneath; the order of the steps, the closed temp file before the rename and the temp's removal stand as before; the new test fails on d9ff8d2's message and on a create that fails, and ran in CI run 40169495331 on Windows, 276 tests, and Linux, 297; the CI log holds two first saves refused under one message, and Rust 1.95's rename falls back between MoveFileExW and FileRenameInfoEx, so even a rename's refusal would need more evidence to name its cause; the cause stays open.
+
+## T97
+
+- Round 1, 598f60a: FAIL. `-c'…'`, `--command=` and a script after `--` read as interactive; bash's `-o -O +o +O` may stand without a value; bundles such as `zsh -lo vi` were missed. Fixed in d5bfb84: the options are parsed, not matched whole.
+- Round 2, d5bfb84: FAIL. bash takes each bundled `o`/`O` value from the next argument; zsh also stops at `+`, `+-`, `-b` and a trailing `-`; fish names a long option by a unique prefix. Fixed in ba2a36b.
+- Round 3, ba2a36b: FAIL. bash's single-dash long options, `-rcfile FILE` and `-init-file FILE`, read as a bundle. Fixed in 1d1956a; the cap allows no fourth review.
+
