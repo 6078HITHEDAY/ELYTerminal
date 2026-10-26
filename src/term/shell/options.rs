@@ -43,8 +43,12 @@ impl Options {
             let switch = if self.fold {
                 // PowerShell trims blanks and reads Unicode dashes as `-`.
                 let trimmed = arg.trim();
-                let rest = trimmed.strip_prefix("--").or_else(|| {
-                    trimmed.strip_prefix(['/', '-', '\u{2013}', '\u{2014}', '\u{2015}'])
+                let dashes = ['-', '\u{2013}', '\u{2014}', '\u{2015}'];
+                let rest = trimmed.strip_prefix('/').or_else(|| {
+                    let first = trimmed.chars().next().filter(|c| dashes.contains(c))?;
+                    let rest = &trimmed[first.len_utf8()..];
+                    // A second same dash goes too, as PowerShell drops it.
+                    Some(rest.strip_prefix(first).unwrap_or(rest))
                 });
                 rest.map_or_else(|| trimmed.to_string(), |rest| format!("-{rest}"))
             } else {

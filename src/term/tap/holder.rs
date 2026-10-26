@@ -110,12 +110,15 @@ pub(super) fn leaves(
         // A dead parent's id passes on; a child starts after its parent.
         let born = started(pid);
         for (child, _, name) in processes.iter().filter(|(_, of, _)| *of == pid) {
+            if console(name) {
+                continue;
+            }
             let Some((parent, start)) = born.zip(started(*child)) else {
                 // An unknown start leaves the tree unknown.
                 return Vec::new();
             };
             let after = start >= parent;
-            if after && !console(name) && !under.contains(child) {
+            if after && !under.contains(child) {
                 under.push(*child);
             }
         }
@@ -210,6 +213,9 @@ mod tests {
         // An unreadable start tells nothing, so no shell.
         let hidden = |pid: u32| (pid != 30).then_some(u64::from(pid));
         assert!(leaves(&busy, 10, &hidden).is_empty());
+        // A console whose start hides passes by.
+        let quiet = |pid: u32| (pid != 11).then_some(u64::from(pid));
+        assert_eq!(leaves(&idle, 10, &quiet), [20]);
         assert_eq!(leaves(&[process(10, 1, "pwsh.exe")], 10, &order), [10]);
     }
 
@@ -314,7 +320,7 @@ mod tests {
         assert!(read("/opt/homebrew/bin/pwsh", &["--NoLogo", "/NoProfile"]));
         assert!(read(
             "/opt/homebrew/bin/pwsh",
-            &["\u{2013}NoLogo", " -NoProfile "]
+            &["\u{2013}NoLogo", " -NoProfile ", "\u{2014}\u{2014}NoExit"]
         ));
         assert!(read("/opt/homebrew/bin/pwsh", &["-ea", "x", "-NoExit"]));
         assert!(!read(
