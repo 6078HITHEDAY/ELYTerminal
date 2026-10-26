@@ -500,3 +500,4 @@ Each task gets at most three codex rounds. Each round: the commit, the verdict, 
 - Round 1, ba2a36b: FAIL. A click through a relay read as a shell's; sudo's own pty foreground was readable. Fixed in 1d1956a.
 - Round 2, 1d1956a: FAIL. macOS `proc_pidinfo` refused a root relay. Fixed in c36f986 through `ps`.
 - Round 3, c36f986: PASS.
+- On 2026-10-25 the owner allowed T98 and T99 a fourth review.
