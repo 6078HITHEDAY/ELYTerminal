@@ -257,3 +257,4 @@ T01 to T49 are in `reviews-t01-t49.md`.
 - On 2026-10-25 round 4 of T98 and T99 failed: a doubled Unicode dash; a console whose start hides; reviews.md past 500 lines. Fixed in the next commit, which splits T01 to T49 into reviews-t01-t49.md.
 - Round 5 of T98 and T99, bfc8631: PASS.
 - On 2026-10-25 the owner kept ssh and container shells as a recorded limit: no remote integration.
+- On 2026-10-25 the owner accepted the other limits row 60 records as limits: `bash -s`, a subshell marking by builtins, sudo under `hidepid=invisible`.
