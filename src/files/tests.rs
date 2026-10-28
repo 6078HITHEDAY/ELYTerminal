@@ -246,3 +246,11 @@ fn decomposed_names_on_disk_wear_the_composed_marks_git_writes() {
     );
     assert_eq!(files.folder(&root, "r".into(), false), expected);
 }
+
+#[test]
+fn a_file_starts_a_session_in_its_folder() {
+    let root = folder("files-here");
+    fs::write(root.join("a.txt"), "").expect("a file");
+    assert_eq!(here_folder(&root.join("a.txt")), root);
+    assert_eq!(here_folder(&root), root);
+}
