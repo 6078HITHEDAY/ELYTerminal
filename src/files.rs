@@ -113,9 +113,9 @@ fn key(path: &Path) -> SharedString {
     }
 }
 
-/// The folder a new session starts in: `path` itself, or its parent.
-pub(super) fn here_folder(path: &Path) -> PathBuf {
-    if path.is_dir() {
+/// The folder a new session starts in: a listed folder, or a file's parent.
+pub(super) fn here_folder(path: &Path, folder: bool) -> PathBuf {
+    if folder {
         path.to_path_buf()
     } else {
         path.parent().unwrap_or(path).to_path_buf()
@@ -127,6 +127,7 @@ struct MenuAsk {
     n: u64,
     at: Point<Pixels>,
     path: PathBuf,
+    here: PathBuf,
 }
 
 /// The Files panel: the shown session's folder as a tree, Git's marks on names.
@@ -254,11 +255,16 @@ impl Files {
 
     /// Opens the menu for tree key `of` at the pointer.
     fn ask(&mut self, of: &str, at: Point<Pixels>, cx: &mut Context<Self>) {
-        match self.path(of) {
-            Some(path) => {
+        match self.named(of) {
+            Some((path, folder)) => {
                 let n = self.menu.as_ref().map_or(0, |ask| ask.n).saturating_add(1);
                 log::info!("files: menu for {}", path.display());
-                self.menu = Some(MenuAsk { n, at, path });
+                self.menu = Some(MenuAsk {
+                    n,
+                    at,
+                    here: here_folder(&path, folder),
+                    path,
+                });
                 cx.notify();
             }
             None => log::warn!("files: {of} to open a menu is gone"),
@@ -267,15 +273,20 @@ impl Files {
 
     /// The path a tree key stands for: the root, or an entry read.
     fn path(&self, of: &str) -> Option<PathBuf> {
-        let entries = self.listings.iter().flat_map(|(folder, listing)| {
-            listing
-                .iter()
-                .flatten()
-                .map(|entry| folder.join(&entry.name))
-        });
-        std::iter::once(self.root.clone())
-            .chain(entries)
-            .find(|path| key(path).as_ref() == of)
+        self.named(of).map(|(path, _)| path)
+    }
+
+    /// The path a tree key stands for, and whether the tree listed it as a folder.
+    fn named(&self, of: &str) -> Option<(PathBuf, bool)> {
+        if key(&self.root).as_ref() == of {
+            return Some((self.root.clone(), true));
+        }
+        self.listings.iter().find_map(|(folder, listing)| {
+            listing.iter().flatten().find_map(|entry| {
+                let path = folder.join(&entry.name);
+                (key(&path).as_ref() == of).then(|| (path, entry.folder))
+            })
+        })
     }
 
     /// Folder `path`'s node, its entries once read; `untracked` when an untracked folder holds it.
@@ -344,7 +355,7 @@ impl Render for Files {
             asked.update(cx, |files, cx| files.ask(key, at, cx))
         });
         let items = match &self.menu {
-            Some(ask) => menu::row(&workspace, ask.path.clone(), cx),
+            Some(ask) => menu::row(&workspace, ask.path.clone(), ask.here.clone(), cx),
             None => Menu::new(),
         };
         let request = self.menu.as_ref().map(|ask| (ask.n, ask.at));
